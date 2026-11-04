@@ -822,3 +822,23 @@ Al concluir el streaming del Turno 5 en `apps/ai_companion/views.py`, el backend
 12. **Fase 3 — PWA Mobile Core, Sistema de Diseño y Base Local (React \+ Vite \+ TypeScript):** Inicialización de `komi_frontend` con Vite y `vite-plugin-pwa`, meta tags para iOS Safari (`apple-mobile-web-app-capable`), tokens de color Komorebi y Tsukimi, persistencia `IndexedDB` (`Dexie.js`), Onboarding y reutilización directa del SVG animado del girasol del prototipo.  
 13. **Fase 4 — Lector ePub Zen, Ciclo de Vida (15s) e Integración End-to-End:** Integración del visor epubjs, control de segundo plano con 15 segundos de gracia mediante Page Visibility API (`document.visibilityState`), flujo post-lectura en Bottom Sheet, interfaz de chat con respuestas en streaming y visualización de "Semillas del Día" en la biblioteca.  
 14. **Fase 5 — Despliegue HTTPS y Pruebas en iPhone (iOS Safari):** Provisión de base de datos PostgreSQL 16 con SSL en Neon/Supabase, despliegue del servicio ASGI de Django en Render/Railway con Gunicorn+Uvicorn y despliegue del frontend PWA en Vercel/Cloudflare Pages con TLS 1.3 estricto. Validación de la API `navigator.storage.persist()`, mitigación del purgado de 7 días de Safari (ITP) e instalación real en pantalla de inicio desde iOS Safari (Compartir \-\> Agregar a pantalla de inicio).
+
+# **16\. Decisiones de Sprint 1**
+
+Decisiones tomadas antes de iniciar la Fase 1 (Sprint 1) para resolver ambigüedades del SRS. Fecha: 2026-11-04. En caso de conflicto con secciones anteriores sobre estos puntos, rige esta sección.
+
+1. **`started_at_local` (zona horaria).** Se guarda la hora de pared local del dispositivo, sin zona horaria. Con `USE_TZ=True` se almacena como `timestamptz` asignando un `datetime` consciente en UTC cuyo reloj es la hora local (23:50 en Bogotá se guarda como 23:50 UTC). No es un instante real: no se convierte con `astimezone()`. El desfase del cliente se descarta y las rachas usan solo `started_at_local.date()`. Queda comentado en el modelo `ReadingSession` y se cubre con una prueba de medianoche en `America/Bogota`.
+2. **Reglas de racha (`streak_engine.py`).**
+   * Tras un hueco de más de 1 día calendario, la racha se reinicia a 1.
+   * Las sesiones atrasadas recibidas por sync fuera de orden no incrementan la racha; la consolidación recalcula desde el conjunto de fechas (idempotente, §11.4).
+   * `current_streak` puede quedar desactualizado si hoy aún no se leyó; la lectura usa `effective_streak(estado, hoy_local)`, que devuelve 0 si pasó más de 1 día sin leer.
+3. **Sesión válida.** Cuentan para la racha `COMPLETED` y `EARLY_VALID`. `INVALIDATED_GRACE_EXPIRED` no cuenta.
+4. **Bono de Vitalidad Solar (FA-4.1).** Aplica solo a libros `PHYSICAL`, con sesión válida y `progress_delta < 1`. Un `progress_delta` de 0 califica.
+5. **Base de datos.** PostgreSQL 16 desde el inicio. No se escriben pruebas contra SQLite.
+6. **`updated_at` en `BookGarden`.** Se agrega al esquema porque la regla de sync de §11.4 lo requiere y §11.2 no lo lista.
+7. **Etapas del girasol.** Se calculan con umbrales sobre el porcentaje decimal: menor a 25 semilla, menor a 60 tallo, menor a 100 capullo, 100 flor. `growth_stage` se deriva de `progress_percentage` al guardar.
+8. **`ACTIVE` y `GROWING`.** Se mantienen ambos en el enum `status` de `BookGarden`, sin lógica diferenciada hasta que el SRS la defina.
+9. **Alcance de la Fase 1.** Incluye los modelos de `ReflectionChat` y `ReflectionMessage` (solo modelos), según §15.
+10. **Límite de turnos.** Se modela con `CheckConstraint` de 1 a 5 en `turn_count` y `turn_number`. La lógica de bloqueo y cierre es de la Fase 2.
+11. **Archivos adicionales.** Se agregan `apps.py`, `__init__.py`, `migrations/` y carpetas de pruebas, exigidos por Django aunque no figuran en §13.3. No se crea `wsgi.py` (solo ASGI).
+12. **Dependencias aprobadas.** `python-dotenv` (lectura de `.env`) y `ruff` (linter, solo desarrollo). `django-cors-headers`, `google-genai` y `uvicorn` se incorporan en la Fase 2.
