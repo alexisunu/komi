@@ -1,0 +1,65 @@
+# CLAUDE.md — Komi (v1.0 PWA)
+
+Komi es una PWA mobile-first de habitos de lectura con estetica Zen (concepto "Komorebi") y gamificacion tipo Forest: cada libro es un girasol que crece con el avance. Dos modos de lectura: digital (.epub, con epubjs) y libro fisico (temporizador + paginas manuales). Al terminar una sesion hay una charla opcional con Gemini, limitada a 5 turnos. El usuario final usa iPhone (Safari, instalada en la pantalla de inicio).
+
+## 1. Fuentes de verdad (leer antes de tocar codigo)
+- `docs/SRS_Komi_v1.md`: especificacion completa (requisitos, casos de uso, brand sheet, component sheet, modelo de datos, endpoints, prompts, sprints). Es la autoridad. No la cargues entera: lee solo las secciones del sprint en curso.
+- `docs/reference_prototype.tsx`: prototipo en React. Es REFERENCIA VISUAL Y DE FLUJO (layout, SVG del girasol, textos). No copies su logica de estado ni su estructura; reimplementa segun el SRS.
+- Si el SRS, el prototipo y este archivo se contradicen: manda el SRS. Si el SRS es ambiguo o contradictorio, PREGUNTA antes de decidir. No inventes requisitos.
+
+## 2. Stack (fijo, no cambiar sin aprobacion)
+- Frontend (`komi_frontend/`): React 18 + Vite + TypeScript estricto + `vite-plugin-pwa` (Workbox). `epubjs`, `dexie` (IndexedDB), `lucide-react`.
+- Backend (`komi_backend/`): Python 3.11+, Django 5 + Django REST Framework, ASGI con Uvicorn (streaming SSE), PostgreSQL 16, SDK `google-genai`.
+- Estructura de carpetas: exactamente la de las secciones 13.2 y 13.3 del SRS.
+- No agregar dependencias nuevas sin avisar y justificar.
+
+## 3. Como trabajar
+- Un sprint a la vez, en el orden de la seccion 15 del SRS. No empieces el siguiente sin confirmacion explicita.
+- Antes de implementar algo no trivial, propon un plan corto y espera aprobacion.
+- Cambios pequenos y verificables. Un commit por unidad logica con mensaje claro en espanol.
+- Despues de cada cambio: corre los tests y el linter relevantes. No declares algo terminado sin haberlo ejecutado.
+- No toques el esquema de base de datos fuera de migraciones de Django.
+- No hagas cambios fuera del alcance de v1.0.
+
+## 4. Definicion de terminado
+Una tarea esta terminada solo si: compila, pasa tests y lint, funciona sin conexion (salvo el chat con IA), se ve bien en modo claro (Komorebi) y oscuro (Tsukimi), y respeta los tokens del Brand Sheet.
+
+## 5. Diseno visual
+- Prohibido `#000000` y `#FFFFFF` puros. Usa solo los tokens de la seccion 9.2 (claro) y 9.5 (oscuro) del SRS, definidos como variables CSS en un unico lugar (`core/theme`). Nunca hex sueltos en componentes.
+- Sin emojis en la interfaz, el codigo, los comentarios ni la documentacion. Iconos: `lucide-react` con `stroke-width` 1.75, o SVG propios.
+- Maximo 4 bloques funcionales por pantalla y al menos 40% de espacio en blanco.
+- Tipografia: Lora (titulos y lector) y Plus Jakarta Sans (UI, numeros con `tabular-nums`). Radios, alturas y escala segun la seccion 10 del SRS.
+- Navegacion inferior: exactamente "Lectura", "Mi Jardin", "Estadisticas". Respetar `env(safe-area-inset-bottom)`.
+- Transiciones de 300 a 400 ms `ease-out`.
+
+## 6. Reglas de negocio criticas
+- Offline-first: libros, sesiones, rachas y progreso se guardan primero en IndexedDB (Dexie) y se sincronizan despues. Solo el chat con IA requiere conexion.
+- Temporizador: calcula el tiempo restante a partir de marcas de tiempo (`Date.now()` contra la hora de inicio), nunca contando ticks de `setInterval`. Safari suspende las pestanas en segundo plano.
+- Periodo de gracia de 15 s con Page Visibility API (`visibilitychange`). Pasado ese tiempo fuera de la pantalla, la sesion se invalida sin alterar el progreso previo.
+- Rachas: se calculan con `started_at_local` (hora local de inicio) para no romper lecturas que cruzan la medianoche (`streak_engine.py`).
+- Sincronizacion: sesiones por union aditiva e idempotente (UUID del cliente); progreso de libros monotonico (`MAX(progress_percentage)`). Ver seccion 11.4.
+- Los archivos .epub se quedan en el dispositivo (IndexedDB). El servidor solo recibe metadatos, progreso y el fragmento de la sesion.
+- Etapas del girasol: 0-24 semilla, 25-59 tallo, 60-99 capullo, 100 flor.
+
+## 7. Gemini (backend unicamente)
+- La clave `GEMINI_API_KEY` vive solo en `.env` del backend. Nunca en el cliente, nunca en el repo.
+- Modelos por variables de entorno: `GEMINI_PRIMARY_MODEL` y `GEMINI_FALLBACK_MODEL`. Ante HTTP 429 del primario, cambiar al de respaldo en la misma peticion. No hardcodear nombres de modelo.
+- Turno 1 sin costo: la apertura de Komi se genera con plantillas locales en `prompt_builder.py` (cero llamadas a la API). Las llamadas a Gemini empiezan cuando el lector responde (turnos 2 a 5).
+- El limite de 5 turnos lo aplica el backend: con `turn_count == 5` bloquear nuevos mensajes, extraer lo que sigue a `[SEMILLA_DEL_DIA]:` hacia `ReflectionChat.key_takeaway` y poner `is_closed = True`.
+- Los prompts viven solo en `prompt_builder.py`, segun la seccion 14 del SRS.
+
+## 8. Seguridad
+- Secretos solo en `.env` (ignorado por git). Entregar `.env.example` sin valores reales.
+- La app se sirve por HTTPS (requisito de PWA y Service Worker). Configurar CORS estricto hacia el dominio del frontend.
+- Validar toda entrada en serializers de DRF. No confiar en el cliente para el limite de turnos ni para las rachas.
+
+## 9. Pruebas (obligatorias)
+Backend (`python manage.py test`): `streak_engine` (incluye medianoche y zonas horarias), limite de 5 turnos, `prompt_builder` (ambos modos), consolidacion de `/profile/sync/`.
+Frontend (Vitest): calculo de plan de habito (seccion 5.1), `botanicCalculator`, logica del temporizador y del periodo de gracia, repositorios Dexie.
+
+## 10. Comandos (actualizar tras el Sprint 1 y el Sprint 3)
+- Backend: `python manage.py runserver`, `python manage.py test`, `python manage.py makemigrations`, `python manage.py migrate`.
+- Frontend: `npm run dev`, `npm run build`, `npm run lint`, `npm run test`.
+
+## 11. Prohibido sin aprobacion previa
+Cambiar el stack, agregar dependencias, alterar tokens de color, saltarse un sprint, borrar archivos, reescribir el SRS, o hacer commit de secretos.

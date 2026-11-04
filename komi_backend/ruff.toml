@@ -1,0 +1,9 @@
+line-length = 100
+target-version = "py311"
+# Las migraciones son generadas por Django.
+extend-exclude = [".venv", "**/migrations"]
+
+[lint]
+select = ["E", "F", "I", "B", "DJ"]
+# El SRS 11.2 define estos campos de texto como Nullable; se respeta el esquema.
+ignore = ["DJ001"]
