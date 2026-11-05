@@ -92,6 +92,17 @@ describe("buildReminderIcs", () => {
     expect(() => buildReminderIcs({ ...base, now: new Date("x") })).toThrow(RangeError);
     expect(() => buildReminderIcs({ ...base, startDate: new Date("x") })).toThrow(RangeError);
     expect(() => buildReminderIcs({ ...base, uid: "a\r\nBEGIN:VEVENT" })).toThrow(RangeError);
+    for (const uid of ["", "con espacio", "a;b", "a:b", "a@b", "a,b"]) {
+      expect(() => buildReminderIcs({ ...base, uid })).toThrow(RangeError);
+    }
+  });
+
+  it("la duracion admite de 1 a 1440 minutos", () => {
+    expect(buildReminderIcs({ ...base, durationMinutes: 1 })).toContain("DURATION:PT1M\r\n");
+    expect(buildReminderIcs({ ...base, durationMinutes: 1440 })).toContain("DURATION:PT1440M\r\n");
+    expect(() => buildReminderIcs({ ...base, durationMinutes: 1441 })).toThrow(RangeError);
+    expect(() => buildReminderIcs({ ...base, durationMinutes: -5 })).toThrow(RangeError);
+    expect(() => buildReminderIcs({ ...base, durationMinutes: Number.NaN })).toThrow(RangeError);
   });
 });
 

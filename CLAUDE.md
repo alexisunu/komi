@@ -64,6 +64,7 @@ Frontend (Vitest): calculo de plan de habito (seccion 5.1), `botanicCalculator`,
   - Verificar: `python manage.py test` (crea y borra `test_komi_db`; el usuario necesita `CREATEDB`; añadir `--noinput` si quedó una base de pruebas de una corrida interrumpida), `ruff check .`, `ruff format --check .`, `python manage.py makemigrations --check --dry-run`.
   - Pruebas por área: `python manage.py test apps.ai_companion` (usa un cliente de Gemini falso, sin red ni cuota), `apps.profiles`, `apps.reading_sessions`, `apps.garden`. Las de concurrencia y desconexión usan `TransactionTestCase` y son más lentas.
   - Probar el SSE a mano (con uvicorn en marcha): `curl -N -X POST http://127.0.0.1:8000/api/v1/companion/<chat_id>/message/ -H "X-Profile-Id: <uuid>" -H "Content-Type: application/json" -d '{"content":"...","turn":1}'`. Usa una base de datos de pruebas, no la de desarrollo.
+  - Casos compartidos del plan de hábito: si cambia el algoritmo de `apps/profiles/services.py`, regenerar `komi_frontend/src/shared/fixtures/habitPlanCases.json` con `python manage.py dump_habit_plan_cases` y actualizar `komi_frontend/src/services/habitPlan.ts`. `python manage.py dump_habit_plan_cases --check` falla si el archivo está desactualizado (la prueba `test_habit_plan_cases` hace lo mismo). El archivo no se edita a mano.
 - Frontend (desde `komi_frontend/`, requiere Node 20.19 o superior):
   - Instalar: `npm install`.
   - Ejecutar: `npm run dev`. Verificar: `npm run build` (incluye `tsc -b`), `npm run lint`, `npm run test` (Vitest, `fake-indexeddb` para Dexie).

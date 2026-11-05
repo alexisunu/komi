@@ -73,6 +73,12 @@ describe("evaluateGrowth", () => {
     );
   });
 
+  it("un libro ya florecido no vuelve a florecer", () => {
+    const again = evaluateGrowth({ ...base, previousProgress: 100, newProgress: 100 });
+    expect(again.justBloomed).toBe(false);
+    expect(again.stage).toBe("BLOOM_4");
+  });
+
   it("calcula el avance con 2 decimales exactos", () => {
     expect(evaluateGrowth({ ...base, previousProgress: 24.99, newProgress: 25 }).delta).toBe(0.01);
     expect(evaluateGrowth({ ...base, previousProgress: 24.99, newProgress: 25 }).stage).toBe(
