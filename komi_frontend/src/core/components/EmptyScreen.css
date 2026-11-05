@@ -1,0 +1,30 @@
+/* Pantalla vacia: contenido centrado y mucho aire. Solo tokens de core/theme. */
+
+.empty-screen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--screen-margin);
+  text-align: center;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.empty-screen__title {
+  margin: 0;
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
+.empty-screen__message {
+  max-width: 280px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}

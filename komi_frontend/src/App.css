@@ -1,0 +1,39 @@
+/* Estructura de la app: pantalla a alto completo con la navegacion abajo. Solo tokens. */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--color-bg-primary);
+}
+
+.app-shell__screen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--font-body-size);
+}
+
+.app-notice {
+  margin: 0;
+  padding: var(--space-2) var(--screen-margin);
+  background: var(--color-bg-surface);
+  color: var(--color-state-warning);
+  font-family: var(--font-sans);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}

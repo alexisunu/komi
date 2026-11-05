@@ -1,0 +1,116 @@
+/* Dashboard Zen (SRS 6). Zona 2 ocupa el centro; el resto es aire. Solo tokens de core/theme. */
+
+.dashboard {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  padding: calc(var(--space-2) + env(safe-area-inset-top)) var(--screen-margin) var(--space-3);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.dashboard__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dashboard__settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dashboard__settings:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+.dashboard__canvas {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 0;
+  text-align: center;
+}
+
+.dashboard__book-title {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
+.dashboard__book-author {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.dashboard__progress {
+  width: 100%;
+  max-width: 240px;
+  height: 4px;
+  margin-top: var(--space-1);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-surface);
+}
+
+.dashboard__progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-secondary);
+  transition: width var(--transition-ui);
+}
+
+.dashboard__progress-text {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.dashboard__controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dashboard__timer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.dashboard__time {
+  min-width: 4ch;
+  font-size: var(--font-display-timer-size);
+  line-height: var(--font-display-timer-line);
+  font-weight: var(--font-display-timer-weight);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard__progress-fill {
+    transition: none;
+  }
+}

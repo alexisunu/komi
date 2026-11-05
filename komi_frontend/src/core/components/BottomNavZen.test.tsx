@@ -83,7 +83,7 @@ describe("BottomNavZen", () => {
 
     it("cada acceso mide al menos 44 px de alto", () => {
       expect(css).toMatch(/\.bottom-nav__item \{[^}]*min-height: var\(--touch-target\)/);
-      expect(css).toMatch(/\.bottom-nav__list \{[^}]*height: var\(--nav-height\)/);
+      expect(css).toMatch(/\.bottom-nav__list \{[^}]*height: calc\(var\(--nav-height\) - 1px\)/);
       expect(parseInt(GEOMETRY["touch-target"])).toBeGreaterThanOrEqual(44);
     });
 

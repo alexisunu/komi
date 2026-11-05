@@ -183,3 +183,10 @@
   outline: var(--focus-ring-width) solid var(--color-text-primary);
   outline-offset: var(--focus-offset);
 }
+
+/* Pantallas bajas (iPhone SE): el plan cabe sin scroll si se omite el texto de apoyo. */
+@media (max-height: 700px) {
+  .onboarding[data-screen="plan"] .onboarding__lead {
+    display: none;
+  }
+}

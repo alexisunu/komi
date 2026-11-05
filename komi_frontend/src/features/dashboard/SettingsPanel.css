@@ -1,0 +1,119 @@
+/* Panel de ajustes: hoja inferior modal. Solo tokens de core/theme. */
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  background: color-mix(in srgb, var(--color-text-primary) 35%, transparent);
+}
+
+.settings-panel {
+  width: 100%;
+  padding: var(--space-3) var(--screen-margin) calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.settings-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.settings-panel__title {
+  margin: 0;
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
+.settings-panel__title:focus {
+  outline: none;
+}
+
+.settings-panel__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.settings-panel__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.settings-panel__label {
+  margin: 0;
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  font-weight: 700;
+}
+
+.settings-panel__hint {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.settings-switch {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-subtle);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--transition-ui);
+}
+
+.settings-switch[data-on="true"] {
+  background: var(--color-accent-secondary);
+}
+
+.settings-switch__thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-bg-primary);
+  transition: transform var(--transition-ui);
+}
+
+.settings-switch[data-on="true"] .settings-switch__thumb {
+  transform: translateX(20px);
+}
+
+.settings-panel__close:focus-visible,
+.settings-switch:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-switch,
+  .settings-switch__thumb {
+    transition: none;
+  }
+}

@@ -16,7 +16,8 @@
 .bottom-nav__list {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  height: var(--nav-height);
+  /* La barra mide 64 px con su borde superior de 1 px: la lista cede ese pixel. */
+  height: calc(var(--nav-height) - 1px);
   margin: 0;
   padding: 0;
   list-style: none;
