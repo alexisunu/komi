@@ -10,6 +10,9 @@ atributos de ReadingSession / ReaderProfile, de modo que se pueda probar sin bas
 from decimal import Decimal
 
 SEED_MARKER = "[SEMILLA_DEL_DIA]:"
+# Gemini espera que la conversacion empiece con un turno del usuario; la apertura local de Komi
+# es un turno del modelo, asi que se antepone este turno sintetico.
+SESSION_START_USER_TURN = "Acabo de terminar mi sesión de lectura."
 MAX_EXCERPT_CHARS = 6000
 LAYER_SEPARATOR = "\n\n---\n\n"
 DEFAULT_STYLE = "DEEP_ANALYSIS"

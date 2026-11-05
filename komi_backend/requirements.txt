@@ -1,5 +1,6 @@
-# Sprint 1. google-genai y uvicorn se agregan en el Sprint 2.
+# uvicorn y django-cors-headers se agregan cuando se usen (Sprint 2, bloques posteriores).
 django>=5.2,<6
 djangorestframework>=3.15
 psycopg[binary]>=3.2
 python-dotenv>=1.0
+google-genai>=2.34,<3

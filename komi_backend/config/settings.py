@@ -72,3 +72,8 @@ TIME_ZONE = "UTC"
 USE_TZ = True
 
 STATIC_URL = "static/"
+
+# Gemini (solo backend). Los nombres de modelo nunca se escriben en el codigo.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_PRIMARY_MODEL = os.environ.get("GEMINI_PRIMARY_MODEL", "")
+GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "")
