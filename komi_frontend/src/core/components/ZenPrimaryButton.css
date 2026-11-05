@@ -1,0 +1,64 @@
+/* Boton CTA y secundario (SRS 10.1). Solo tokens de core/theme.
+   [data-forced-state] existe unicamente para mostrar estados en la galeria de desarrollo. */
+
+.zen-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--transition-ui),
+    border-color var(--transition-ui),
+    color var(--transition-ui),
+    transform var(--transition-ui);
+}
+
+.zen-btn--primary {
+  min-height: var(--button-height);
+  min-width: var(--button-min-width);
+  background: var(--color-accent-primary);
+  color: var(--color-derived-text-on-accent);
+  font-weight: 700;
+}
+
+.zen-btn--secondary {
+  min-height: var(--button-secondary-height);
+  background: transparent;
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.zen-btn--primary:active,
+.zen-btn--primary[data-forced-state="pressed"] {
+  background: var(--color-derived-accent-pressed);
+  transform: scale(0.98);
+}
+
+.zen-btn--secondary:active,
+.zen-btn--secondary[data-forced-state="pressed"] {
+  background: var(--color-bg-surface);
+  transform: scale(0.98);
+}
+
+.zen-btn:focus-visible,
+.zen-btn[data-forced-state="focus"] {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+.zen-btn:disabled {
+  background: var(--color-bg-surface);
+  border-color: transparent;
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+  transform: none;
+}

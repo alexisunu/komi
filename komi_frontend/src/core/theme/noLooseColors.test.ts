@@ -15,6 +15,14 @@ describe("colores sueltos", () => {
     expect(Object.keys(sources).length).toBeGreaterThan(3);
   });
 
+  it("los .css llegan con contenido (si no, esta prueba pasaria en vacio)", () => {
+    const cssFiles = Object.entries(sources).filter(([path]) => path.endsWith(".css"));
+    expect(cssFiles.length).toBeGreaterThan(0);
+    for (const [path, content] of cssFiles) {
+      expect(content.length, path).toBeGreaterThan(0);
+    }
+  });
+
   it("ningun archivo de src fuera de colorTokens.ts contiene hex", () => {
     const offenders: string[] = [];
     for (const [path, content] of Object.entries(sources)) {

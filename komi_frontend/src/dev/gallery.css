@@ -1,0 +1,102 @@
+/* Solo desarrollo. Mismos tokens que la app. */
+
+.gallery {
+  min-height: 100%;
+  padding: var(--space-3);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+}
+
+.gallery__header {
+  max-width: 880px;
+  margin: 0 auto var(--space-3);
+}
+
+.gallery__title {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
+.gallery__note {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.gallery__panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: center;
+}
+
+.gallery-panel {
+  flex: 1 1 360px;
+  max-width: 430px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+.gallery-panel__title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-h2-family);
+  font-size: var(--font-h2-size);
+  line-height: var(--font-h2-line);
+  font-weight: var(--font-h2-weight);
+}
+
+.gallery-section {
+  margin-bottom: var(--space-4);
+}
+
+.gallery-section__title {
+  margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.gallery-row {
+  margin-bottom: var(--space-2);
+}
+
+.gallery-row__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.gallery-row__items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1);
+}
+
+.gallery-timer {
+  min-width: 72px;
+  text-align: center;
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: 600;
+}
+
+.gallery-nav {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-card);
+}

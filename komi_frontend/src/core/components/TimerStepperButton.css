@@ -1,0 +1,38 @@
+/* Icon Stepper circular de 44x44 px (SRS 10.1). */
+
+.timer-stepper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--transition-ui),
+    color var(--transition-ui),
+    transform var(--transition-ui);
+}
+
+.timer-stepper:active,
+.timer-stepper[data-forced-state="pressed"] {
+  background: var(--color-border-subtle);
+  transform: scale(0.96);
+}
+
+.timer-stepper:focus-visible,
+.timer-stepper[data-forced-state="focus"] {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+.timer-stepper:disabled {
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+  transform: none;
+}

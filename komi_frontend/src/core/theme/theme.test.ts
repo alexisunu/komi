@@ -54,7 +54,7 @@ describe("colorTokens", () => {
     const names = themeEntries(KOMOREBI).map(([name]) => name);
     expect(names).toContain("--color-bg-primary");
     expect(names).toContain("--color-derived-bg-halo");
-    expect(names.filter((n) => n.startsWith("--color-derived-"))).toHaveLength(5);
+    expect(names.filter((n) => n.startsWith("--color-derived-"))).toHaveLength(6);
   });
 });
 
@@ -83,6 +83,12 @@ describe("geometryTokens", () => {
     expect(GEOMETRY["nav-height"]).toBe("64px");
   });
 
+  it("ningun token de geometria depende de un color (se resolveria en :root y romperia temas anidados)", () => {
+    for (const [name, value] of Object.entries(GEOMETRY)) {
+      expect(value, name).not.toContain("var(--color");
+    }
+  });
+
   it("las transiciones duran entre 300 y 400 ms con ease-out", () => {
     for (const key of ["transition-theme", "transition-ui"] as const) {
       const match = /^(\d+)ms ease-out$/.exec(GEOMETRY[key]);
@@ -101,7 +107,8 @@ describe("buildThemeCss", () => {
     expect(css).toContain(":root {");
     expect(css).toContain("@media (prefers-color-scheme: dark)");
     expect(css).toContain(':root:not([data-theme="light"])');
-    expect(css).toContain(':root[data-theme="dark"]');
+    expect(css).toContain('\n[data-theme="dark"] {');
+    expect(css).toContain('\n[data-theme="light"] {');
     expect(css).toContain(":root {\n  --color-bg-primary: #F7F5F0;");
     expect(css).toContain("--color-bg-primary: #181A18;");
   });
@@ -135,5 +142,28 @@ describe("resolveTheme", () => {
     expect(
       resolveTheme({ storedMode: null, preconfigureTsukimi: false, systemPrefersDark: false }),
     ).toBe("light");
+  });
+});
+
+function luminance(hex: string): number {
+  const channel = (i: number) => {
+    const c = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
+}
+
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+describe("contraste del CTA", () => {
+  it("el texto sobre el boton principal alcanza 4.5:1 en ambos temas", () => {
+    for (const theme of Object.values(THEMES)) {
+      expect(
+        contrast(theme.derived["text-on-accent"], theme.brand["accent-primary"]),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

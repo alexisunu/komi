@@ -19,6 +19,15 @@ export const GEOMETRY = {
   "transition-theme": "300ms ease-out",
   "transition-ui": "350ms ease-out",
   "nav-height": "64px",
+  // Anillo de foco visible para teclado y lector de pantalla (accesibilidad).
+  // Solo el grosor: el color se resuelve en cada elemento para respetar temas anidados.
+  "focus-ring-width": "2px",
+  "focus-offset": "3px",
+  "touch-target": "44px",
+  // Botones (SRS 10.1).
+  "button-height": "56px",
+  "button-secondary-height": "48px",
+  "button-min-width": "220px",
 } as const;
 
 /** Grosor de trazo de los iconos (SRS 9.4, CLAUDE.md 5). Se pasa como prop a lucide-react. */

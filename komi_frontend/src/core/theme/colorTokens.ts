@@ -27,6 +27,8 @@ export interface DerivedTokens {
   "petal-inner": string;
   "dormant-petal-outer": string;
   "dormant-petal-inner": string;
+  /** Texto sobre `accent-primary`. En oscuro, `text-primary` (claro) no contrasta con el ambar. */
+  "text-on-accent": string;
 }
 
 export interface ThemeTokens {
@@ -52,6 +54,7 @@ export const KOMOREBI: ThemeTokens = {
     "petal-inner": "#F2C46D",
     "dormant-petal-outer": "#9E988E",
     "dormant-petal-inner": "#B5AFA4",
+    "text-on-accent": "#2C302E", // SRS 10.1
   },
 };
 
@@ -73,6 +76,7 @@ export const TSUKIMI: ThemeTokens = {
     "petal-inner": "#F2C46D",
     "dormant-petal-outer": "#9E988E",
     "dormant-petal-inner": "#B5AFA4",
+    "text-on-accent": "#181A18", // = bg-primary oscuro; el prototipo lo usa en el centro del girasol
   },
 };
 

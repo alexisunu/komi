@@ -15,7 +15,8 @@ function block(selector: string, entries: Array<[string, string]>): string {
  * y no hay destello. Orden de precedencia:
  *   1. :root                      -> Komorebi (claro) por defecto.
  *   2. prefers-color-scheme: dark -> Tsukimi, salvo que el lector haya fijado el claro.
- *   3. [data-theme="light|dark"]  -> eleccion explicita (ThemeContext).
+ *   3. [data-theme="light|dark"]  -> eleccion explicita (ThemeContext). Sin `:root` a proposito:
+ *      tambien aplica a un contenedor anidado (la galeria de desarrollo muestra ambos temas).
  */
 export function buildThemeCss(): string {
   const light = themeEntries(THEMES.light);
@@ -23,10 +24,10 @@ export function buildThemeCss(): string {
   return [
     block(":root", [...light, ...typographyEntries(), ...geometryEntries()]),
     `@media (prefers-color-scheme: dark) {\n${block(`:root:not([${THEME_ATTRIBUTE}="light"])`, dark)}\n}`,
-    block(`:root[${THEME_ATTRIBUTE}="light"]`, light),
-    block(`:root[${THEME_ATTRIBUTE}="dark"]`, dark),
+    block(`[${THEME_ATTRIBUTE}="light"]`, light),
+    block(`[${THEME_ATTRIBUTE}="dark"]`, dark),
     ":root { color-scheme: light dark; }",
-    `:root[${THEME_ATTRIBUTE}="light"] { color-scheme: light; }`,
-    `:root[${THEME_ATTRIBUTE}="dark"] { color-scheme: dark; }`,
+    `[${THEME_ATTRIBUTE}="light"] { color-scheme: light; }`,
+    `[${THEME_ATTRIBUTE}="dark"] { color-scheme: dark; }`,
   ].join("\n");
 }
