@@ -1,9 +1,12 @@
+import uuid
+
 from django.db import models
 
 
 class ReflectionChat(models.Model):
     """Charla reflexiva con Komi (SRS 11.2, tabla 4; CU-05)."""
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     session = models.OneToOneField(
         "reading_sessions.ReadingSession",
         on_delete=models.CASCADE,
@@ -13,6 +16,10 @@ class ReflectionChat(models.Model):
     turn_count = models.SmallIntegerField(default=1)
     is_closed = models.BooleanField(default=False)
     key_takeaway = models.TextField(null=True, blank=True)
+    # Candado de "respuesta en curso" (SRS 17, punto 20): marca de tiempo del envio que esta
+    # esperando a Gemini. Nulo cuando nadie esta respondiendo. Un candado de mas de 90 s se
+    # considera vencido (proceso caido).
+    pending_since = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -45,6 +52,11 @@ class ReflectionMessage(models.Model):
             models.CheckConstraint(
                 condition=models.Q(turn_number__gte=1, turn_number__lte=5),
                 name="reflectionmessage_turn_number_1_5",
+            ),
+            # Red de seguridad: un solo mensaje por autor y turno dentro de una charla.
+            models.UniqueConstraint(
+                fields=["chat", "sender", "turn_number"],
+                name="reflectionmessage_one_per_sender_and_turn",
             ),
         ]
 
