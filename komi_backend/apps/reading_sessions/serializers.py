@@ -36,7 +36,7 @@ class LocalWallClockField(serializers.Field):
         return value.replace(tzinfo=None).isoformat()
 
 
-class SessionCompleteSerializer(serializers.Serializer):
+class SessionPayloadSerializer(serializers.Serializer):
     """Cierre de una sesion de lectura (CU-04). El progreso se valida segun el formato."""
 
     # UUID de la sesion, generado por el cliente: hace idempotente el reintento (SRS 11.4).

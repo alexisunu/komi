@@ -1,8 +1,14 @@
-"""Cierre de sesiones de lectura (CU-04, SRS 17 puntos 8 y 17).
+"""Reglas de sesiones de lectura (CU-04, SRS 17 puntos 8 y 17).
 
-Todo ocurre en una transaccion que bloquea primero el perfil y luego el libro. Bloquear el
-perfil serializa los cierres del mismo lector: un reintento concurrente con el mismo UUID de
-sesion ve la sesion ya guardada y devuelve su resultado sin duplicar nada.
+Este modulo es la unica fuente de las reglas de sesion. `sessions/complete` y la sincronizacion
+usan las mismas funciones:
+
+- `evaluate_session`: decide estado, progreso, delta, Bono Solar y florecimiento. No escribe.
+- `persist_session`: aplica el resultado al libro y crea la sesion.
+- `lock_profile` y `find_existing_session`: bloqueo del perfil e idempotencia por UUID.
+
+`strict=True` (complete) rechaza sesiones validas sobre libros en barbecho o florecidos.
+`strict=False` (sync) las acepta, porque las sesiones son aditivas y no se pueden perder.
 """
 
 from dataclasses import dataclass
@@ -28,6 +34,23 @@ class SessionConflict(APIException):
     status_code = 409
     default_detail = "La sesion no se puede registrar."
     default_code = "conflict"
+
+
+@dataclass(frozen=True)
+class SessionOutcome:
+    """Resultado de evaluar una sesion contra el estado actual de su libro."""
+
+    status: str
+    delta: Decimal
+    new_progress: Decimal
+    new_page: int
+    update_cfi: bool
+    just_bloomed: bool
+    granted_solar_bonus: bool
+
+    @property
+    def is_valid(self) -> bool:
+        return streak_engine.is_valid_status(self.status)
 
 
 @dataclass
@@ -71,7 +94,7 @@ def _new_progress(book: BookGarden, data: dict) -> tuple[Decimal, int, bool]:
     return max(previous, min(reported, HUNDRED)), book.current_page, reported >= previous
 
 
-def _validated_status(data: dict, new_progress: Decimal, previous: Decimal) -> SessionStatus:
+def _validated_status(data: dict, new_progress: Decimal, previous: Decimal) -> str:
     """Estado final derivado de las duraciones; el servidor no confia en el del cliente.
 
     COMPLETED exige tiempo completo; EARLY_VALID, al menos el 50% o llegar al 100% del libro
@@ -87,14 +110,112 @@ def _validated_status(data: dict, new_progress: Decimal, previous: Decimal) -> S
     )
 
 
+def evaluate_session(book: BookGarden, data: dict, *, strict: bool) -> SessionOutcome:
+    """Evalua una sesion sin escribir nada. Lanza ValidationError o SessionConflict."""
+    if data["session_status"] == SessionStatus.INVALIDATED_GRACE_EXPIRED:
+        # Periodo de gracia vencido: no toca progreso ni racha ni requiere datos de progreso.
+        return SessionOutcome(
+            status=SessionStatus.INVALIDATED_GRACE_EXPIRED,
+            delta=ZERO,
+            new_progress=book.progress_percentage,
+            new_page=book.current_page,
+            update_cfi=False,
+            just_bloomed=False,
+            granted_solar_bonus=False,
+        )
+
+    if strict:
+        if book.status == BookGarden.Status.FALLOW:
+            raise SessionConflict("El libro esta en barbecho; restauralo para leerlo.")
+        if book.progress_percentage >= HUNDRED:
+            raise SessionConflict("El libro ya florecio.")
+
+    previous = book.progress_percentage
+    new_progress, new_page, advanced = _new_progress(book, data)
+    status = _validated_status(data, new_progress, previous)
+    delta = new_progress - previous
+    return SessionOutcome(
+        status=status,
+        delta=delta,
+        new_progress=new_progress,
+        new_page=new_page,
+        # El CFI solo se actualiza si la lectura no retrocedio: uno atrasado no pisa uno nuevo.
+        update_cfi=(
+            book.format_type == BookGarden.FormatType.EPUB
+            and advanced
+            and bool(data.get("last_epub_cfi"))
+        ),
+        just_bloomed=new_progress >= HUNDRED and previous < HUNDRED,
+        granted_solar_bonus=streak_engine.grants_solar_bonus(book.format_type, delta, status),
+    )
+
+
+def persist_session(book: BookGarden, data: dict, outcome: SessionOutcome) -> ReadingSession:
+    """Aplica el resultado al libro (si la sesion es valida) y crea la sesion."""
+    if outcome.is_valid:
+        book.progress_percentage = outcome.new_progress
+        book.current_page = outcome.new_page
+        if outcome.update_cfi:
+            book.last_epub_cfi = data["last_epub_cfi"]
+        if outcome.just_bloomed:
+            book.status = BookGarden.Status.BLOOMED
+            book.completed_at = timezone.now()
+        book.save()
+
+    excerpt = data.get("extracted_epub_excerpt")
+    keep_excerpt = outcome.is_valid and book.format_type == BookGarden.FormatType.EPUB
+    return ReadingSession.objects.create(
+        id=data["id"],
+        book=book,
+        planned_duration_sec=data["planned_duration_sec"],
+        actual_duration_sec=data["actual_duration_sec"],
+        started_at_local=data["started_at_local"],
+        session_status=outcome.status,
+        progress_delta=outcome.delta,
+        granted_solar_bonus=outcome.granted_solar_bonus,
+        extracted_epub_excerpt=excerpt if keep_excerpt and excerpt else None,
+    )
+
+
+def lock_profile(profile_id) -> ReaderProfile:
+    """Bloquea la fila del perfil: serializa los cierres y las sincronizaciones del lector."""
+    return ReaderProfile.objects.select_for_update().get(pk=profile_id)
+
+
+def find_existing_session(profile: ReaderProfile, session_id) -> ReadingSession | None:
+    """Sesion ya guardada con ese UUID (reintento idempotente), o None.
+
+    Si el UUID pertenece a otro perfil lanza SessionConflict sin revelar datos.
+    """
+    existing = ReadingSession.objects.select_related("book").filter(pk=session_id).first()
+    if existing is None:
+        return None
+    if existing.book.profile_id != profile.id:
+        raise SessionConflict("Identificador de sesion no disponible.")
+    return existing
+
+
+def apply_streak_incrementally(profile: ReaderProfile, session: ReadingSession) -> None:
+    """Racha incremental de un cierre en orden cronologico (`sessions/complete`)."""
+    state = streak_engine.StreakState(
+        profile.current_streak, profile.longest_streak, profile.last_valid_session_date
+    )
+    updated = streak_engine.apply_session_if_valid(
+        state, session.started_at_local, session.session_status
+    )
+    if updated != state:
+        profile.current_streak = updated.current
+        profile.longest_streak = updated.longest
+        profile.last_valid_session_date = updated.last_date
+        profile.save(update_fields=["current_streak", "longest_streak", "last_valid_session_date"])
+
+
 def complete_session(profile_id, data: dict) -> CompletionResult:
     with transaction.atomic():
-        profile = ReaderProfile.objects.select_for_update().get(pk=profile_id)
+        profile = lock_profile(profile_id)
 
-        existing = ReadingSession.objects.select_related("book").filter(pk=data["id"]).first()
+        existing = find_existing_session(profile, data["id"])
         if existing is not None:
-            if existing.book.profile_id != profile.id:
-                raise SessionConflict("Identificador de sesion no disponible.")
             return CompletionResult(existing, existing.book, profile, False, False)
 
         book = (
@@ -105,72 +226,7 @@ def complete_session(profile_id, data: dict) -> CompletionResult:
         if book is None:
             raise Http404
 
-        claimed_valid = data["session_status"] != SessionStatus.INVALIDATED_GRACE_EXPIRED
-        if not claimed_valid:
-            return _save_invalidated(profile, book, data)
-        return _save_valid(profile, book, data)
-
-
-def _save_invalidated(profile, book, data) -> CompletionResult:
-    """Sesion invalidada por el periodo de gracia: se registra sin tocar progreso ni racha."""
-    session = ReadingSession.objects.create(
-        id=data["id"],
-        book=book,
-        planned_duration_sec=data["planned_duration_sec"],
-        actual_duration_sec=data["actual_duration_sec"],
-        started_at_local=data["started_at_local"],
-        session_status=SessionStatus.INVALIDATED_GRACE_EXPIRED,
-        progress_delta=ZERO,
-        granted_solar_bonus=False,
-    )
-    return CompletionResult(session, book, profile, True, False)
-
-
-def _save_valid(profile, book, data) -> CompletionResult:
-    if book.status == BookGarden.Status.FALLOW:
-        raise SessionConflict("El libro esta en barbecho; restauralo para leerlo.")
-    if book.progress_percentage >= HUNDRED:
-        raise SessionConflict("El libro ya florecio.")
-
-    previous = book.progress_percentage
-    new_progress, new_page, advanced = _new_progress(book, data)
-    status = _validated_status(data, new_progress, previous)
-    delta = new_progress - previous
-
-    just_bloomed = new_progress >= HUNDRED
-    book.progress_percentage = new_progress
-    book.current_page = new_page
-    # El CFI solo se actualiza si la lectura no retrocedio: uno atrasado no pisa uno mas nuevo.
-    if book.format_type == BookGarden.FormatType.EPUB and advanced and data.get("last_epub_cfi"):
-        book.last_epub_cfi = data["last_epub_cfi"]
-    if just_bloomed:
-        book.status = BookGarden.Status.BLOOMED
-        book.completed_at = timezone.now()
-    book.save()
-
-    excerpt = data.get("extracted_epub_excerpt")
-    session = ReadingSession.objects.create(
-        id=data["id"],
-        book=book,
-        planned_duration_sec=data["planned_duration_sec"],
-        actual_duration_sec=data["actual_duration_sec"],
-        started_at_local=data["started_at_local"],
-        session_status=status,
-        progress_delta=delta,
-        granted_solar_bonus=streak_engine.grants_solar_bonus(book.format_type, delta, status),
-        extracted_epub_excerpt=(
-            excerpt if book.format_type == BookGarden.FormatType.EPUB and excerpt else None
-        ),
-    )
-
-    state = streak_engine.StreakState(
-        profile.current_streak, profile.longest_streak, profile.last_valid_session_date
-    )
-    updated = streak_engine.apply_session_if_valid(state, session.started_at_local, status)
-    if updated != state:
-        profile.current_streak = updated.current
-        profile.longest_streak = updated.longest
-        profile.last_valid_session_date = updated.last_date
-        profile.save(update_fields=["current_streak", "longest_streak", "last_valid_session_date"])
-
-    return CompletionResult(session, book, profile, True, just_bloomed)
+        outcome = evaluate_session(book, data, strict=True)
+        session = persist_session(book, data, outcome)
+        apply_streak_incrementally(profile, session)
+        return CompletionResult(session, book, profile, True, outcome.just_bloomed)

@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 
 from apps.garden.serializers import BookSerializer
 from apps.reading_sessions import services
-from apps.reading_sessions.serializers import SessionCompleteSerializer, serialize_session
+from apps.reading_sessions.serializers import SessionPayloadSerializer, serialize_session
 
 
 class SessionCompleteView(APIView):
@@ -15,7 +15,7 @@ class SessionCompleteView(APIView):
     """
 
     def post(self, request):
-        serializer = SessionCompleteSerializer(data=request.data)
+        serializer = SessionPayloadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         result = services.complete_session(request.auth.id, dict(serializer.validated_data))
 
