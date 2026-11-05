@@ -230,6 +230,80 @@ describe("solo tokens de color", () => {
   });
 });
 
+/** Declaraciones de todas las reglas cuya lista de selectores incluye `selector` exacto. */
+function declarations(selector: string): string {
+  const bodies: string[] = [];
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const match of withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selectors = (match[1] ?? "").split(",").map((s) => s.trim());
+    if (selectors.includes(selector)) bodies.push(match[2] ?? "");
+  }
+  return bodies.join("\n");
+}
+
+describe("contrato visual del CSS", () => {
+  it("el selector de ayuda encuentra reglas agrupadas y simples", () => {
+    expect(declarations(".sf-leaf")).toContain("stroke-width: 1.75");
+    expect(declarations(".sf-leaf")).toContain("fill: var(--color-accent-secondary)");
+    expect(declarations(".no-existe")).toBe("");
+  });
+
+  it("contornos de linea organica: text-primary de 1.75 en hojas, petalos, centro y tierra", () => {
+    for (const selector of [".sf-leaf", ".sf-seed", ".sf-petal-outer", ".sf-petal-inner", ".sf-center", ".sf-soil"]) {
+      const body = declarations(selector);
+      expect(body, selector).toContain("stroke: var(--color-text-primary)");
+      expect(body, selector).toContain("stroke-width: 1.75");
+    }
+    expect(declarations(".sf-soil-line")).toContain("stroke: var(--color-text-primary)");
+  });
+
+  it("rellenos de la flor y la semilla", () => {
+    expect(declarations(".sf-center")).toContain("fill: var(--color-derived-text-on-accent)");
+    expect(declarations(".sf-petal-inner")).toContain("fill: var(--color-derived-petal-inner)");
+    expect(declarations(".sf-seed")).toContain("fill: var(--color-text-secondary)");
+    expect(declarations(".sf-soil")).toContain("fill: var(--color-bg-surface)");
+    expect(declarations(".sf-dot")).toContain("fill: var(--color-bg-surface)");
+    const ring = declarations(".sf-ring");
+    expect(ring).toContain("stroke: var(--color-text-secondary)");
+    expect(ring).toContain("stroke-width: 1.25");
+  });
+
+  it("halo: bg-halo con borde sutil bg-surface (SRS 10.2)", () => {
+    const halo = declarations(".sunflower__halo");
+    expect(halo).toContain("background: var(--color-derived-bg-halo)");
+    expect(halo).toContain("border: 1.5px solid var(--color-bg-surface)");
+  });
+
+  it("barbecho: tallo y hojas apagados, petalos latentes, halo punteado y opacidad 0.65", () => {
+    expect(declarations(".sunflower--fallow .sf-stem")).toContain("stroke: var(--color-text-secondary)");
+    expect(declarations(".sunflower--fallow .sf-leaf")).toContain("fill: var(--color-text-secondary)");
+    expect(declarations(".sunflower--fallow .sf-petal-outer")).toContain(
+      "fill: var(--color-derived-dormant-petal-outer)",
+    );
+    expect(declarations(".sunflower--fallow .sf-petal-inner")).toContain(
+      "fill: var(--color-derived-dormant-petal-inner)",
+    );
+    expect(declarations(".sunflower--fallow .sunflower__halo")).toContain(
+      "border: 1.5px dashed var(--color-border-subtle)",
+    );
+    expect(declarations(".sunflower--fallow .sunflower__svg")).toContain("opacity: 0.65");
+  });
+
+  it("aura solar: borde de 2px en accent-primary y elementos en accent-primary", () => {
+    expect(declarations(".sunflower--bonus .sunflower__halo")).toContain(
+      "border: 2px solid var(--color-accent-primary)",
+    );
+    expect(declarations(".sf-aura__glow")).toContain("fill: var(--color-accent-primary)");
+    expect(declarations(".sf-aura__ring")).toContain("stroke: var(--color-accent-primary)");
+    expect(declarations(".sf-aura__dot")).toContain("fill: var(--color-accent-primary)");
+  });
+
+  it("solo la etapa activa es visible", () => {
+    expect(declarations(".sunflower__stage")).toContain("opacity: 0");
+    expect(declarations('.sunflower__stage[data-active="true"]')).toContain("opacity: 1");
+  });
+});
+
 describe("movimiento", () => {
   const outsideReducedMotion = css.replace(/@media[^{]*\{[\s\S]*$/, "");
 
