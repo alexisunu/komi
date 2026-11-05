@@ -3,6 +3,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.ai_companion.serializers import serialize_chat
 from apps.garden.serializers import BookSerializer
 from apps.profiles import services, sync
 from apps.profiles.models import ReaderProfile
@@ -95,5 +96,6 @@ class RestoreView(APIView):
                 "streak": streak_payload(profile),
                 "books": BookSerializer(data["books"], many=True).data,
                 "sessions": [serialize_session(s) for s in data["sessions"]],
+                "chats": [serialize_chat(c) for c in data["chats"]],
             }
         )

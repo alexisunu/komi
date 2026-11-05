@@ -5,5 +5,6 @@ from django.urls import include, path
 urlpatterns = [
     path("api/v1/profile/", include("apps.profiles.urls")),
     path("api/v1/garden/", include("apps.garden.urls")),
+    path("api/v1/companion/", include("apps.ai_companion.urls")),
     path("api/v1/", include("apps.reading_sessions.urls")),
 ]

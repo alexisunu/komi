@@ -12,6 +12,7 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
+from apps.ai_companion.models import ReflectionChat
 from apps.garden.models import BookGarden
 from apps.garden.services import resolve_status
 from apps.profiles.models import ReaderProfile
@@ -330,4 +331,20 @@ def restore_profile(profile_id) -> dict:
         .defer("extracted_epub_excerpt")
         .order_by("started_at_local", "id")
     )
-    return {"profile": profile, "books": list(books), "sessions": list(sessions)}
+    # Solo las charlas cerradas (con su semilla y mensajes) de sesiones validas: una charla
+    # abierta se retoma con companion/start/, que devuelve la existente (SRS 17, punto 20).
+    chats = (
+        ReflectionChat.objects.filter(
+            session__book__profile=profile,
+            session__session_status__in=streak_engine.VALID_STATUSES,
+            is_closed=True,
+        )
+        .prefetch_related("messages")
+        .order_by("session__started_at_local", "id")
+    )
+    return {
+        "profile": profile,
+        "books": list(books),
+        "sessions": list(sessions),
+        "chats": list(chats),
+    }
