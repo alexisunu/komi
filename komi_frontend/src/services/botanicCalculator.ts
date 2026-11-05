@@ -26,6 +26,14 @@ export function stageForProgress(percentage: number): GrowthStage {
   return "SEED_1";
 }
 
+/**
+ * Porcentaje entero para mostrar: truncado, nunca redondeado (99.99 -> 99), para que "100" solo
+ * aparezca al llegar de verdad al 100%. Un valor no finito cuenta como 0.
+ */
+export function wholePercent(percentage: number): number {
+  return Number.isFinite(percentage) ? Math.floor(truncateProgress(percentage)) : 0;
+}
+
 /** Numero de etapa (1 a 4) para la interfaz. */
 export function stageNumber(stage: GrowthStage): 1 | 2 | 3 | 4 {
   return { SEED_1: 1, STEM_2: 2, BUD_3: 3, BLOOM_4: 4 }[stage] as 1 | 2 | 3 | 4;

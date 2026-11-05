@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateGrowth, stageForProgress, stageNumber } from "./botanicCalculator";
+import { evaluateGrowth, stageForProgress, stageNumber, wholePercent } from "./botanicCalculator";
 
 describe("stageForProgress", () => {
   it.each([
@@ -84,5 +84,24 @@ describe("evaluateGrowth", () => {
     expect(evaluateGrowth({ ...base, previousProgress: 24.99, newProgress: 25 }).stage).toBe(
       "STEM_2",
     );
+  });
+});
+
+describe("wholePercent", () => {
+  it("trunca, no redondea: 99.99 sigue siendo 99", () => {
+    expect(wholePercent(99.99)).toBe(99);
+    expect(wholePercent(99.999)).toBe(99);
+    expect(wholePercent(33.33)).toBe(33);
+    expect(wholePercent(33.99)).toBe(33);
+    expect(wholePercent(24.99)).toBe(24);
+    expect(wholePercent(0)).toBe(0);
+    expect(wholePercent(100)).toBe(100);
+  });
+
+  it("acota y trata no finitos como 0", () => {
+    expect(wholePercent(-4)).toBe(0);
+    expect(wholePercent(250)).toBe(100);
+    expect(wholePercent(Number.NaN)).toBe(0);
+    expect(wholePercent(Number.POSITIVE_INFINITY)).toBe(0);
   });
 });
