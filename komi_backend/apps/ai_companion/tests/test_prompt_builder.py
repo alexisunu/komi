@@ -159,6 +159,32 @@ class TurnControlTests(SimpleTestCase):
     def test_turn_three_mentions_the_book_title(self):
         self.assertIn('"Kokoro"', build(turn=3).split(LAYER_SEPARATOR)[3])
 
+    def test_turns_three_and_four_state_the_real_sunflower_stage(self):
+        cases = [
+            ("0", "semilla"),
+            ("24.99", "semilla"),
+            ("25", "tallo"),
+            ("59.99", "tallo"),
+            ("60", "capullo"),
+            ("99.99", "capullo"),
+            ("100", "flor"),
+        ]
+        for progress, stage in cases:
+            for turn in (3, 4):
+                with self.subTest(progress=progress, turn=turn):
+                    book = make_book(progress_percentage=Decimal(progress))
+                    control = build(book, turn=turn).split(LAYER_SEPARATOR)[3]
+                    self.assertIn(f"ETAPA REAL DEL GIRASOL: {stage}.", control)
+                    self.assertIn("NO afirmes ni insinúes", control)
+                    others = {"semilla", "tallo", "capullo", "flor"} - {stage}
+                    for other in others:
+                        self.assertNotIn(f"ETAPA REAL DEL GIRASOL: {other}.", control)
+
+    def test_stage_is_not_injected_in_other_turns(self):
+        for turn in (1, 2, 5):
+            with self.subTest(turn=turn):
+                self.assertNotIn("ETAPA REAL DEL GIRASOL", build(turn=turn))
+
     def test_out_of_range_turns_are_clamped(self):
         self.assertIn("Turno 1 de 5", build(turn=0))
         self.assertIn("Turno 1 de 5", build(turn=-3))

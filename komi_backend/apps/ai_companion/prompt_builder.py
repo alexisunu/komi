@@ -9,6 +9,8 @@ atributos de ReadingSession / ReaderProfile, de modo que se pueda probar sin bas
 
 from decimal import Decimal
 
+from apps.garden.models import GrowthStage, stage_for_progress
+
 SEED_MARKER = "[SEMILLA_DEL_DIA]:"
 # Gemini espera que la conversacion empiece con un turno del usuario; la apertura local de Komi
 # es un turno del modelo, asi que se antepone este turno sintetico.
@@ -84,6 +86,19 @@ Debido a que las ediciones impresas varían en su paginación, NO asumas ni inve
 - En los Turnos 2 al 5: Una vez que el usuario mencione el tema o escena, utiliza tu conocimiento general sobre "{title}" de {author} junto con los detalles que el lector te compartió para profundizar sin adelantarte en la historia.
 """.strip()
 
+# Etapa real del girasol (CLAUDE.md 6: 0-24 semilla, 25-59 tallo, 60-99 capullo, 100 flor).
+STAGE_LABELS = {
+    GrowthStage.SEED_1: "semilla",
+    GrowthStage.STEM_2: "tallo",
+    GrowthStage.BUD_3: "capullo",
+    GrowthStage.BLOOM_4: "flor",
+}
+STAGE_INSTRUCTION = (
+    "ETAPA REAL DEL GIRASOL: {stage}. Si mencionas el girasol, describe únicamente esta etapa. "
+    "NO afirmes ni insinúes que está en otra etapa (por ejemplo, no digas que ha florecido "
+    "si no está en la etapa flor)."
+)
+
 # El Turno 1 se genera con plantillas locales (cero llamadas a la API); su entrada se conserva
 # aqui por fidelidad con el SRS y para tener el ciclo completo documentado.
 TURN_CONTROL_PROMPTS = {
@@ -98,10 +113,12 @@ Valida con empatía la respuesta del lector, aporta una observación breve o mat
     3: """
 ESTADO DEL CICLO ZEN: Turno 3 de 5 (Núcleo de Reflexión).
 Conecta lo que el usuario está diciendo con el tema central del libro "{title}" o con cómo aplica esa idea en su vida cotidiana. Cierra con una pregunta reflexiva.
+{stage_instruction}
 """.strip(),
     4: """
 ESTADO DEL CICLO ZEN: Turno 4 de 5 (Penúltimo Intercambio).
 Ofrece una perspectiva enriquecedora sobre su respuesta y plantea una última pregunta de síntesis que invite al lector a expresar su conclusión personal de la lectura de hoy.
+{stage_instruction}
 """.strip(),
     5: """
 ESTADO DEL CICLO ZEN: Turno 5 de 5 (Cierre del Ciclo Zen — OBLIGATORIO).
@@ -158,7 +175,10 @@ def build_komi_system_prompt(session, profile, current_turn: int) -> str:
         profile.ai_reflection_style, REFLECTION_STYLE_PROMPTS[DEFAULT_STYLE]
     )
     layer_3 = _build_literary_context(book, session)
-    layer_4 = TURN_CONTROL_PROMPTS[safe_turn].format(title=book.title)
+    stage = STAGE_LABELS[stage_for_progress(Decimal(str(book.progress_percentage)))]
+    layer_4 = TURN_CONTROL_PROMPTS[safe_turn].format(
+        title=book.title, stage_instruction=STAGE_INSTRUCTION.format(stage=stage)
+    )
     return LAYER_SEPARATOR.join([layer_1, layer_2, layer_3, layer_4])
 
 
