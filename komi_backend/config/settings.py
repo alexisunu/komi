@@ -97,6 +97,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "UNAUTHENTICATED_USER": None,
+    "EXCEPTION_HANDLER": "config.exception_handler.exception_handler",
 }
 
 # El SQL registrado por django.db.backends incluye los parametros (entre ellos el UUID del
@@ -106,3 +107,7 @@ LOGGING = {
     "disable_existing_loggers": False,
     "loggers": {"django.db.backends": {"level": "INFO"}},
 }
+
+# Cuerpo maximo de una peticion JSON: 2,5 MB (valor por defecto de Django, fijado de forma
+# explicita). Un lote de /profile/sync/ que lo supere responde 413 (SRS 17, punto 18).
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2_621_440

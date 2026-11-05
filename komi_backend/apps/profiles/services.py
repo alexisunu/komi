@@ -1,4 +1,4 @@
-"""Logica de negocio de perfiles. El algoritmo del plan de habito es SRS 5.1."""
+"""Logica de negocio de perfiles: algoritmo del plan de habito (SRS 5.1)."""
 
 from dataclasses import dataclass
 
