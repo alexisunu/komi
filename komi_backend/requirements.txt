@@ -1,5 +1,6 @@
-# uvicorn y django-cors-headers se agregan cuando se usen (Sprint 2, bloques posteriores).
+# uvicorn se agrega cuando se use (bloque 8 del Sprint 2).
 django>=5.2,<6
+django-cors-headers>=4.4
 djangorestframework>=3.15
 psycopg[binary]>=3.2
 python-dotenv>=1.0

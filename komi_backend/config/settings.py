@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from corsheaders.defaults import default_headers as default_cors_headers
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "corsheaders",
     "rest_framework",
     "apps.profiles",
     "apps.garden",
@@ -49,6 +51,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -77,3 +80,29 @@ STATIC_URL = "static/"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_PRIMARY_MODEL = os.environ.get("GEMINI_PRIMARY_MODEL", "")
 GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "")
+
+# CORS estricto (SRS 17, punto 1): solo los origenes del frontend listados en el entorno.
+# Sin cookies ni sesiones: la identificacion va en la cabecera X-Profile-Id.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_HEADERS = (*default_cors_headers, "x-profile-id")
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.profiles.authentication.ProfileIdAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
+    "UNAUTHENTICATED_USER": None,
+}
+
+# El SQL registrado por django.db.backends incluye los parametros (entre ellos el UUID del
+# perfil, que funciona como credencial). Se fija en INFO para que nunca llegue a los logs.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "loggers": {"django.db.backends": {"level": "INFO"}},
+}
