@@ -19,6 +19,7 @@ export interface SaveProfileInput {
 export interface ProfilePatch {
   theme_mode?: ThemeMode | null;
   daily_goal_minutes?: number;
+  preferred_moment?: PreferredMoment;
   ai_reflection_style?: AiReflectionStyle;
   onboarding_synced?: boolean;
 }

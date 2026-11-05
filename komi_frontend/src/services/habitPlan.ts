@@ -20,6 +20,22 @@ export interface OnboardingAnswers {
   q5: AnswerAC;
 }
 
+const AD = ["A", "B", "C", "D"];
+const AC = ["A", "B", "C"];
+
+/** Las 5 respuestas completas y validas (q5 solo admite A a C). */
+export function isCompleteAnswers(value: unknown): value is OnboardingAnswers {
+  if (typeof value !== "object" || value === null) return false;
+  const a = value as Record<string, unknown>;
+  return (
+    AD.includes(a["q1"] as string) &&
+    AD.includes(a["q2"] as string) &&
+    AD.includes(a["q3"] as string) &&
+    AD.includes(a["q4"] as string) &&
+    AC.includes(a["q5"] as string)
+  );
+}
+
 export interface HabitPlan {
   daily_goal_minutes: number;
   preferred_moment: PreferredMoment;
