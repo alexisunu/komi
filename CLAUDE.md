@@ -64,7 +64,10 @@ Frontend (Vitest): calculo de plan de habito (seccion 5.1), `botanicCalculator`,
   - Verificar: `python manage.py test` (crea y borra `test_komi_db`; el usuario necesita `CREATEDB`; añadir `--noinput` si quedó una base de pruebas de una corrida interrumpida), `ruff check .`, `ruff format --check .`, `python manage.py makemigrations --check --dry-run`.
   - Pruebas por área: `python manage.py test apps.ai_companion` (usa un cliente de Gemini falso, sin red ni cuota), `apps.profiles`, `apps.reading_sessions`, `apps.garden`. Las de concurrencia y desconexión usan `TransactionTestCase` y son más lentas.
   - Probar el SSE a mano (con uvicorn en marcha): `curl -N -X POST http://127.0.0.1:8000/api/v1/companion/<chat_id>/message/ -H "X-Profile-Id: <uuid>" -H "Content-Type: application/json" -d '{"content":"...","turn":1}'`. Usa una base de datos de pruebas, no la de desarrollo.
-- Frontend: `npm run dev`, `npm run build`, `npm run lint`, `npm run test`.
+- Frontend (desde `komi_frontend/`, requiere Node 20.19 o superior):
+  - Instalar: `npm install`.
+  - Ejecutar: `npm run dev`. Verificar: `npm run build` (incluye `tsc -b`), `npm run lint`, `npm run test` (Vitest, `fake-indexeddb` para Dexie).
+  - Versiones fijadas por Node 20: `vitest` 4 y `jsdom` 27 (las versiones 5 y 31 exigen Node 22); `typescript` 5.9 (`typescript-eslint` no admite la 6.1 o superior).
 
 ## 11. Prohibido sin aprobacion previa
 Cambiar el stack, agregar dependencias, alterar tokens de color, saltarse un sprint, borrar archivos, reescribir el SRS, o hacer commit de secretos.
