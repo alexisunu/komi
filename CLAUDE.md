@@ -69,6 +69,8 @@ Frontend (Vitest): calculo de plan de habito (seccion 5.1), `botanicCalculator`,
   - Instalar: `npm install`.
   - Servidor: copiar `.env.example` a `.env.local` y fijar `VITE_API_URL` (por ejemplo `http://127.0.0.1:8000`; en producción debe ser `https`). Sin valor la app funciona sin red y la cola de onboarding espera. El backend debe tener ese origen en `CORS_ALLOWED_ORIGINS`.
   - Ejecutar: `npm run dev`. Verificar: `npm run build` (incluye `tsc -b`), `npm run lint`, `npm run test` (Vitest, `fake-indexeddb` para Dexie).
+  - Probar la PWA sin conexión: `npm run build` y `npm run preview` (http://localhost:4173; el Service Worker solo existe en la versión de producción). Para que el backend local responda a ese origen, añadirlo a `CORS_ALLOWED_ORIGINS`.
+  - Iconos de la PWA: `node scripts/generate-icons.mjs` (un solo uso; requiere Edge o Chrome, o `EDGE_PATH`) regenera los PNG de `public/icons/` si cambia el girasol o los tokens.
   - Versiones fijadas por Node 20: `vitest` 4 y `jsdom` 27 (las versiones 5 y 31 exigen Node 22); `typescript` 5.9 (`typescript-eslint` no admite la 6.1 o superior).
 
 ## 11. Prohibido sin aprobacion previa
