@@ -842,3 +842,39 @@ Decisiones tomadas antes de iniciar la Fase 1 (Sprint 1) para resolver ambigüed
 10. **Límite de turnos.** Se modela con `CheckConstraint` de 1 a 5 en `turn_count` y `turn_number`. La lógica de bloqueo y cierre es de la Fase 2.
 11. **Archivos adicionales.** Se agregan `apps.py`, `__init__.py`, `migrations/` y carpetas de pruebas, exigidos por Django aunque no figuran en §13.3. No se crea `wsgi.py` (solo ASGI).
 12. **Dependencias aprobadas.** `python-dotenv` (lectura de `.env`) y `ruff` (linter, solo desarrollo). `django-cors-headers`, `google-genai` y `uvicorn` se incorporan en la Fase 2.
+
+
+# **17\. Decisiones de Sprint 2**
+
+Decisiones tomadas antes de iniciar la Fase 2 (Sprint 2). Fecha: 2026-11-04. En caso de conflicto con secciones anteriores sobre estos puntos, rige esta sección.
+
+1. **Identificación del lector.** Todo endpoint (salvo la creación del perfil en onboarding) identifica al lector con la cabecera `X-Profile-Id` (UUID del `ReaderProfile`). No se usan cookies ni sesiones de Django, por lo que no aplica CSRF. Cada endpoint verifica que libros, sesiones y charlas pertenezcan a ese perfil. Google Sign-In (RF-07) queda fuera del Sprint 2.
+   * CORS debe permitir la cabecera `X-Profile-Id` (`CORS_ALLOW_HEADERS`) con orígenes estrictos hacia el dominio del frontend.
+   * El UUID no se registra en logs: no se incluye en rutas ni parámetros de URL, no se vuelca la cabecera en ningún `LOGGING` y los mensajes de error no lo contienen.
+2. **Alcance.** Se implementan los 9 endpoints de §11.3 más `GET /api/v1/profile/sync/restore/` de §11.4, por bloques.
+3. **`POST /companion/start/`.** Devuelve JSON con la plantilla local del Turno 1 (cero llamadas a Gemini). El streaming SSE se usa solo en `POST /companion/{chat_id}/message/`. Si la `ReadingSession` no existe en el servidor, responde 404; el cliente debe sincronizar o completar la sesión antes.
+4. **Numeración de turnos.**
+   * Komi emite 5 mensajes (turnos 1 a 5) y el lector responde como máximo 4 veces. El Turno 1 es local; los turnos 2 a 5 son llamadas a Gemini (4 por charla).
+   * Cada mensaje de Komi lleva su `turn_number`. La respuesta del lector lleva el `turn_number` del turno al que responde.
+   * `turn_count` sube al guardar el mensaje de Komi. Con `turn_count == 5` o `is_closed`, cualquier mensaje nuevo se rechaza (un sexto turno es imposible) y no se llama a Gemini.
+   * Una prueba verifica que ese intento se rechaza.
+5. **Mensaje del Turno 1.** Plantillas locales en `prompt_builder.py` (EPUB y físico, tres estilos). El texto se aprueba antes de usarse.
+6. **EPUB sin extracto.** Si el libro es `EPUB` pero no hay `extracted_epub_excerpt`, se usa una plantilla de respaldo con título, autor y avance (sin página), en lugar de la plantilla de libro físico (defecto del ejemplo de §14.2).
+7. **Sincronización (`/profile/sync/`).**
+   * El esquema del lote JSON (`profile`, `books[]`, `sessions[]`) se define y documenta en la implementación.
+   * Progreso: `MAX(progress_percentage)`. El `last_epub_cfi` se toma literalmente del registro con el `updated_at` más reciente (§11.4). Consecuencia documentada: ese CFI puede quedar por detrás del progreso máximo si el registro más reciente es el de menor avance.
+   * Estado, título y autor: gana el `updated_at` más reciente enviado por el cliente.
+   * Sesiones: unión aditiva e idempotente por UUID; una sesión existente nunca se sobrescribe.
+   * Validación de sesiones: `EARLY_VALID` exige `actual_duration_sec >= 50%` de `planned_duration_sec`, salvo que el libro llegue al 100%. Coincide con RF-02 y FA-3.3 ("al menos el 50%"). §11.2 usa "tras superar el 50%"; se adopta la lectura "al menos" (mayor o igual) por ser la de dos requisitos normativos.
+   * La racha se recalcula con `streak_engine.recompute_from_dates` y `previous_longest`.
+8. **Progreso de la sesión.** Libro físico: el servidor recalcula `current_page / total_pages * 100`. EPUB: el servidor no puede derivarlo del CFI; acepta el porcentaje del cliente acotado entre el progreso previo y 100.
+9. **Marcador `[SEMILLA_DEL_DIA]:`.** El servidor lo detecta durante el streaming con un búfer (incluso partido entre fragmentos) y no lo envía al cliente como texto. El texto limpio se transmite y la frase final llega en el evento `done` (`key_takeaway`). Si el modelo no emite el marcador, `key_takeaway` queda nulo y la charla se cierra igualmente.
+10. **Dependencias aprobadas.** `google-genai`, `uvicorn` y `django-cors-headers`. Las pruebas usan un cliente falso, sin red.
+11. **Modelos de Gemini.** `GEMINI_PRIMARY_MODEL` y `GEMINI_FALLBACK_MODEL` se definen solo en `.env`. Los valores sugeridos de §14.4 se verifican contra la documentación oficial antes de ponerlos en `.env.example`.
+12. **Criterios adicionales.**
+    * Garden: la selección del "libro activo" del Dashboard es estado del cliente; `PATCH` solo cambia estado y metadatos.
+    * Estadísticas: semana ISO (lunes a domingo) por fecha local, solo sesiones válidas; "charlas completadas" son las cerradas (`is_closed`).
+    * Límites de entrada: mensaje del lector hasta 2000 caracteres; extracto EPUB hasta 20000.
+    * Onboarding: el servidor ejecuta el algoritmo de §5.1; el cliente lo repite offline y el servidor es la referencia.
+    * Fuera de v1.0: BYOK de §14.4 y límites de uso por perfil.
+13. **Orden de implementación.** `prompt_builder`, `gemini_client`, perfiles y onboarding, garden, `sessions/complete`, sync y restore, estadísticas y, por último, los endpoints del compañero.
