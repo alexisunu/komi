@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from apps.garden.models import BookGarden
 from apps.garden.serializers import BookCreateSerializer, BookSerializer, BookUpdateSerializer
+from apps.garden.services import resolve_status
 
 
 def _profile_books(request):
@@ -72,17 +73,6 @@ class BookDetailView(APIView):
             if field in changes:
                 setattr(book, field, changes[field])
         if "status" in changes:
-            book.status = self._resolve_status(book, changes["status"])
+            book.status = resolve_status(book, changes["status"])
         book.save()
         return Response(BookSerializer(book).data)
-
-    @staticmethod
-    def _resolve_status(book, requested):
-        """ACTIVE devuelve el libro a su estado natural: BLOOMED si esta al 100%."""
-        if requested != BookGarden.Status.ACTIVE:
-            return requested
-        if book.progress_percentage >= 100:
-            return BookGarden.Status.BLOOMED
-        if book.status == BookGarden.Status.GROWING:
-            return BookGarden.Status.GROWING
-        return BookGarden.Status.ACTIVE

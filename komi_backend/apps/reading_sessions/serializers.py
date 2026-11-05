@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import ErrorDetail
 
 from apps.reading_sessions.models import ReadingSession
 
@@ -72,7 +73,11 @@ class SessionPayloadSerializer(serializers.Serializer):
         limit = timezone.now() + MAX_LOCAL_CLOCK_LEAD
         if attrs["started_at_local"] > limit:
             raise serializers.ValidationError(
-                {"started_at_local": "La hora de inicio esta en el futuro."}
+                {
+                    "started_at_local": ErrorDetail(
+                        "La hora de inicio esta en el futuro.", code="future_start"
+                    )
+                }
             )
         return attrs
 

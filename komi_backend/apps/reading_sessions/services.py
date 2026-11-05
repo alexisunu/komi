@@ -17,7 +17,7 @@ from decimal import ROUND_DOWN, Decimal
 from django.db import transaction
 from django.http import Http404
 from django.utils import timezone
-from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.exceptions import APIException, ErrorDetail, ValidationError
 
 from apps.garden.models import BookGarden
 from apps.profiles.models import ReaderProfile
@@ -106,7 +106,12 @@ def _validated_status(data: dict, new_progress: Decimal, previous: Decimal) -> s
     if actual * 2 >= planned or (new_progress >= HUNDRED and previous < HUNDRED):
         return SessionStatus.EARLY_VALID
     raise ValidationError(
-        {"session_status": "La sesion no alcanza el 50% de la duracion programada."}
+        {
+            "session_status": ErrorDetail(
+                "La sesion no alcanza el 50% de la duracion programada.",
+                code="below_50_percent",
+            )
+        }
     )
 
 
@@ -153,6 +158,12 @@ def evaluate_session(book: BookGarden, data: dict, *, strict: bool) -> SessionOu
 def persist_session(book: BookGarden, data: dict, outcome: SessionOutcome) -> ReadingSession:
     """Aplica el resultado al libro (si la sesion es valida) y crea la sesion."""
     if outcome.is_valid:
+        changed = (
+            book.progress_percentage != outcome.new_progress
+            or book.current_page != outcome.new_page
+            or outcome.update_cfi
+            or outcome.just_bloomed
+        )
         book.progress_percentage = outcome.new_progress
         book.current_page = outcome.new_page
         if outcome.update_cfi:
@@ -160,7 +171,9 @@ def persist_session(book: BookGarden, data: dict, outcome: SessionOutcome) -> Re
         if outcome.just_bloomed:
             book.status = BookGarden.Status.BLOOMED
             book.completed_at = timezone.now()
-        book.save()
+        # Solo se guarda si algo cambio: updated_at decide los conflictos de la sync.
+        if changed:
+            book.save()
 
     excerpt = data.get("extracted_epub_excerpt")
     keep_excerpt = outcome.is_valid and book.format_type == BookGarden.FormatType.EPUB
@@ -191,7 +204,7 @@ def find_existing_session(profile: ReaderProfile, session_id) -> ReadingSession 
     if existing is None:
         return None
     if existing.book.profile_id != profile.id:
-        raise SessionConflict("Identificador de sesion no disponible.")
+        raise SessionConflict("Identificador de sesion no disponible.", code="id_conflict")
     return existing
 
 
