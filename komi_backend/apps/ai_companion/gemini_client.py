@@ -38,6 +38,10 @@ _ROLE_BY_SENDER = {
 }
 
 
+# Codigos HTTP que activan el modelo de respaldo si aun no se emitio texto.
+FALLBACK_STATUS_CODES = frozenset({429, 503})
+
+
 class GeminiError(Exception):
     """Error base del cliente de Gemini."""
 
@@ -172,12 +176,22 @@ class GeminiClient:
     ):
         self.primary_model = primary_model or settings.GEMINI_PRIMARY_MODEL
         self.fallback_model = fallback_model or settings.GEMINI_FALLBACK_MODEL
-        if not self.primary_model:
-            raise ImproperlyConfigured("Falta GEMINI_PRIMARY_MODEL en el entorno.")
+        key = api_key or settings.GEMINI_API_KEY
+        # Se nombran las variables que faltan (nunca su valor) para que el error sea accionable.
+        missing = [
+            name
+            for name, value in (
+                ("GEMINI_API_KEY", key if client is None else True),
+                ("GEMINI_PRIMARY_MODEL", self.primary_model),
+                ("GEMINI_FALLBACK_MODEL", self.fallback_model),
+            )
+            if not value
+        ]
+        if missing:
+            raise ImproperlyConfigured(
+                "Falta configurar en el entorno (.env): " + ", ".join(missing) + "."
+            )
         if client is None:
-            key = api_key or settings.GEMINI_API_KEY
-            if not key:
-                raise ImproperlyConfigured("Falta GEMINI_API_KEY en el entorno.")
             client = genai.Client(api_key=key)
         self._client = client
 
@@ -209,12 +223,16 @@ class GeminiClient:
             except GeminiError:
                 raise
             except errors.APIError as exc:
+                # 429 (cuota) y 503 (modelo saturado o no disponible) pasan al respaldo, pero
+                # solo si todavia no se emitio texto: despues el lector ya vio parte de la
+                # respuesta y no se puede cambiar de modelo a mitad.
+                if exc.code in FALLBACK_STATUS_CODES and not emitted and position + 1 < len(models):
+                    logger.warning(
+                        "Modelo principal no disponible (codigo %s); usando el de respaldo.",
+                        exc.code,
+                    )
+                    continue
                 if exc.code == 429:
-                    if not emitted and position + 1 < len(models):
-                        logger.warning(
-                            "Cuota agotada en el modelo principal; usando el de respaldo."
-                        )
-                        continue
                     raise GeminiQuotaError(_retry_after_seconds(exc)) from exc
                 logger.error("Error de la API de Gemini (codigo %s).", exc.code)
                 raise GeminiUnavailableError(f"Error de Gemini ({exc.code}).") from exc

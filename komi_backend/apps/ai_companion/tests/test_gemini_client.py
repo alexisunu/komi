@@ -33,9 +33,9 @@ def quota_error(**kwargs):
     return errors.ClientError(429, body, **kwargs)
 
 
-def server_error():
+def server_error(code=500):
     return errors.ServerError(
-        500, {"error": {"code": 500, "message": "boom", "status": "INTERNAL"}}
+        code, {"error": {"code": code, "message": "boom", "status": "INTERNAL"}}
     )
 
 
@@ -232,19 +232,19 @@ class FallbackTests(SimpleTestCase):
 
     async def test_retry_after_is_read_from_retry_info_details(self):
         extra = {"details": [{"@type": "RetryInfo", "retryDelay": "30s"}]}
-        client, _ = make_client({PRIMARY: {"on_call": quota_error(extra=extra)}}, fallback="")
+        client, _ = make_client({PRIMARY: {"on_call": quota_error(extra=extra)}}, fallback=PRIMARY)
         with self.assertRaises(GeminiQuotaError) as ctx:
             await collect(client.stream_reply("s", HISTORY))
         self.assertEqual(ctx.exception.retry_after, 30.0)
 
     async def test_retry_after_is_none_when_unknown(self):
-        client, _ = make_client({PRIMARY: {"on_call": quota_error()}}, fallback="")
+        client, _ = make_client({PRIMARY: {"on_call": quota_error()}}, fallback=PRIMARY)
         with self.assertRaises(GeminiQuotaError) as ctx:
             await collect(client.stream_reply("s", HISTORY))
         self.assertIsNone(ctx.exception.retry_after)
 
-    async def test_no_fallback_configured_raises_quota_error_after_one_call(self):
-        client, models = make_client({PRIMARY: {"on_call": quota_error()}}, fallback="")
+    async def test_single_model_quota_error_makes_one_call(self):
+        client, models = make_client({PRIMARY: {"on_call": quota_error()}}, fallback=PRIMARY)
         with self.assertRaises(GeminiQuotaError):
             await collect(client.stream_reply("s", HISTORY))
         self.assertEqual(len(models.calls), 1)
@@ -264,6 +264,54 @@ class FallbackTests(SimpleTestCase):
                 with self.assertRaises(GeminiUnavailableError):
                     await collect(client.stream_reply("s", HISTORY))
                 self.assertEqual(len(models.calls), 1)
+
+    async def test_503_when_opening_the_stream_switches_to_fallback(self):
+        client, models = make_client(
+            {PRIMARY: {"on_call": server_error(503)}, FALLBACK: {"items": ["de ", "respaldo"]}}
+        )
+        events = await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(events[-1], Finished("de respaldo", None, FALLBACK))
+        self.assertEqual([c["model"] for c in models.calls], [PRIMARY, FALLBACK])
+
+    async def test_503_on_the_first_chunk_switches_to_fallback(self):
+        client, models = make_client(
+            {PRIMARY: {"items": [server_error(503)]}, FALLBACK: {"items": ["ok"]}}
+        )
+        events = await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(events, [TextChunk("ok"), Finished("ok", None, FALLBACK)])
+        self.assertEqual(len(models.calls), 2)
+
+    async def test_503_after_text_was_emitted_does_not_switch_model(self):
+        client, models = make_client(
+            {PRIMARY: {"items": ["parcial", server_error(503)]}, FALLBACK: {"items": ["otro"]}}
+        )
+        received = []
+        with self.assertRaises(GeminiUnavailableError):
+            async for event in client.stream_reply("s", HISTORY):
+                received.append(event)
+        self.assertEqual(received, [TextChunk("parcial")])
+        self.assertEqual([c["model"] for c in models.calls], [PRIMARY])
+
+    async def test_503_on_both_models_is_unavailable_not_quota(self):
+        client, models = make_client(
+            {PRIMARY: {"on_call": server_error(503)}, FALLBACK: {"on_call": server_error(503)}}
+        )
+        with self.assertRaises(GeminiUnavailableError):
+            await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(len(models.calls), 2)
+
+    async def test_503_on_primary_and_429_on_fallback_reports_the_quota(self):
+        client, _ = make_client(
+            {PRIMARY: {"on_call": server_error(503)}, FALLBACK: {"on_call": quota_error()}}
+        )
+        with self.assertRaises(GeminiQuotaError):
+            await collect(client.stream_reply("s", HISTORY))
+
+    async def test_503_with_the_same_model_as_fallback_is_not_retried(self):
+        client, models = make_client({PRIMARY: {"on_call": server_error(503)}}, fallback=PRIMARY)
+        with self.assertRaises(GeminiUnavailableError):
+            await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(len(models.calls), 1)
 
     async def test_network_failures_are_wrapped(self):
         client, _ = make_client({PRIMARY: {"on_call": ConnectionError("sin red")}})
@@ -362,15 +410,48 @@ class ConfigurationTests(SimpleTestCase):
         client = GeminiClient()
         self.assertEqual((client.primary_model, client.fallback_model), ("p", "f"))
 
-    @override_settings(GEMINI_API_KEY="", GEMINI_PRIMARY_MODEL="p", GEMINI_FALLBACK_MODEL="")
-    def test_missing_api_key_is_a_configuration_error(self):
-        with self.assertRaises(ImproperlyConfigured):
+    def assert_missing(self, expected, **settings_values):
+        values = {
+            "GEMINI_API_KEY": "clave-secreta",
+            "GEMINI_PRIMARY_MODEL": "p",
+            "GEMINI_FALLBACK_MODEL": "f",
+        }
+        values.update(settings_values)
+        with override_settings(**values), self.assertRaises(ImproperlyConfigured) as ctx:
             GeminiClient()
+        message = str(ctx.exception)
+        for name in ("GEMINI_API_KEY", "GEMINI_PRIMARY_MODEL", "GEMINI_FALLBACK_MODEL"):
+            self.assertEqual(name in message, name in expected, f"{name} en: {message}")
+        self.assertNotIn("clave-secreta", message)
 
-    @override_settings(GEMINI_API_KEY="clave", GEMINI_PRIMARY_MODEL="", GEMINI_FALLBACK_MODEL="")
-    def test_missing_primary_model_is_a_configuration_error(self):
-        with self.assertRaises(ImproperlyConfigured):
-            GeminiClient()
+    def test_missing_api_key_names_the_variable(self):
+        self.assert_missing({"GEMINI_API_KEY"}, GEMINI_API_KEY="")
+
+    def test_missing_primary_model_names_the_variable(self):
+        self.assert_missing({"GEMINI_PRIMARY_MODEL"}, GEMINI_PRIMARY_MODEL="")
+
+    def test_missing_fallback_model_names_the_variable(self):
+        self.assert_missing({"GEMINI_FALLBACK_MODEL"}, GEMINI_FALLBACK_MODEL="")
+
+    def test_several_missing_variables_are_all_named(self):
+        self.assert_missing(
+            {"GEMINI_PRIMARY_MODEL", "GEMINI_FALLBACK_MODEL"},
+            GEMINI_PRIMARY_MODEL="",
+            GEMINI_FALLBACK_MODEL="",
+        )
+
+    def test_everything_missing_names_the_three(self):
+        self.assert_missing(
+            {"GEMINI_API_KEY", "GEMINI_PRIMARY_MODEL", "GEMINI_FALLBACK_MODEL"},
+            GEMINI_API_KEY="",
+            GEMINI_PRIMARY_MODEL="",
+            GEMINI_FALLBACK_MODEL="",
+        )
+
+    @override_settings(GEMINI_API_KEY="", GEMINI_PRIMARY_MODEL="", GEMINI_FALLBACK_MODEL="")
+    def test_an_injected_client_does_not_need_the_api_key(self):
+        client = GeminiClient(client=object(), primary_model="p", fallback_model="f")
+        self.assertEqual(client.primary_model, "p")
 
     def test_no_model_names_are_hardcoded_in_the_client(self):
         self.assertNotIn("gemini-", inspect.getsource(gemini_client))
