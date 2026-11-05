@@ -1,3 +1,7 @@
-"""Enrutador principal. Los endpoints /api/v1/... se agregan en el Sprint 2."""
+"""Enrutador principal (/api/v1/...). Cada bloque del Sprint 2 agrega sus rutas."""
 
-urlpatterns: list = []
+from django.urls import include, path
+
+urlpatterns = [
+    path("api/v1/profile/", include("apps.profiles.urls")),
+]
