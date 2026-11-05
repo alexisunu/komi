@@ -37,6 +37,17 @@ function dayToIso(day: number): string {
   return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
 
+/**
+ * Racha a mostrar hoy a partir de la racha que termina en `lastDate`: 0 si pasaron mas de 1 dia
+ * calendario sin leer. Con una fecha ilegible no se inventa un cero: se conserva la racha.
+ */
+export function effectiveStreak(current: number, lastDate: string | null, todayLocal: string): number {
+  if (lastDate === null) return 0;
+  const last = dayNumber(lastDate);
+  const today = dayNumber(todayLocal);
+  return last !== null && today !== null && today - last > 1 ? 0 : current;
+}
+
 export function computeStreak(
   sessions: readonly StreakSessionInput[],
   todayLocal: string,
@@ -64,13 +75,11 @@ export function computeStreak(
     last = day;
   }
 
-  const today = dayNumber(todayLocal);
-  // Con una fecha de hoy ilegible no se inventa un cero: se conserva la racha.
-  const effective = today !== null && today - last > 1 ? 0 : run;
+  const lastDate = dayToIso(last);
   return {
     current: run,
     longest: Math.max(previousLongest, longestRun),
-    last_date: dayToIso(last),
-    effective,
+    last_date: lastDate,
+    effective: effectiveStreak(run, lastDate, todayLocal),
   };
 }

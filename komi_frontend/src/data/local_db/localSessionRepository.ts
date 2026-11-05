@@ -125,11 +125,35 @@ export function createLocalSessionRepository(
     /** Sesiones sin enviar, en orden cronologico, para armar el lote de /profile/sync/. */
     listPendingSessions(): Promise<LocalSession[]> {
       return guardStorage(async () => {
-        const pending = await db.sessions.where("pending_sync").equals(1).toArray();
+        const pending = (await db.sessions.where("pending_sync").equals(1).toArray()).filter(
+          (session) => session.sync_rejection === null,
+        );
         return pending.sort((a, b) =>
           a.started_at_local < b.started_at_local ? -1 : a.started_at_local > b.started_at_local ? 1 : 0,
         );
       });
+    },
+
+    /**
+     * Rechazo PERMANENTE del servidor: la sesion no se borra (es del lector), pero sale de la cola
+     * de envio y queda marcada con el codigo, para excluirla de la racha local. Anula el extracto.
+     */
+    markSessionsRejected(entries: ReadonlyArray<{ id: string; code: string }>): Promise<void> {
+      return guardStorage(() =>
+        db.transaction("rw", db.sessions, async () => {
+          for (const { id, code } of entries) {
+            const session = await db.sessions.get(id);
+            if (session && session.sync_rejection !== code) {
+              await db.sessions.put({
+                ...session,
+                pending_sync: 0,
+                sync_rejection: code,
+                extracted_epub_excerpt: null,
+              });
+            }
+          }
+        }),
+      );
     },
 
     /**

@@ -10,8 +10,10 @@ export const META_KEYS = {
   onboardingPending: "onboarding_pending",
   /** JSON con el ultimo rechazo permanente (4xx) del POST de onboarding. */
   onboardingError: "onboarding_sync_error",
-  /** Racha actual. La escribe la sincronizacion (Fase 4); el cliente no la calcula (SRS 17). */
+  /** Racha actual a mostrar. La escribe la sincronizacion (valor del servidor) o la racha local (localStreak). */
   streakCurrent: "streak_current",
+  /** JSON { [book_id]: codigo } de libros con rechazo permanente del servidor: no se reenvian. */
+  syncBookRejections: "sync_book_rejections",
 } as const;
 
 export function createLocalMetaRepository(db: KomiDatabase = getDatabase()) {
