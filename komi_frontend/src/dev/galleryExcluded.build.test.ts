@@ -3,6 +3,8 @@ import { build } from "vite";
 import { describe, expect, it } from "vitest";
 import gallerySource from "./Gallery.tsx?raw";
 import { GALLERY_MARKER } from "./Gallery.tsx";
+import previewSource from "./ScreenPreview.tsx?raw";
+import { SCREEN_PREVIEW_MARKER } from "./ScreenPreview.tsx";
 
 // La galeria es solo para desarrollo: el build de produccion no debe incluirla.
 describe("la galeria de desarrollo no entra en el build de produccion", () => {
@@ -18,10 +20,13 @@ describe("la galeria de desarrollo no entra en el build de produccion", () => {
       expect(outputs.some((o) => o.fileName === "index.html")).toBe(true);
       expect(gallerySource).toContain(GALLERY_MARKER);
 
-      expect(outputs.map((o) => o.fileName).filter((n) => /gallery/i.test(n))).toEqual([]);
+      expect(previewSource).toContain(SCREEN_PREVIEW_MARKER);
+
+      expect(outputs.map((o) => o.fileName).filter((n) => /gallery|screens/i.test(n))).toEqual([]);
       for (const output of outputs) {
         const content = output.type === "chunk" ? output.code : String(output.source);
         expect(content, output.fileName).not.toContain(GALLERY_MARKER);
+        expect(content, output.fileName).not.toContain(SCREEN_PREVIEW_MARKER);
         expect(content, output.fileName).not.toContain("gallery-panel");
         expect(content, output.fileName).not.toContain("data-forced-state=\"pressed\"");
       }

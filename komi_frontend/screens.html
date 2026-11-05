@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <title>Komi - Pantallas (desarrollo)</title>
+    <style>
+      /* Marco de telefono: ancho real de 390 px aunque la ventana sea mas ancha (Edge headless no baja de ~500). */
+      body { margin: 0; background: gray; }
+      #root { width: 390px; height: 844px; overflow: hidden; transform: translateZ(0); }
+    </style>
+  </head>
+  <body>
+    <!-- Solo desarrollo: no se lista en build.rollupOptions.input, así que no entra en `npm run build`. -->
+    <div id="root"></div>
+    <script type="module" src="/src/dev/screensMain.tsx"></script>
+  </body>
+</html>
