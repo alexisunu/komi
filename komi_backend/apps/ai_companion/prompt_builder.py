@@ -157,3 +157,41 @@ def build_komi_system_prompt(session, profile, current_turn: int) -> str:
     layer_3 = _build_literary_context(book, session)
     layer_4 = TURN_CONTROL_PROMPTS[safe_turn].format(title=book.title)
     return LAYER_SEPARATOR.join([layer_1, layer_2, layer_3, layer_4])
+
+
+# --- Turno 1: apertura local (cero llamadas a Gemini; SRS 14.4, mitigacion nivel 1) ---
+
+OPENING_QUESTIONS = {
+    "MEMORY_QUIZ": "¿Qué escena o detalle de hoy recuerdas con más claridad?",
+    "DEEP_ANALYSIS": "¿Qué escena o idea de hoy te dejó pensando, y por qué?",
+    "KEY_SUMMARY": "Si tuvieras que resumir lo de hoy en una sola idea, ¿cuál sería?",
+}
+
+PHYSICAL_OPENING_TEMPLATE = (
+    "Gracias por regalarte este rato de calma con «{title}». "
+    "Tu girasol creció hasta el {progress}%{page_clause}. {question}"
+)
+EPUB_OPENING_TEMPLATE = (
+    "Gracias por regalarte este rato de calma con «{title}» de {author}. "
+    "Tu girasol creció hasta el {progress}%. {question}"
+)
+
+
+def build_opening_message(book, profile) -> str:
+    """Mensaje de Komi para el Turno 1, generado con plantillas locales.
+
+    El EPUB no cita el extracto: sin llamar a Gemini no se puede hacer con fiabilidad.
+    """
+    question = OPENING_QUESTIONS.get(profile.ai_reflection_style, OPENING_QUESTIONS[DEFAULT_STYLE])
+    progress = format_progress(book.progress_percentage)
+
+    if book.format_type == "EPUB":
+        return EPUB_OPENING_TEMPLATE.format(
+            title=book.title, author=book.author, progress=progress, question=question
+        )
+
+    page = getattr(book, "current_page", 0) or 0
+    page_clause = f" y llegaste a la página {page}" if page > 0 else ""
+    return PHYSICAL_OPENING_TEMPLATE.format(
+        title=book.title, progress=progress, page_clause=page_clause, question=question
+    )

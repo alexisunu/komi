@@ -8,6 +8,7 @@ from apps.ai_companion.prompt_builder import (
     MAX_EXCERPT_CHARS,
     SEED_MARKER,
     build_komi_system_prompt,
+    build_opening_message,
     format_progress,
 )
 
@@ -162,3 +163,62 @@ class TurnControlTests(SimpleTestCase):
         self.assertIn("Turno 1 de 5", build(turn=0))
         self.assertIn("Turno 1 de 5", build(turn=-3))
         self.assertIn("Turno 5 de 5", build(turn=9))
+
+
+class OpeningMessageTests(SimpleTestCase):
+    STYLES = {
+        "MEMORY_QUIZ": "¿Qué escena o detalle de hoy recuerdas con más claridad?",
+        "DEEP_ANALYSIS": "¿Qué escena o idea de hoy te dejó pensando, y por qué?",
+        "KEY_SUMMARY": "Si tuvieras que resumir lo de hoy en una sola idea, ¿cuál sería?",
+    }
+
+    def opening(self, book=None, style="MEMORY_QUIZ"):
+        return build_opening_message(book or make_book(), make_profile(style))
+
+    def test_physical_text_for_each_style(self):
+        for style, question in self.STYLES.items():
+            with self.subTest(style=style):
+                self.assertEqual(
+                    self.opening(style=style),
+                    "Gracias por regalarte este rato de calma con «Kokoro». "
+                    f"Tu girasol creció hasta el 45.5% y llegaste a la página 120. {question}",
+                )
+
+    def test_epub_text_for_each_style(self):
+        book = make_book(format_type="EPUB")
+        for style, question in self.STYLES.items():
+            with self.subTest(style=style):
+                self.assertEqual(
+                    self.opening(book, style),
+                    "Gracias por regalarte este rato de calma con «Kokoro» de Natsume Soseki. "
+                    f"Tu girasol creció hasta el 45.5%. {question}",
+                )
+
+    def test_physical_does_not_mention_the_author_and_epub_does(self):
+        self.assertNotIn("Natsume Soseki", self.opening())
+        self.assertIn("Natsume Soseki", self.opening(make_book(format_type="EPUB")))
+
+    def test_epub_does_not_mention_pages(self):
+        self.assertNotIn("página", self.opening(make_book(format_type="EPUB")))
+
+    def test_physical_without_page_omits_the_page_clause(self):
+        text = self.opening(make_book(current_page=0))
+        self.assertNotIn("página", text)
+        self.assertIn("Tu girasol creció hasta el 45.5%. ¿", text)
+
+    def test_unknown_style_falls_back_to_deep_analysis(self):
+        self.assertTrue(self.opening(style="OTRO").endswith(self.STYLES["DEEP_ANALYSIS"]))
+
+    def test_exactly_one_question_and_reasonable_length(self):
+        for fmt in ("EPUB", "PHYSICAL"):
+            for style in self.STYLES:
+                with self.subTest(format=fmt, style=style):
+                    text = self.opening(make_book(format_type=fmt), style)
+                    self.assertEqual(text.count("?"), 1)
+                    self.assertLessEqual(len(text.split()), 90)
+
+    def test_braces_in_titles_are_preserved_and_no_placeholders_remain(self):
+        text = self.opening(make_book(title="La {rareza}"))
+        self.assertIn("La {rareza}", text)
+        for placeholder in ("{author}", "{progress}", "{question}", "{page_clause}"):
+            self.assertNotIn(placeholder, text)
