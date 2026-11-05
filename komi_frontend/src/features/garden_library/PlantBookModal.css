@@ -1,0 +1,116 @@
+/* Contenido del modal "Plantar un libro". Solo tokens de core/theme. */
+
+.plant__tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.plant__tab {
+  flex: 1;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--transition-ui),
+    color var(--transition-ui),
+    border-color var(--transition-ui);
+}
+
+.plant__tab[aria-selected="true"] {
+  border-color: transparent;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+}
+
+.plant__tab:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+.plant__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.plant__form .zen-btn {
+  align-self: stretch;
+}
+
+.plant__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plant__field label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  font-weight: 700;
+}
+
+.plant__field input {
+  min-height: var(--touch-target);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-input);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  /* 16 px como minimo: con menos, Safari de iPhone acerca la pagina al enfocar. */
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.plant__field input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+.plant__field input:disabled {
+  opacity: 0.6;
+}
+
+.plant__status {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  text-align: center;
+}
+
+.plant__error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.plant__error p {
+  margin: 0;
+  color: var(--color-state-warning);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.plant__action {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plant__tab {
+    transition: none;
+  }
+}

@@ -31,7 +31,18 @@ export interface PlantPhysicalInput {
 /** Lo minimo de un `File` que se necesita (permite probar sin un File real). */
 export interface FileLike {
   size: number;
-  arrayBuffer(): Promise<ArrayBuffer>;
+  arrayBuffer?: () => Promise<ArrayBuffer>;
+}
+
+/** `Blob.arrayBuffer()` si existe; si no (WebKit antiguo, jsdom), `FileReader`. */
+function readBytes(file: FileLike): Promise<ArrayBuffer> {
+  if (typeof file.arrayBuffer === "function") return file.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error ?? new Error("No se pudo leer el archivo."));
+    reader.readAsArrayBuffer(file as Blob);
+  });
 }
 
 export function createPlantBookService(deps: PlantBookDeps) {
@@ -41,7 +52,7 @@ export function createPlantBookService(deps: PlantBookDeps) {
   async function prepareEpub(file: FileLike): Promise<PreparedEpub> {
     let data: ArrayBuffer;
     try {
-      data = await file.arrayBuffer();
+      data = await readBytes(file);
     } catch (error) {
       throw new EpubImportError("unreadable", error);
     }

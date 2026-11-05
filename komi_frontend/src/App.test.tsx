@@ -363,7 +363,7 @@ describe("navegacion y bloques", () => {
       texts.push(root.textContent ?? "");
     }
     for (const t of texts) expect(t).not.toMatch(/\p{Extended_Pictographic}/u);
-    expect(texts.join(" ")).toContain("Aquí crecerán tus libros");
+    expect(texts.join(" ")).toContain("Todavía no hay semillas plantadas");
     expect(texts.join(" ")).toContain("aparecerán aquí");
   });
 });

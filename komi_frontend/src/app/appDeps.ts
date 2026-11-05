@@ -4,32 +4,59 @@
 import type { KomiDatabase } from "../data/local_db/dexieDatabase";
 import { getDatabase } from "../data/local_db/dexieDatabase";
 import { createLocalBookRepository, systemClock } from "../data/local_db/localBookRepository";
+import { createLocalEpubRepository } from "../data/local_db/localEpubRepository";
 import { createLocalMetaRepository } from "../data/local_db/localMetaRepository";
 import { createLocalProfileRepository } from "../data/local_db/localProfileRepository";
+import { createLocalReflectionRepository } from "../data/local_db/localReflectionRepository";
 import { getApiClient, type ApiClient } from "../data/network/apiClient";
 import { createOnboardingSync } from "../data/network/onboardingSync";
+import { createSyncService } from "../data/network/syncService";
+import { createEpubService, type EpubService } from "../services/epubService";
 import { createOnboardingService } from "../services/onboardingService";
+import { createPlantBookService } from "../services/plantBookService";
 
 export interface AppOptions {
   db?: KomiDatabase;
   api?: ApiClient;
+  /** Solo para pruebas: motor de epubjs propio. */
+  epub?: Pick<EpubService, "inspect" | "generateLocations">;
   /** Aviso en consola si el servidor responde otra meta (solo desarrollo). */
   warnOnMismatch?: boolean;
 }
 
 export function createAppDeps(options: AppOptions = {}) {
   const db = options.db ?? getDatabase();
+  const api = options.api ?? getApiClient();
   const profiles = createLocalProfileRepository(db);
+  const books = createLocalBookRepository(db, systemClock);
+  const epubFiles = createLocalEpubRepository(db, systemClock);
+  const onboardingSync = createOnboardingSync({
+    db,
+    api,
+    profiles,
+    warnOnMismatch: options.warnOnMismatch ?? false,
+  });
   return {
     profiles,
     meta: createLocalMetaRepository(db),
-    books: createLocalBookRepository(db, systemClock),
+    books,
+    epubFiles,
+    reflections: createLocalReflectionRepository(db, systemClock),
     onboarding: createOnboardingService(db, systemClock, profiles),
-    sync: createOnboardingSync({
+    /** Cola del onboarding (POST /profile/onboarding/). */
+    sync: onboardingSync,
+    /** Libros y sesiones pendientes (POST /profile/sync/). */
+    syncService: createSyncService({
       db,
-      api: options.api ?? getApiClient(),
-      profiles,
-      warnOnMismatch: options.warnOnMismatch ?? false,
+      api,
+      clock: systemClock,
+      // Un 401 puede ser un onboarding aun en cola: se confirma y se reintenta una vez.
+      recoverUnauthorized: async () => (await onboardingSync.flush()).status === "synced",
+    }),
+    plant: createPlantBookService({
+      epub: options.epub ?? createEpubService(),
+      epubFiles,
+      books,
     }),
   };
 }

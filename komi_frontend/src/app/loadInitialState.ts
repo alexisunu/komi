@@ -7,7 +7,14 @@ export const STORAGE_WARNING =
 
 export type InitialState =
   | { status: "onboarding"; storageWarning: string | null }
-  | { status: "ready"; profile: LocalProfile; streakDays: number; book: LocalBook | null };
+  | {
+      status: "ready";
+      profile: LocalProfile;
+      streakDays: number;
+      book: LocalBook | null;
+      /** Todos los libros, del mas reciente al mas antiguo (Mi Jardin y Dashboard). */
+      books: LocalBook[];
+    };
 
 /**
  * Lee el perfil de Dexie: sin perfil, onboarding; con perfil, Dashboard. Si IndexedDB falla se
@@ -23,12 +30,9 @@ export async function loadInitialState(deps: Pick<AppDeps, "profiles" | "meta" |
   }
   if (!profile) return { status: "onboarding", storageWarning: null };
 
-  const [streakDays, book] = await Promise.all([
+  const [streakDays, books] = await Promise.all([
     deps.meta.getStreakCurrent().catch(() => 0),
-    deps.books
-      .listBooks({ statuses: ["ACTIVE", "GROWING", "FALLOW"] })
-      .then(pickActiveBook)
-      .catch(() => null),
+    deps.books.listBooks().catch((): LocalBook[] => []),
   ]);
-  return { status: "ready", profile, streakDays, book };
+  return { status: "ready", profile, streakDays, book: pickActiveBook(books), books };
 }

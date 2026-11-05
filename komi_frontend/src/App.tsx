@@ -7,10 +7,13 @@ import type { ThemeId } from "./core/theme/colorTokens";
 import { createAppDeps, type AppDeps, type AppOptions } from "./app/appDeps";
 import { loadInitialState, type InitialState } from "./app/loadInitialState";
 import { watchOnboardingSync } from "./data/network/onboardingSync";
+import { watchSync } from "./data/network/syncService";
 import { requestPersistentStorage } from "./pwa/persistStorage";
-import type { LocalProfile } from "./data/local_db/types";
+import type { LocalBook, LocalProfile } from "./data/local_db/types";
+import { pickActiveBook } from "./features/dashboard/activeBook";
 import { DashboardScreen } from "./features/dashboard/DashboardScreen";
 import { MyGardenScreen } from "./features/garden_library/MyGardenScreen";
+import { useLibrary } from "./features/garden_library/useLibrary";
 import { OnboardingScreen } from "./features/onboarding/OnboardingScreen";
 import { StatsScreen } from "./features/stats/StatsScreen";
 import type { CompleteOnboardingResult } from "./services/onboardingService";
@@ -83,6 +86,9 @@ function Session({ deps, initial }: SessionProps) {
     [deps, refreshProfile],
   );
 
+  // Sube libros y sesiones pendientes al abrir y cada vez que vuelve la red.
+  useEffect(() => watchSync(deps.syncService, window), [deps]);
+
   const persistTheme = useCallback(
     (mode: ThemeId) => {
       deps.profiles.updateProfile({ theme_mode: mode }).catch(() => {
@@ -127,6 +133,7 @@ function Session({ deps, initial }: SessionProps) {
         </>
       ) : (
         <MainApp
+          deps={deps}
           nav={nav}
           onNav={setNav}
           profile={profile}
@@ -138,13 +145,50 @@ function Session({ deps, initial }: SessionProps) {
 }
 
 interface MainAppProps {
+  deps: AppDeps;
   nav: NavId;
   onNav: (id: NavId) => void;
   profile: LocalProfile | null;
   initial: Extract<InitialState, { status: "ready" }> | null;
 }
 
-function MainApp({ nav, onNav, profile, initial }: MainAppProps) {
+function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
+  const library = useLibrary(deps, initial?.books ?? []);
+  const { reload } = library;
+  const activeBook = pickActiveBook(library.books);
+
+  // Al cambiar de pantalla se relee la biblioteca (por ejemplo, un .epub que el sistema purgo).
+  useEffect(() => {
+    void reload();
+  }, [nav, reload]);
+
+  // Escritura inmediata (SRS 11.4): tras un cambio se intenta subir, sin esperar ni bloquear.
+  const pushChanges = useCallback(() => {
+    deps.syncService.flush().catch(() => {});
+  }, [deps]);
+
+  const onPlanted = useCallback(() => {
+    void reload();
+    pushChanges();
+  }, [reload, pushChanges]);
+
+  const onSetStatus = useCallback(
+    async (book: LocalBook, status: "ACTIVE" | "FALLOW") => {
+      await deps.books.updateBook(book.id, { status });
+      await reload();
+      pushChanges();
+    },
+    [deps, reload, pushChanges],
+  );
+
+  const onReimport = useCallback(
+    async (book: LocalBook, file: File) => {
+      await deps.plant.reimportEpub(book.id, file);
+      await reload();
+    },
+    [deps, reload],
+  );
+
   return (
     <div className="app-shell">
       <div className="app-shell__screen">
@@ -152,11 +196,21 @@ function MainApp({ nav, onNav, profile, initial }: MainAppProps) {
           <DashboardScreen
             key={profile?.daily_goal_minutes}
             streakDays={initial?.streakDays ?? 0}
-            book={initial?.book ?? null}
+            book={activeBook}
             dailyGoalMinutes={profile?.daily_goal_minutes ?? 15}
           />
         )}
-        {nav === "jardin" && <MyGardenScreen />}
+        {nav === "jardin" && (
+          <MyGardenScreen
+            books={library.books}
+            missingFiles={library.missingFiles}
+            activeBookId={activeBook?.id ?? null}
+            plant={deps.plant}
+            onPlanted={onPlanted}
+            onSetStatus={onSetStatus}
+            onReimport={onReimport}
+          />
+        )}
         {nav === "estadisticas" && <StatsScreen />}
       </div>
       <div data-block="nav">

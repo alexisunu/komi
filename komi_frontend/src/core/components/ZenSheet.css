@@ -1,0 +1,65 @@
+/* Hoja inferior modal (SRS 10.5). Solo tokens de core/theme. */
+
+.zen-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  background: var(--color-derived-overlay);
+}
+
+.zen-sheet {
+  width: 100%;
+  max-height: 92dvh;
+  overflow-y: auto;
+  padding: var(--space-3) var(--screen-margin) calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  box-shadow: var(--shadow-modal);
+}
+
+.zen-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.zen-sheet__title {
+  margin: 0;
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
+.zen-sheet__title:focus {
+  outline: none;
+}
+
+.zen-sheet__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.zen-sheet__close:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zen-sheet__close:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
