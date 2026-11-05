@@ -40,21 +40,28 @@ describe("colorTokens", () => {
     expect(Object.keys(KOMOREBI.derived)).toEqual(Object.keys(TSUKIMI.derived));
   });
 
-  it("todos los valores son hex de 6 digitos y ninguno es negro ni blanco puro", () => {
+  it("todos los valores son hex y ninguno es negro ni blanco puro", () => {
     for (const theme of Object.values(THEMES)) {
-      for (const [, value] of themeEntries(theme)) {
-        expect(value).toMatch(/^#[0-9A-F]{6}$/);
-        expect(value).not.toBe("#000000");
-        expect(value).not.toBe("#FFFFFF");
+      for (const [name, value] of themeEntries(theme)) {
+        // Solo el velo (overlay) lleva alfa: 8 digitos. El resto, 6.
+        const pattern = name === "--color-derived-overlay" ? /^#[0-9A-F]{8}$/ : /^#[0-9A-F]{6}$/;
+        expect(value, name).toMatch(pattern);
+        expect(value.slice(0, 7)).not.toBe("#000000");
+        expect(value.slice(0, 7)).not.toBe("#FFFFFF");
       }
     }
+  });
+
+  it("el velo usa los valores aprobados y es mas opaco en oscuro (SRS 18, punto 25)", () => {
+    expect(KOMOREBI.derived.overlay).toBe("#2C302E59");
+    expect(TSUKIMI.derived.overlay).toBe("#181A18B3");
   });
 
   it("los derivados van con prefijo propio para distinguirlos de los oficiales", () => {
     const names = themeEntries(KOMOREBI).map(([name]) => name);
     expect(names).toContain("--color-bg-primary");
     expect(names).toContain("--color-derived-bg-halo");
-    expect(names.filter((n) => n.startsWith("--color-derived-"))).toHaveLength(6);
+    expect(names.filter((n) => n.startsWith("--color-derived-"))).toHaveLength(7);
   });
 });
 

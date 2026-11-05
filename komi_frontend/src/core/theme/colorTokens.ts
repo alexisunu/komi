@@ -29,6 +29,8 @@ export interface DerivedTokens {
   "dormant-petal-inner": string;
   /** Texto sobre `accent-primary`. En oscuro, `text-primary` (claro) no contrasta con el ambar. */
   "text-on-accent": string;
+  /** Velo detras de una hoja modal (Ajustes). Hex de 8 digitos: lleva la transparencia incluida. */
+  overlay: string;
 }
 
 export interface ThemeTokens {
@@ -55,6 +57,7 @@ export const KOMOREBI: ThemeTokens = {
     "dormant-petal-outer": "#9E988E",
     "dormant-petal-inner": "#B5AFA4",
     "text-on-accent": "#2C302E", // SRS 10.1
+    overlay: "#2C302E59", // text-primary claro al 35 %
   },
 };
 
@@ -77,6 +80,7 @@ export const TSUKIMI: ThemeTokens = {
     "dormant-petal-outer": "#9E988E",
     "dormant-petal-inner": "#B5AFA4",
     "text-on-accent": "#181A18", // = bg-primary oscuro; el prototipo lo usa en el centro del girasol
+    overlay: "#181A18B3", // bg-primary oscuro al 70 %
   },
 };
 
