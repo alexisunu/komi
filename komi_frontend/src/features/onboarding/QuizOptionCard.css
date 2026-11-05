@@ -1,0 +1,70 @@
+/* Tarjeta de opcion del cuestionario (SRS 10.4). Solo tokens de core/theme. */
+
+.quiz-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 60px;
+  padding: var(--space-1) var(--space-2);
+  border: 2px solid transparent;
+  border-radius: var(--radius-input);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--transition-ui),
+    border-color var(--transition-ui);
+}
+
+.quiz-option[data-selected="true"] {
+  background: var(--color-bg-primary);
+  border-color: var(--color-accent-secondary);
+}
+
+/* El radio nativo queda debajo de la tarjeta: invisible pero enfocable. */
+.quiz-option__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.quiz-option:has(.quiz-option__input:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+.quiz-option__label {
+  flex: 1;
+}
+
+.quiz-option__mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--color-text-secondary);
+  border-radius: 50%;
+  color: var(--color-bg-primary);
+  transition:
+    background-color var(--transition-ui),
+    border-color var(--transition-ui);
+}
+
+.quiz-option[data-selected="true"] .quiz-option__mark {
+  background: var(--color-accent-secondary);
+  border-color: var(--color-accent-secondary);
+}

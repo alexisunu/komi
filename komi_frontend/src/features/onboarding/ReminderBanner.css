@@ -1,0 +1,68 @@
+/* Banner amable del recordatorio: tarjeta de 20 px (SRS 9.4) sobre Piedra Suave. */
+
+.reminder-banner {
+  padding: var(--space-2);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.reminder-banner__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.reminder-banner__icon {
+  flex: none;
+  color: var(--color-accent-secondary);
+}
+
+.reminder-banner__title {
+  margin: 0;
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  font-weight: 700;
+}
+
+.reminder-banner__text {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.reminder-banner__error {
+  margin: var(--space-1) 0 0;
+  color: var(--color-state-warning);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.reminder-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.reminder-banner__dismiss {
+  min-height: var(--touch-target);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--font-caption-size);
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.reminder-banner__dismiss:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}

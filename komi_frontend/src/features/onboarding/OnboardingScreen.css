@@ -1,0 +1,185 @@
+/* Onboarding (CU-01). Maximo 4 bloques por pantalla y mucho espacio en blanco (CLAUDE.md 5).
+   Solo tokens y variables de core/theme. */
+
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(var(--space-3) + env(safe-area-inset-top)) var(--screen-margin)
+    calc(var(--space-3) + env(safe-area-inset-bottom));
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  transition: background-color var(--transition-theme);
+}
+
+.onboarding__center {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.onboarding__center--compact {
+  flex: none;
+}
+
+.onboarding__title {
+  margin: 0;
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
+.onboarding__lead {
+  max-width: 320px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}
+
+.onboarding__title:focus,
+.onboarding__question-title:focus {
+  outline: none;
+}
+
+/* Progreso. */
+.onboarding__progress-text {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  font-weight: var(--font-caption-weight);
+}
+
+.onboarding__category {
+  color: var(--color-accent-secondary);
+  font-weight: 700;
+}
+
+.onboarding__bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-surface);
+}
+
+.onboarding__bar-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-secondary);
+  transition: width var(--transition-ui);
+}
+
+/* Pregunta y opciones. */
+.onboarding__question {
+  flex: 1;
+}
+
+.onboarding__question-title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
+.onboarding__options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Acciones. */
+.onboarding__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.onboarding__actions--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.onboarding__actions--row .zen-btn--primary {
+  flex: 1;
+}
+
+.onboarding__error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-state-warning);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  text-align: center;
+}
+
+/* Resumen del plan. */
+.onboarding__summary {
+  padding: var(--space-2);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-surface);
+}
+
+.onboarding__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.onboarding__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.onboarding__row dt {
+  color: var(--color-text-secondary);
+}
+
+.onboarding__row dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+
+.onboarding__note {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.onboarding__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-accent-secondary);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.onboarding__link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
