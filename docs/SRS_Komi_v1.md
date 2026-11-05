@@ -590,7 +590,7 @@ komi_frontend/
     │   │   ├── localBookRepository.ts     # CRUD local de libros, estados y punteros CFI
     │   │   └── localSessionRepository.ts  # Guardado local de sesiones y cola de sincronización
     │   └── network/
-    │       ├── apiClient.ts               # Cliente HTTP/SSE hacia Django (con manejo de JWT)
+    │       ├── apiClient.ts               # Cliente HTTP/SSE hacia Django (cabecera X-Profile-Id, sin JWT; ver §18)
     │       └── syncService.ts             # Envía lotes pendientes a POST /api/v1/profile/sync/
     │
     ├── services/                          # MOTORES DE LÓGICA LOCAL
@@ -969,3 +969,26 @@ Decisiones tomadas antes de iniciar la Fase 2 (Sprint 2). Fecha: 2026-11-04. En 
     * **Configuración obligatoria.** `GEMINI_API_KEY`, `GEMINI_PRIMARY_MODEL` y `GEMINI_FALLBACK_MODEL` son obligatorias (antes el respaldo era opcional y su ausencia desactivaba el cambio de modelo en silencio). Si falta alguna, el servidor registra `Falta configurar en el entorno (.env): <variables>` con los nombres de las que faltan, nunca sus valores; el cliente solo recibe el evento `error unavailable`. Para usar un único modelo, repetir el mismo nombre en ambas variables.
     * **Verificación real.** Con `uvicorn` y `curl -N` los fragmentos llegan en vivo y con las cabeceras correctas; al cortar el cliente a mitad de la respuesta el generador se cancela, no se guarda nada y el candado queda libre; un segundo envío durante la respuesta recibe 409 `reply_in_progress`. Charla completa con la API real (base temporal, sin reintentos): 4 llamadas, todas respondidas por el modelo principal (`GEMINI_PRIMARY_MODEL`); respuestas de 58 a 77 palabras; la charla cerró con semilla, sin el marcador en el texto, y el restore devolvió la charla con sus 9 mensajes. Latencia hasta el primer fragmento: 7,2 s (primer turno, conexión en frío), 3,2 s, 2,5 s y 3,8 s; el RNF-03 (menos de 3 s) no se cumplió en 3 de las 4 respuestas de esa muestra y queda como punto a vigilar. Una prueba anterior recibió un 503 del principal y no guardó nada.
     * Archivos adicionales a §13.3: `apps/ai_companion/services.py` (reglas y candado), `streaming.py` (SSE), `serializers.py`, `views.py` y `urls.py`.
+
+
+# **18\. Decisiones de Sprint 3**
+
+Decisiones tomadas antes de iniciar la Fase 3 (Sprint 3). Fecha: 2026-11-05. En caso de conflicto con secciones anteriores sobre estos puntos, rige esta sección.
+
+1. **Alcance.** Lo de §15 (Fase 3) más lo mínimo para poder verificarlo: navegación inferior con los tres destinos y un Dashboard mínimo (zonas 1 a 3 de §6; el botón "Comenzar Lectura" aún sin acción). Mi Jardín y Estadísticas son pantallas vacías con su título. El lector, el chat y el sync completo son de la Fase 4. `epubjs` se instala en la Fase 4.
+2. **Bloques.** (1) Andamiaje, (2) sistema de diseño, (3) componentes base, (4) capa de datos local, (5) lógica pura con pruebas, (6) girasol, (7) onboarding y Dashboard mínimo, (8) PWA. Puntos de revisión tras los bloques 3, 6 y 8.
+3. **Tokens derivados.** Se añaden a `colorTokens.ts` en un grupo marcado como derivado (no son parte de §9.2 ni §9.5). Ninguno usa `#000000` ni `#FFFFFF`. Provienen del prototipo: `bg-halo` oscuro (`#1E211E`), `accent-pressed` oscuro (`#D4A146`) y los tonos de pétalo interior y de barbecho del girasol. `outerCanvas` se omite: es solo el marco del teléfono del prototipo. Los tokens de §9.2 y §9.5 no se modifican.
+4. **Girasol.** Solo la variación `clasica` más el estado de barbecho. Las variaciones `solar` y `otonal` del prototipo quedan fuera de v1.0.
+5. **Color en archivos que no son CSS.** `manifest` y `theme-color` se generan desde `colorTokens.ts` en `vite.config.ts`; no se duplican hex.
+6. **Tema inicial.** `preconfigure_tsukimi` del onboarding; si no existe, `prefers-color-scheme`. Un interruptor manual (ícono de Ajustes) lo persiste en Dexie. Ajustes es solo local en este sprint (FA-1.2 sigue sin endpoint).
+7. **Identificación.** `apiClient` usa la cabecera `X-Profile-Id` (§17.1), sin JWT. El comentario de §13.2 se corrige en consecuencia.
+8. **Copia del `profile_id` y recuperación.** En este sprint se guarda en IndexedDB y `localStorage`; la cookie de §11.4 se descarta por chocar con §17.15 (credencial expuesta a XSS). **Pendiente de Fase 5:** un mecanismo de recuperación del `profile_id` (por ejemplo, mostrarlo en Ajustes para que el lector lo guarde), porque sin el UUID el `restore` no sirve si Safari borra los datos locales.
+9. **Preguntas 1 y 4.** Solo alimentan las reglas de §5.1. Cualquier otro efecto (alertas del temporizador) se define en la Fase 4.
+10. **.ics.** Horas según la pregunta 3: 07:30, 15:00, 21:30 y 12:30. La descarga en una PWA instalada de iOS se valida en la Fase 5.
+11. **Perfil sin red y coincidencia con el servidor.** El cliente genera el UUID, calcula el plan, guarda en Dexie y encola `POST /profile/onboarding/`. Si el servidor responde otra meta, prevalece la del servidor con actualización silenciosa (§17.15). Una prueba verifica que el cálculo local y el del servidor coinciden para todas las combinaciones de respuestas, y en desarrollo se emite un aviso en consola si difieren.
+12. **Fuentes.** Lora y Plus Jakarta Sans autoalojadas en `public/fonts/` (`.woff2`), con sus archivos de licencia OFL.
+13. **Iconos PWA** (180, 192 y 512 px). Se generan desde el SVG del girasol con un script de un solo uso, sin agregar su herramienta a `package.json`.
+14. **Service Worker.** `autoUpdate` con precache del shell y de las fuentes; las llamadas a la API no se cachean. **Requisito para la Fase 4:** con el temporizador activo, una actualización del Service Worker no debe interrumpir ni recargar la sesión; la nueva versión se aplica al terminar o descartar la sesión.
+15. **Enrutador.** Por estado en `App.tsx`, sin `react-router`.
+16. **Dependencias aprobadas.** Producción: `react`, `react-dom`, `dexie`, `lucide-react`. Desarrollo: `vite`, `@vitejs/plugin-react`, `vite-plugin-pwa`, `typescript`, `vitest`, `jsdom`, `fake-indexeddb`, `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`. Opcional: `@testing-library/react`, solo si se prueban componentes.
+17. **Prompt de Gemini.** Los turnos 2 a 5 reciben la etapa real del girasol (`ETAPA REAL DEL GIRASOL`), porque la capa 1 menciona el girasol en todos los turnos. El Turno 1 es local y no la necesita.
