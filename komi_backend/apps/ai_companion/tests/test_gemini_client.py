@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, override_settings
-from google.genai import errors
+from google.genai import errors, types
 
 from apps.ai_companion import gemini_client
 from apps.ai_companion.gemini_client import (
@@ -12,6 +12,7 @@ from apps.ai_companion.gemini_client import (
     Finished,
     GeminiClient,
     GeminiQuotaError,
+    GeminiTruncatedError,
     GeminiUnavailableError,
     SeedMarkerFilter,
     TextChunk,
@@ -56,7 +57,11 @@ class FakeModels:
         for item in items:
             if isinstance(item, Exception):
                 raise item
-            yield SimpleNamespace(text=item)
+            if isinstance(item, dict):
+                candidate = SimpleNamespace(finish_reason=item["finish"])
+                yield SimpleNamespace(text=item.get("text"), candidates=[candidate])
+            else:
+                yield SimpleNamespace(text=item)
 
 
 def make_client(behaviors, fallback=FALLBACK):
@@ -89,7 +94,72 @@ class StreamingTests(SimpleTestCase):
         self.assertEqual(config.system_instruction, "PROMPT DE SISTEMA")
         self.assertEqual(config.max_output_tokens, MAX_OUTPUT_TOKENS)
         self.assertEqual(config.temperature, TEMPERATURE)
-        self.assertEqual((MAX_OUTPUT_TOKENS, TEMPERATURE), (220, 0.65))
+        self.assertEqual((MAX_OUTPUT_TOKENS, TEMPERATURE), (1024, 0.65))
+
+    async def test_limits_reasoning_with_thinking_level_and_not_thinking_budget(self):
+        client, models = make_client({PRIMARY: {"items": ["ok"]}})
+        await collect(client.stream_reply("s", HISTORY))
+        thinking = models.calls[0]["config"].thinking_config
+        self.assertEqual(thinking.thinking_level, types.ThinkingLevel.MINIMAL)
+        self.assertIsNone(thinking.thinking_budget)
+
+    async def test_same_generation_config_is_used_for_the_fallback_model(self):
+        client, models = make_client(
+            {PRIMARY: {"on_call": quota_error()}, FALLBACK: {"items": ["ok"]}}
+        )
+        await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(models.calls[0]["config"], models.calls[1]["config"])
+        self.assertEqual(
+            models.calls[1]["config"].thinking_config.thinking_level, types.ThinkingLevel.MINIMAL
+        )
+
+
+class TruncationTests(SimpleTestCase):
+    MAX = types.FinishReason.MAX_TOKENS
+    STOP = types.FinishReason.STOP
+
+    async def test_max_tokens_raises_and_never_finishes(self):
+        client, _ = make_client(
+            {PRIMARY: {"items": ["Esa soledad", {"text": " que", "finish": self.MAX}]}}
+        )
+        seen = []
+        with self.assertRaises(GeminiTruncatedError):
+            async for event in client.stream_reply("s", HISTORY):
+                seen.append(event)
+        self.assertFalse(any(isinstance(e, Finished) for e in seen))
+
+    async def test_max_tokens_with_empty_text_raises_truncated_not_empty(self):
+        client, _ = make_client({PRIMARY: {"items": [{"text": "", "finish": self.MAX}]}})
+        with self.assertRaises(GeminiTruncatedError):
+            await collect(client.stream_reply("s", HISTORY))
+
+    async def test_truncation_does_not_switch_to_the_fallback_model(self):
+        client, models = make_client(
+            {
+                PRIMARY: {"items": [{"text": "corto", "finish": self.MAX}]},
+                FALLBACK: {"items": ["no debe usarse"]},
+            }
+        )
+        with self.assertRaises(GeminiTruncatedError):
+            await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual([c["model"] for c in models.calls], [PRIMARY])
+
+    async def test_truncation_in_turn_five_does_not_yield_a_seed(self):
+        client, _ = make_client(
+            {PRIMARY: {"items": [f"Cierre. {SEED_MARKER} Una frase", {"finish": self.MAX}]}}
+        )
+        events = []
+        with self.assertRaises(GeminiTruncatedError):
+            async for event in client.stream_reply("s", HISTORY, extract_seed=True):
+                events.append(event)
+        self.assertFalse(any(isinstance(e, Finished) for e in events))
+
+    async def test_normal_stop_finish_reason_is_accepted(self):
+        client, _ = make_client(
+            {PRIMARY: {"items": ["Hola ", {"text": "mundo", "finish": self.STOP}]}}
+        )
+        events = await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(events[-1], Finished("Hola mundo", None, PRIMARY))
 
     async def test_chunks_without_text_are_skipped(self):
         client, _ = make_client({PRIMARY: {"items": [None, "", "texto", None]}})

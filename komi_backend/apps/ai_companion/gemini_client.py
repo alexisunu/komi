@@ -24,8 +24,13 @@ from apps.ai_companion.prompt_builder import SEED_MARKER, SESSION_START_USER_TUR
 logger = logging.getLogger(__name__)
 
 # Parametros de generacion de SRS 14.4.
-MAX_OUTPUT_TOKENS = 220
+# max_output_tokens incluye los tokens de razonamiento; 1024 es un colchon (SRS 17, punto 14).
+# La longitud de 50 a 90 palabras la controla el prompt, no este tope.
+MAX_OUTPUT_TOKENS = 1024
 TEMPERATURE = 0.65
+# Los modelos 3.x se controlan con thinking_level (no thinking_budget). "minimal" es el nivel
+# mas bajo documentado; no existe un valor para apagar el razonamiento por completo.
+THINKING_LEVEL = types.ThinkingLevel.MINIMAL
 
 _ROLE_BY_SENDER = {
     ReflectionMessage.Sender.KOMI_AI: "model",
@@ -47,6 +52,13 @@ class GeminiQuotaError(GeminiError):
 
 class GeminiUnavailableError(GeminiError):
     """Fallo de red, de la API o respuesta vacia."""
+
+
+class GeminiTruncatedError(GeminiError):
+    """La respuesta se corto por alcanzar max_output_tokens (finish_reason MAX_TOKENS).
+
+    El texto parcial no debe guardarse ni mostrarse como respuesta valida de Komi.
+    """
 
 
 @dataclass(frozen=True)
@@ -125,6 +137,13 @@ def build_contents(history: Sequence[tuple[str, str]]) -> list[types.Content]:
     return contents
 
 
+def _hit_max_tokens(chunk) -> bool:
+    return any(
+        getattr(candidate, "finish_reason", None) == types.FinishReason.MAX_TOKENS
+        for candidate in (getattr(chunk, "candidates", None) or [])
+    )
+
+
 def _retry_after_seconds(exc: errors.APIError) -> float | None:
     headers = getattr(getattr(exc, "response", None), "headers", None)
     if headers:
@@ -181,6 +200,9 @@ class GeminiClient:
                     if text:
                         emitted = True
                         yield model, text
+                    if _hit_max_tokens(chunk):
+                        logger.error("Respuesta de Gemini cortada por MAX_TOKENS.")
+                        raise GeminiTruncatedError("Respuesta cortada por max_output_tokens.")
                 if not emitted:
                     raise GeminiUnavailableError("Gemini devolvio una respuesta vacia.")
                 return
@@ -217,6 +239,7 @@ class GeminiClient:
             system_instruction=system_prompt,
             max_output_tokens=MAX_OUTPUT_TOKENS,
             temperature=TEMPERATURE,
+            thinking_config=types.ThinkingConfig(thinking_level=THINKING_LEVEL),
         )
         seed_filter = SeedMarkerFilter() if extract_seed else None
         parts: list[str] = []
