@@ -43,7 +43,7 @@ Una tarea esta terminada solo si: compila, pasa tests y lint, funciona sin conex
 
 ## 7. Gemini (backend unicamente)
 - La clave `GEMINI_API_KEY` vive solo en `.env` del backend. Nunca en el cliente, nunca en el repo.
-- Modelos por variables de entorno: `GEMINI_PRIMARY_MODEL` y `GEMINI_FALLBACK_MODEL`. Ante HTTP 429 del primario, cambiar al de respaldo en la misma peticion. No hardcodear nombres de modelo.
+- Modelos por variables de entorno: `GEMINI_PRIMARY_MODEL` y `GEMINI_FALLBACK_MODEL`. Ante HTTP 429 o 503 del primario (sin texto emitido aun), cambiar al de respaldo en la misma peticion. No hardcodear nombres de modelo.
 - Turno 1 sin costo: la apertura de Komi se genera con plantillas locales en `prompt_builder.py` (cero llamadas a la API). Las llamadas a Gemini empiezan cuando el lector responde (turnos 2 a 5).
 - El limite de 5 turnos lo aplica el backend: con `turn_count == 5` bloquear nuevos mensajes, extraer lo que sigue a `[SEMILLA_DEL_DIA]:` hacia `ReflectionChat.key_takeaway` y poner `is_closed = True`.
 - Los prompts viven solo en `prompt_builder.py`, segun la seccion 14 del SRS.
@@ -60,8 +60,10 @@ Frontend (Vitest): calculo de plan de habito (seccion 5.1), `botanicCalculator`,
 ## 10. Comandos (actualizar tras el Sprint 1 y el Sprint 3)
 - Backend (desde `komi_backend/`, con `.venv` activado; requiere PostgreSQL y `.env` copiado de `.env.example`):
   - Instalar: `pip install -r requirements-dev.txt`.
-  - Ejecutar: `python manage.py runserver`, `python manage.py migrate`, `python manage.py makemigrations`.
-  - Verificar: `python manage.py test` (crea y borra `test_komi_db`; el usuario necesita `CREATEDB`), `ruff check .`, `ruff format --check .`, `python manage.py makemigrations --check --dry-run`.
+  - Ejecutar: `python manage.py runserver`, `python manage.py migrate`, `python manage.py makemigrations`. `runserver` no transmite el SSE del chat en vivo: para probar el chat usar `uvicorn config.asgi:application --reload --port 8000`.
+  - Verificar: `python manage.py test` (crea y borra `test_komi_db`; el usuario necesita `CREATEDB`; añadir `--noinput` si quedó una base de pruebas de una corrida interrumpida), `ruff check .`, `ruff format --check .`, `python manage.py makemigrations --check --dry-run`.
+  - Pruebas por área: `python manage.py test apps.ai_companion` (usa un cliente de Gemini falso, sin red ni cuota), `apps.profiles`, `apps.reading_sessions`, `apps.garden`. Las de concurrencia y desconexión usan `TransactionTestCase` y son más lentas.
+  - Probar el SSE a mano (con uvicorn en marcha): `curl -N -X POST http://127.0.0.1:8000/api/v1/companion/<chat_id>/message/ -H "X-Profile-Id: <uuid>" -H "Content-Type: application/json" -d '{"content":"...","turn":1}'`. Usa una base de datos de pruebas, no la de desarrollo.
 - Frontend: `npm run dev`, `npm run build`, `npm run lint`, `npm run test`.
 
 ## 11. Prohibido sin aprobacion previa
