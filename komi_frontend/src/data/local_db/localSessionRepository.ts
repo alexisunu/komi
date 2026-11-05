@@ -93,6 +93,7 @@ export function createLocalSessionRepository(
             progress_delta: fromHundredths(outcome.deltaHundredths),
             granted_solar_bonus: outcome.grantedSolarBonus,
             pending_sync: 1,
+            sync_rejection: null,
           };
           await db.sessions.add(session);
           return { session, book: nextBook, created: true };

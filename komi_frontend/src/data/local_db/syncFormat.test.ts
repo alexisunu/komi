@@ -34,6 +34,7 @@ const session: LocalSession = {
   progress_delta: 3.5,
   granted_solar_bonus: true,
   pending_sync: 1,
+  sync_rejection: null,
 };
 
 describe("toSyncBook (SyncBookSerializer)", () => {

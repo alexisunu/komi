@@ -54,6 +54,33 @@ export interface LocalSession {
   progress_delta: number;
   granted_solar_bonus: boolean;
   pending_sync: PendingFlag;
+  /**
+   * Codigo del rechazo PERMANENTE del servidor (SRS 17.18) o null. La sesion no se borra: queda
+   * marcada, sale de la cola de envio y no cuenta para la racha local.
+   */
+  sync_rejection: string | null;
+}
+
+/** El .epub vive en el dispositivo (SRS 6 y CLAUDE.md); el servidor nunca lo recibe. */
+export interface LocalEpubFile {
+  book_id: string;
+  /** Bytes del archivo. Se guarda como ArrayBuffer (mas fiable que Blob en IndexedDB de Safari). */
+  data: ArrayBuffer;
+  size_bytes: number;
+  /** JSON de `book.locations.save()` de epubjs; null mientras se preparan. */
+  locations: string | null;
+  created_at: string;
+}
+
+/** Charla con Komi de una sesion y su semilla del dia (SRS 10.3, 17.20). */
+export interface LocalReflection {
+  chat_id: string;
+  session_id: string;
+  book_id: string;
+  turn_count: number;
+  is_closed: boolean;
+  key_takeaway: string | null;
+  updated_at: string;
 }
 
 /** Fila unica (id "local"): perfil del lector y ajustes locales. */
