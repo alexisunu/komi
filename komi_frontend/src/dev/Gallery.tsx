@@ -4,6 +4,10 @@ import { StreakBadge } from "../core/components/StreakBadge";
 import { TimerStepperButton } from "../core/components/TimerStepperButton";
 import { ZenPrimaryButton } from "../core/components/ZenPrimaryButton";
 import type { ThemeId } from "../core/theme/colorTokens";
+import {
+  SunflowerStageWidget,
+  sunflowerLabel,
+} from "../features/dashboard/SunflowerStageWidget";
 import "./gallery.css";
 
 /** Texto unico que `galleryExcluded.build.test.ts` busca en el build de produccion. */
@@ -28,6 +32,80 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
     <div className="gallery-row">
       <span className="gallery-row__label">{label}</span>
       <div className="gallery-row__items">{children}</div>
+    </div>
+  );
+}
+
+
+const STAGE_SAMPLES: Array<{ name: string; percentage: number }> = [
+  { name: "Semilla", percentage: 12 },
+  { name: "Tallo", percentage: 45 },
+  { name: "Capullo", percentage: 80 },
+  { name: "Flor", percentage: 100 },
+];
+
+/** Porcentajes de borde: el cambio de etapa ocurre justo en 25, 60 y 100. */
+const BOUNDARY_SAMPLES = [24.99, 25, 59.99, 60, 99.99, 100];
+
+function Figure({ caption, children }: { caption: string; children: ReactNode }) {
+  return (
+    <figure className="gallery-figure">
+      {children}
+      <figcaption className="gallery-figure__caption">{caption}</figcaption>
+    </figure>
+  );
+}
+
+function SunflowerPlayground({ id }: { id: string }) {
+  const [percentage, setPercentage] = useState(30);
+  const [fallow, setFallow] = useState(false);
+  const [solarBonus, setSolarBonus] = useState(false);
+  const sliderId = `${id}-slider`;
+
+  return (
+    <div className="gallery-playground">
+      <SunflowerStageWidget percentage={percentage} fallow={fallow} solarBonus={solarBonus} />
+      <p className="gallery-playground__label">{sunflowerLabel(percentage, { fallow, solarBonus })}</p>
+      <label className="gallery-playground__slider" htmlFor={sliderId}>
+        <span>Progreso</span>
+        <input
+          id={sliderId}
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={Math.floor(percentage)}
+          onChange={(event) => setPercentage(Number(event.target.value))}
+        />
+        <output className="tabular">{percentage}%</output>
+      </label>
+      <div className="gallery-playground__chips">
+        {BOUNDARY_SAMPLES.map((value) => (
+          <button
+            key={value}
+            type="button"
+            className="gallery-chip tabular"
+            aria-pressed={percentage === value}
+            onClick={() => setPercentage(value)}
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+      <div className="gallery-playground__toggles">
+        <label>
+          <input type="checkbox" checked={fallow} onChange={(e) => setFallow(e.target.checked)} />{" "}
+          En barbecho
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={solarBonus}
+            onChange={(e) => setSolarBonus(e.target.checked)}
+          />{" "}
+          Bono de Vitalidad Solar
+        </label>
+      </div>
     </div>
   );
 }
@@ -118,6 +196,33 @@ function ThemePanel({ theme }: { theme: ThemeId }) {
         <Row label="Deshabilitado">
           <TimerStepperButton direction="decrement" aria-label="Reducir tiempo" disabled />
           <TimerStepperButton direction="increment" aria-label="Aumentar tiempo" disabled />
+        </Row>
+      </Section>
+
+      <Section title="SunflowerStageWidget (girasol)">
+        <Row label="Las 4 etapas: 12, 45, 80 y 100 por ciento">
+          {STAGE_SAMPLES.map(({ name, percentage }) => (
+            <Figure key={name} caption={`${name} ${percentage}%`}>
+              <SunflowerStageWidget percentage={percentage} size={72} />
+            </Figure>
+          ))}
+        </Row>
+        <Row label="En barbecho (45 y 80 por ciento) y la flor, que lo ignora">
+          <SunflowerStageWidget percentage={45} fallow size={112} />
+          <SunflowerStageWidget percentage={80} fallow size={112} />
+          <SunflowerStageWidget percentage={100} fallow size={112} />
+        </Row>
+        <Row label="Bono de Vitalidad Solar (avance menor al 1 por ciento)">
+          <SunflowerStageWidget percentage={12} solarBonus size={112} />
+        </Row>
+        <Row label="Miniatura de 48 px (tarjeta de Mi Jardín)">
+          {STAGE_SAMPLES.map(({ name, percentage }) => (
+            <SunflowerStageWidget key={name} percentage={percentage} mini />
+          ))}
+          <SunflowerStageWidget percentage={45} mini fallow />
+        </Row>
+        <Row label="Tamaño completo (220 px) con control de 0 a 100">
+          <SunflowerPlayground id={`sunflower-${theme}`} />
         </Row>
       </Section>
 
