@@ -159,7 +159,7 @@ class TurnControlTests(SimpleTestCase):
     def test_turn_three_mentions_the_book_title(self):
         self.assertIn('"Kokoro"', build(turn=3).split(LAYER_SEPARATOR)[3])
 
-    def test_turns_three_and_four_state_the_real_sunflower_stage(self):
+    def test_turns_two_to_five_state_the_real_sunflower_stage(self):
         cases = [
             ("0", "semilla"),
             ("24.99", "semilla"),
@@ -170,7 +170,7 @@ class TurnControlTests(SimpleTestCase):
             ("100", "flor"),
         ]
         for progress, stage in cases:
-            for turn in (3, 4):
+            for turn in (2, 3, 4, 5):
                 with self.subTest(progress=progress, turn=turn):
                     book = make_book(progress_percentage=Decimal(progress))
                     control = build(book, turn=turn).split(LAYER_SEPARATOR)[3]
@@ -180,10 +180,9 @@ class TurnControlTests(SimpleTestCase):
                     for other in others:
                         self.assertNotIn(f"ETAPA REAL DEL GIRASOL: {other}.", control)
 
-    def test_stage_is_not_injected_in_other_turns(self):
-        for turn in (1, 2, 5):
-            with self.subTest(turn=turn):
-                self.assertNotIn("ETAPA REAL DEL GIRASOL", build(turn=turn))
+    def test_stage_is_not_injected_in_the_local_opening_turn(self):
+        # El Turno 1 nunca se envia a Gemini (plantilla local), asi que no lleva la etapa.
+        self.assertNotIn("ETAPA REAL DEL GIRASOL", build(turn=1))
 
     def test_out_of_range_turns_are_clamped(self):
         self.assertIn("Turno 1 de 5", build(turn=0))

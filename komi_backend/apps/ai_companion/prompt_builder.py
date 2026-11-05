@@ -109,6 +109,7 @@ Este es el primer mensaje tras concluir el temporizador de lectura. Da una bienv
     2: """
 ESTADO DEL CICLO ZEN: Turno 2 de 5 (Exploración Inicial).
 Valida con empatía la respuesta del lector, aporta una observación breve o matiz literario sobre lo que acaba de comentar y formula una pregunta de seguimiento para profundizar.
+{stage_instruction}
 """.strip(),
     3: """
 ESTADO DEL CICLO ZEN: Turno 3 de 5 (Núcleo de Reflexión).
@@ -126,6 +127,7 @@ Este es el ÚLTIMO turno de la sesión.
 1. NO hagas más preguntas abiertas.
 2. Agradece al lector por este momento de calma, elogia su constancia de hoy e integra sus ideas en una conclusión cálida.
 3. Al final de tu respuesta, añade exactamente el marcador [SEMILLA_DEL_DIA]: seguido de una sola frase inspiradora (máximo 20 palabras) que resuma el aprendizaje de la charla para guardarlo en la base de datos (campo key_takeaway).
+{stage_instruction}
 """.strip(),
 }
 
