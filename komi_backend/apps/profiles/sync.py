@@ -217,10 +217,7 @@ def _recompute_streak(profile: ReaderProfile) -> None:
     dates = (
         ReadingSession.objects.filter(
             book__profile=profile,
-            session_status__in=[
-                ReadingSession.SessionStatus.COMPLETED,
-                ReadingSession.SessionStatus.EARLY_VALID,
-            ],
+            session_status__in=streak_engine.VALID_STATUSES,
         )
         .annotate(local_date=TruncDate("started_at_local", tzinfo=UTC))
         .values_list("local_date", flat=True)

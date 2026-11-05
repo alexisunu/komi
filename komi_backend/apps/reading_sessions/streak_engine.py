@@ -17,7 +17,7 @@ from decimal import Decimal
 from apps.garden.models import BookGarden
 from apps.reading_sessions.models import ReadingSession
 
-_VALID_STATUSES = frozenset(
+VALID_STATUSES = frozenset(
     {
         ReadingSession.SessionStatus.COMPLETED,
         ReadingSession.SessionStatus.EARLY_VALID,
@@ -42,7 +42,7 @@ def session_local_date(started_at_local: datetime) -> date:
 
 def is_valid_status(status: str) -> bool:
     """Solo COMPLETED y EARLY_VALID cuentan para la racha."""
-    return status in _VALID_STATUSES
+    return status in VALID_STATUSES
 
 
 def apply_session(state: StreakState, session_date: date) -> StreakState:
