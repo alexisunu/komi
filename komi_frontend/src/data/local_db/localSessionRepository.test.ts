@@ -424,6 +424,19 @@ describe("consultas", () => {
     expect(list.map((s) => s.started_at_local)).toEqual(["2026-11-03T08:00:00", "2026-11-05T21:00:00"]);
   });
 
+  it("listSessionsBetween incluye ambos extremos del rango", async () => {
+    const book = await physicalBook();
+    for (const [i, at] of ["2026-11-04T23:59:59", "2026-11-05T00:00:00", "2026-11-05T12:00:00", "2026-11-05T23:59:59", "2026-11-06T00:00:00"].entries()) {
+      await sessions.completeSession(session(book.id, { started_at_local: at, current_page: 10 + i }));
+    }
+    const day = await sessions.listSessionsBetween("2026-11-05T00:00:00", "2026-11-05T23:59:59");
+    expect(day.map((x) => x.started_at_local)).toEqual([
+      "2026-11-05T00:00:00",
+      "2026-11-05T12:00:00",
+      "2026-11-05T23:59:59",
+    ]);
+  });
+
   it("listPendingSessions ordena por hora local de inicio", async () => {
     const book = await physicalBook();
     await sessions.completeSession(session(book.id, { started_at_local: "2026-11-05T09:00:00", current_page: 20 }));
