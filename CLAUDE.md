@@ -67,6 +67,7 @@ Frontend (Vitest): calculo de plan de habito (seccion 5.1), `botanicCalculator`,
   - Casos compartidos del plan de hábito: si cambia el algoritmo de `apps/profiles/services.py`, regenerar `komi_frontend/src/shared/fixtures/habitPlanCases.json` con `python manage.py dump_habit_plan_cases` y actualizar `komi_frontend/src/services/habitPlan.ts`. `python manage.py dump_habit_plan_cases --check` falla si el archivo está desactualizado (la prueba `test_habit_plan_cases` hace lo mismo). El archivo no se edita a mano.
 - Frontend (desde `komi_frontend/`, requiere Node 20.19 o superior):
   - Instalar: `npm install`.
+  - Servidor: copiar `.env.example` a `.env.local` y fijar `VITE_API_URL` (por ejemplo `http://127.0.0.1:8000`; en producción debe ser `https`). Sin valor la app funciona sin red y la cola de onboarding espera. El backend debe tener ese origen en `CORS_ALLOWED_ORIGINS`.
   - Ejecutar: `npm run dev`. Verificar: `npm run build` (incluye `tsc -b`), `npm run lint`, `npm run test` (Vitest, `fake-indexeddb` para Dexie).
   - Versiones fijadas por Node 20: `vitest` 4 y `jsdom` 27 (las versiones 5 y 31 exigen Node 22); `typescript` 5.9 (`typescript-eslint` no admite la 6.1 o superior).
 
