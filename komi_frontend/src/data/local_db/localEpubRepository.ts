@@ -29,11 +29,13 @@ export function createLocalEpubRepository(
     /**
      * Planta un libro EPUB: crea el libro y guarda su archivo en UNA transaccion. Si no cabe
      * (`StorageQuotaError`) o falla otra cosa, no queda ni el libro ni el archivo a medias.
+     * Las `locations` (si ya estan listas) se guardan en la misma transaccion.
      * Idempotente por id: si el libro ya existe, no se toca su archivo.
      */
     async plantEpubBook(
       input: Omit<CreateBookInput, "format_type">,
       data: ArrayBuffer,
+      locations: string | null = null,
     ): Promise<PlantedEpub> {
       assertBytes(data);
       return await guardStorage(() =>
@@ -46,7 +48,7 @@ export function createLocalEpubRepository(
             book_id: book.id,
             data,
             size_bytes: data.byteLength,
-            locations: null,
+            locations,
             created_at: clock.now().toISOString(),
           });
           return { book, created: true };
