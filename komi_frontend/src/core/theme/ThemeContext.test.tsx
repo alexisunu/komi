@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { THEMES } from "./colorTokens";
 import { ThemeProvider, useTheme } from "./ThemeContext";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -82,5 +83,24 @@ describe("ThemeProvider", () => {
     act(() => container.querySelector("button")?.click());
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(onModeChange).toHaveBeenCalledWith("dark");
+  });
+
+  it("el theme-color sigue al tema activo, tambien si el lector contradice al sistema", () => {
+    mockSystemDark(false);
+    const meta = document.createElement("meta");
+    meta.setAttribute("name", "theme-color");
+    meta.setAttribute("content", "x");
+    document.head.appendChild(meta);
+    act(() =>
+      root.render(
+        <ThemeProvider>
+          <Probe />
+        </ThemeProvider>,
+      ),
+    );
+    expect(meta.getAttribute("content")).toBe(THEMES.light.brand["bg-primary"]);
+    act(() => container.querySelector("button")?.click());
+    expect(meta.getAttribute("content")).toBe(THEMES.dark.brand["bg-primary"]);
+    meta.remove();
   });
 });

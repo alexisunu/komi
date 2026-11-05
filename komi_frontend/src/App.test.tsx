@@ -99,6 +99,43 @@ async function seedProfile(goal = 30) {
 const okFetch = () => vi.fn<typeof fetch>(async () => reply({}));
 const ANSWERS = ["B", "B", "A", "A", "B"];
 
+describe("almacenamiento persistente", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "storage");
+  });
+
+  function stubStorage(persist: () => Promise<boolean>) {
+    Object.defineProperty(navigator, "storage", {
+      value: { persist, persisted: async () => false },
+      configurable: true,
+    });
+  }
+
+  it("pide persistencia al arrancar y guarda el resultado en meta", async () => {
+    const persist = vi.fn(async () => true);
+    stubStorage(persist);
+    mountApp(vi.fn<typeof fetch>());
+    await settle();
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(await createLocalMetaRepository(db).get("storage_persist_result")).toBe("granted");
+  });
+
+  it("registra el resultado en consola", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    stubStorage(async () => false);
+    mountApp(vi.fn<typeof fetch>());
+    await settle();
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("denied"));
+  });
+
+  it("si el navegador no la ofrece, la app arranca igual", async () => {
+    const root = mountApp(vi.fn<typeof fetch>());
+    await settle();
+    expect(root.textContent).toContain("Bienvenido a Komi");
+    expect(await createLocalMetaRepository(db).get("storage_persist_result")).toBe("unsupported");
+  });
+});
+
 describe("arranque", () => {
   it("muestra 'Cargando' y luego el onboarding si no hay perfil", async () => {
     const root = mountApp(vi.fn<typeof fetch>());

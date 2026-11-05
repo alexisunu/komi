@@ -44,6 +44,12 @@ describe("resolveApiBase", () => {
     }
   });
 
+  it("la excepcion de localhost (npm run preview) no abre otros hosts", () => {
+    for (const host of ["localhost.evil.com:4173", "evil-localhost:4173", "127.0.0.1.evil.com", "10.0.0.5:8000"]) {
+      expect(resolveApiBase(`http://${host}`, true).base).toBeNull();
+    }
+  });
+
   it("en desarrollo admite http en la red local", () => {
     expect(resolveApiBase("http://192.168.1.20:8000", false).base).toBe("http://192.168.1.20:8000");
   });

@@ -10,6 +10,7 @@ import {
 import type { ThemeId } from "./colorTokens";
 import { resolveTheme } from "./resolveTheme";
 import { THEME_ATTRIBUTE } from "./themeCss";
+import { syncThemeColor } from "./themeColor";
 
 interface ThemeContextValue {
   theme: ThemeId;
@@ -59,6 +60,7 @@ export function ThemeProvider({
   // Las variables CSS ya vienen en la hoja inyectada (themeCss.ts); aqui solo se fija el atributo.
   useLayoutEffect(() => {
     document.documentElement.setAttribute(THEME_ATTRIBUTE, theme);
+    syncThemeColor(theme);
   }, [theme]);
 
   const setTheme = useCallback(

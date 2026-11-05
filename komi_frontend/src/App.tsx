@@ -7,6 +7,7 @@ import type { ThemeId } from "./core/theme/colorTokens";
 import { createAppDeps, type AppDeps, type AppOptions } from "./app/appDeps";
 import { loadInitialState, type InitialState } from "./app/loadInitialState";
 import { watchOnboardingSync } from "./data/network/onboardingSync";
+import { requestPersistentStorage } from "./pwa/persistStorage";
 import type { LocalProfile } from "./data/local_db/types";
 import { DashboardScreen } from "./features/dashboard/DashboardScreen";
 import { MyGardenScreen } from "./features/garden_library/MyGardenScreen";
@@ -26,6 +27,11 @@ export function App({ options }: AppProps) {
     [options],
   );
   const [initial, setInitial] = useState<InitialState | null>(null);
+
+  // Pide almacenamiento persistente al arrancar y deja el resultado registrado.
+  useEffect(() => {
+    void requestPersistentStorage({ storage: navigator.storage, meta: deps.meta });
+  }, [deps]);
 
   useEffect(() => {
     let cancelled = false;

@@ -22,6 +22,7 @@
     "src/core/theme/colorTokens.ts",
     "src/core/theme/geometryTokens.ts",
     "src/core/theme/typographyScale.ts",
-    "src/core/theme/themeCss.ts"
+    "src/core/theme/themeCss.ts",
+    "src/pwa/pwaConfig.ts"
   ]
 }
