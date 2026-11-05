@@ -58,7 +58,10 @@ Backend (`python manage.py test`): `streak_engine` (incluye medianoche y zonas h
 Frontend (Vitest): calculo de plan de habito (seccion 5.1), `botanicCalculator`, logica del temporizador y del periodo de gracia, repositorios Dexie.
 
 ## 10. Comandos (actualizar tras el Sprint 1 y el Sprint 3)
-- Backend: `python manage.py runserver`, `python manage.py test`, `python manage.py makemigrations`, `python manage.py migrate`.
+- Backend (desde `komi_backend/`, con `.venv` activado; requiere PostgreSQL y `.env` copiado de `.env.example`):
+  - Instalar: `pip install -r requirements-dev.txt`.
+  - Ejecutar: `python manage.py runserver`, `python manage.py migrate`, `python manage.py makemigrations`.
+  - Verificar: `python manage.py test` (crea y borra `test_komi_db`; el usuario necesita `CREATEDB`), `ruff check .`, `ruff format --check .`, `python manage.py makemigrations --check --dry-run`.
 - Frontend: `npm run dev`, `npm run build`, `npm run lint`, `npm run test`.
 
 ## 11. Prohibido sin aprobacion previa
