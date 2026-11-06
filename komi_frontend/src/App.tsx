@@ -438,6 +438,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             onSetStatus={onSetStatus}
             onReimport={onReimport}
             onRead={onRead}
+            seedSource={deps.seeds}
           />
         )}
         {nav === "estadisticas" && <StatsScreen />}

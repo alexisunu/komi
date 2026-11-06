@@ -7,11 +7,14 @@ import { useState } from "react";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
+import type { SeedService } from "../../services/seedService";
 import type { GardenPlantService } from "../../services/plantBookService";
 import { BookGardenCard } from "./BookGardenCard";
 import "./MyGardenScreen.css";
 import { booksForTab, GARDEN_TABS, tabCounts, type GardenTab } from "./libraryTabs";
 import { PlantBookModal } from "./PlantBookModal";
+import { SeedsDrawer } from "./SeedsDrawer";
+import { useSeeds } from "./useSeeds";
 
 export interface MyGardenScreenProps {
   books: readonly LocalBook[];
@@ -25,6 +28,8 @@ export interface MyGardenScreenProps {
   onReimport: (book: LocalBook, file: File) => Promise<void>;
   /** "Leer este libro" (guarda el libro del Dashboard). */
   onRead: (book: LocalBook) => Promise<void>;
+  /** Semillas del Dia (Dexie). Sin servicio, el cajon abre vacio. */
+  seedSource?: Pick<SeedService, "loadByBook">;
 }
 
 const EMPTY_TEXT: Record<GardenTab, string> = {
@@ -48,13 +53,17 @@ export function MyGardenScreen({
   onSetStatus,
   onReimport,
   onRead,
+  seedSource,
 }: MyGardenScreenProps) {
+  const seeds = useSeeds(seedSource);
+  const [seedsBookId, setSeedsBookId] = useState<string | null>(null);
   const [tab, setTab] = useState<GardenTab>("active");
   const [planting, setPlanting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const counts = tabCounts(books);
   const visible = booksForTab(books, tab);
+  const seedsBook = books.find((book) => book.id === seedsBookId) ?? null;
 
   async function run(book: LocalBook, action: () => Promise<void>) {
     setBusyId(book.id);
@@ -117,6 +126,8 @@ export function MyGardenScreen({
               onRestore={(target) => void run(target, () => onSetStatus(target, "ACTIVE"))}
               onReimport={(target, file) => void run(target, () => onReimport(target, file))}
               onRead={(target) => void run(target, () => onRead(target))}
+              seeds={seeds.get(book.id) ?? []}
+              onOpenSeeds={(target) => setSeedsBookId(target.id)}
             />
           ))
         )}
@@ -128,6 +139,10 @@ export function MyGardenScreen({
           Plantar libro
         </ZenPrimaryButton>
       </footer>
+
+      {seedsBook && (
+        <SeedsDrawer book={seedsBook} seeds={seeds.get(seedsBook.id) ?? []} onClose={() => setSeedsBookId(null)} />
+      )}
 
       {planting && (
         <PlantBookModal

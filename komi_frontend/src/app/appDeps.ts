@@ -26,6 +26,7 @@ import { createWakeLockService, type WakeLockService } from "../services/wakeLoc
 import { reloadGate, type ReloadGate } from "../pwa/reloadGate";
 import { createOnboardingService } from "../services/onboardingService";
 import { createPlantBookService } from "../services/plantBookService";
+import { createSeedService } from "../services/seedService";
 import { createCompanionService } from "../services/companionService";
 import { createPostReadingService } from "../services/postReadingService";
 
@@ -137,6 +138,8 @@ export function createAppDeps(options: AppOptions = {}) {
     books,
     epubFiles,
     reflections,
+    /** Semillas del Dia por libro (cajon de Mi Jardin). */
+    seeds: createSeedService({ reflections, sessions }),
     onboarding: createOnboardingService(db, systemClock, profiles),
     /** Cola del onboarding (POST /profile/onboarding/). */
     sync: onboardingSync,

@@ -68,4 +68,16 @@ describe("consultas", () => {
     expect(await repo.countClosed()).toBe(4);
     db.close();
   });
+
+  it("listSeeds devuelve las charlas cerradas con frase de todos los libros", async () => {
+    const { db, repo } = setup();
+    const closed = { turn_count: 5, is_closed: true };
+    await repo.upsert({ chat_id: uuid(10), session_id: uuid(50), book_id: uuid(1), ...closed, key_takeaway: "Uno" });
+    await repo.upsert({ chat_id: uuid(11), session_id: uuid(51), book_id: uuid(2), ...closed, key_takeaway: "Dos" });
+    await repo.upsert({ chat_id: uuid(12), session_id: uuid(52), book_id: uuid(2), ...closed });
+    await repo.upsert({ chat_id: uuid(13), session_id: uuid(53), book_id: uuid(2), turn_count: 2, is_closed: false, key_takeaway: "Abierta" });
+    const seeds = await repo.listSeeds();
+    expect(seeds.map((s) => s.key_takeaway).sort()).toEqual(["Dos", "Uno"]);
+    db.close();
+  });
 });

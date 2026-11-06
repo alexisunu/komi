@@ -4,6 +4,7 @@ import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
 import { wholePercent } from "../../services/botanicCalculator";
+import { seedCountLabel, type Seed } from "../../services/seedService";
 import { canReadBook, progressLabel } from "../dashboard/activeBook";
 import { SunflowerStageWidget } from "../dashboard/SunflowerStageWidget";
 import "./BookGardenCard.css";
@@ -21,11 +22,15 @@ export interface BookGardenCardProps {
   onReimport?: (book: LocalBook, file: File) => void;
   /** "Leer este libro": lo elige para el Dashboard. Solo en libros que se pueden leer. */
   onRead?: (book: LocalBook) => void;
+  /** Semillas del Dia de este libro. */
+  seeds?: readonly Seed[];
+  /** Tocar el girasol abre el cajon de Semillas del Dia. */
+  onOpenSeeds?: (book: LocalBook) => void;
 }
 
 const ICON_SIZE = 20;
 
-/** Tarjeta de libro/girasol (SRS 10.3). El cajon de "Semillas del Dia" llega en el bloque 8. */
+/** Tarjeta de libro/girasol (SRS 10.3). Tocar el girasol abre el cajon de "Semillas del Dia". */
 export function BookGardenCard({
   book,
   active = false,
@@ -35,6 +40,8 @@ export function BookGardenCard({
   onRestore,
   onReimport,
   onRead,
+  seeds = [],
+  onOpenSeeds,
 }: BookGardenCardProps) {
   const picker = useRef<HTMLInputElement>(null);
   const percent = wholePercent(book.progress_percentage);
@@ -44,7 +51,23 @@ export function BookGardenCard({
   return (
     <article className="book-card" data-active={active ? "true" : "false"}>
       <div className="book-card__row">
-        <SunflowerStageWidget percentage={book.progress_percentage} fallow={fallow} size={48} mini />
+        {onOpenSeeds ? (
+          <button
+            type="button"
+            className="book-card__seeds"
+            aria-label={`Semillas del Día de ${book.title}: ${seedCountLabel(seeds.length)}`}
+            onClick={() => onOpenSeeds(book)}
+          >
+            <SunflowerStageWidget percentage={book.progress_percentage} fallow={fallow} size={48} mini />
+            {seeds.length > 0 && (
+              <span className="book-card__seeds-count tabular" aria-hidden="true">
+                {seedCountLabel(seeds.length)}
+              </span>
+            )}
+          </button>
+        ) : (
+          <SunflowerStageWidget percentage={book.progress_percentage} fallow={fallow} size={48} mini />
+        )}
         <div className="book-card__text">
           <h3 className="book-card__title">{book.title}</h3>
           <p className="book-card__author">{book.author}</p>

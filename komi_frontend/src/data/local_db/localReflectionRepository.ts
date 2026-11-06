@@ -66,6 +66,12 @@ export function createLocalReflectionRepository(
         .sort((a, b) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : 0));
     },
 
+    /** Todas las charlas cerradas con frase (Semillas del Dia de todos los libros). */
+    async listSeeds(): Promise<LocalReflection[]> {
+      const rows = await guardStorage(() => db.reflections.toArray());
+      return rows.filter((row) => row.is_closed && row.key_takeaway !== null);
+    },
+
     /** Charlas completadas (cerradas), para el contador de estadisticas. */
     async countClosed(): Promise<number> {
       const rows = await guardStorage(() => db.reflections.toArray());

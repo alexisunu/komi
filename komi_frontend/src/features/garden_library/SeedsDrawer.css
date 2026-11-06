@@ -1,0 +1,54 @@
+/* Cajon de Semillas del Dia. Solo tokens de core/theme. */
+
+.seeds {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.seeds__book {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+.seeds__empty {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}
+
+.seeds__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seeds__item {
+  padding: var(--space-2);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-surface);
+}
+
+.seeds__text {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.seeds__date {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
