@@ -336,10 +336,23 @@ describe("movimiento", () => {
     expect(css).toMatch(/\.sunflower__stage \{[^}]*transition: opacity var\(--transition-ui\)/);
   });
 
-  it("no hay animaciones continuas ni prop breathing (es de la Fase 4)", () => {
-    expect(outsideReducedMotion).not.toMatch(/@keyframes|animation\s*:|animation-/);
-    expect(outsideReducedMotion).not.toContain("infinite");
-    expect(source).not.toMatch(/breathing|breathe/i);
+  it("fuera de reduced-motion, la unica animacion continua es la respiracion", () => {
+    const users = [...outsideReducedMotion.matchAll(/([^{}]+)\{[^{}]*animation(?:-play-state)?\s*:/g)].map(
+      (m) => (m[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim(),
+    );
+    expect(users).toEqual([".sunflower--breathing .sunflower__svg", ".sunflower--breathing-paused .sunflower__svg"]);
+  });
+
+  it("los keyframes de la respiracion animan solo transform y opacity", () => {
+    const start = css.indexOf("@keyframes sunflower-breathe");
+    const end = css.indexOf(".sunflower--breathing .sunflower__svg");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const properties = [...css.slice(start, end).matchAll(/^\s+([a-z-]+)\s*:/gm)].map((m) => m[1]);
+    expect(new Set(properties)).toEqual(new Set(["transform", "opacity"]));
+  });
+
+  it("la respiracion se pausa en segundo plano con animation-play-state", () => {
+    expect(css).toMatch(/\.sunflower--breathing-paused \.sunflower__svg \{[^}]*animation-play-state: paused/);
   });
 
   it("prefers-reduced-motion anula transiciones y animaciones del widget", () => {
@@ -356,5 +369,29 @@ describe("sin umbrales propios", () => {
     expect(source).toMatch(/from "\.\.\/\.\.\/services\/botanicCalculator"/);
     expect(source).toContain("stageForProgress(percentage)");
     expect(source).not.toMatch(/percentage\s*[<>]=?\s*\d/);
+  });
+});
+
+describe("prop breathing", () => {
+  it("sin la prop no hay clases de respiracion", () => {
+    mounted = render(<SunflowerStageWidget percentage={30} />);
+    const root = mounted.container.querySelector(".sunflower");
+    expect(root?.className).not.toContain("breathing");
+  });
+
+  it("breathing agrega la clase y breathingPaused la pausa", () => {
+    mounted = render(<SunflowerStageWidget percentage={30} breathing />);
+    const root = mounted.container.querySelector(".sunflower");
+    expect(root?.className).toContain("sunflower--breathing");
+    expect(root?.className).not.toContain("breathing-paused");
+    mounted.rerender(<SunflowerStageWidget percentage={30} breathing breathingPaused />);
+    expect(mounted.container.querySelector(".sunflower")?.className).toContain("sunflower--breathing-paused");
+  });
+
+  it("breathingPaused sin breathing no hace nada, y la miniatura no respira", () => {
+    mounted = render(<SunflowerStageWidget percentage={30} breathingPaused />);
+    expect(mounted.container.querySelector(".sunflower")?.className).not.toContain("breathing");
+    mounted.rerender(<SunflowerStageWidget percentage={30} breathing mini />);
+    expect(mounted.container.querySelector(".sunflower")?.className).not.toContain("breathing");
   });
 });

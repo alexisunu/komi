@@ -158,6 +158,29 @@
   opacity: 0.4;
 }
 
+/* Respiracion durante la sesion (CU-03): solo transform y opacity, lenta y sin saltos. */
+@keyframes sunflower-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.035);
+    opacity: 0.92;
+  }
+}
+
+.sunflower--breathing .sunflower__svg {
+  animation: sunflower-breathe 5s ease-in-out infinite;
+  transform-origin: 50% 80%;
+}
+
+/* En segundo plano la respiracion se detiene donde esta. */
+.sunflower--breathing-paused .sunflower__svg {
+  animation-play-state: paused;
+}
+
 /* Sin movimiento: el cambio de etapa es inmediato. */
 @media (prefers-reduced-motion: reduce) {
   .sunflower,

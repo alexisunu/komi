@@ -3,9 +3,9 @@
 // (sin umbrales propios) y los colores salen solo de las variables CSS del tema (SunflowerStage
 // Widget.css), por eso el SVG no lleva colores en sus atributos.
 //
-// Sin animacion continua: la "respiracion" del girasol durante la sesion es de la Fase 4
-// (SRS 18, punto 23). Aqui solo hay un fundido de 350 ms entre etapas, que se anula con
-// prefers-reduced-motion.
+// Sin animacion continua salvo la "respiracion" del girasol durante la sesion (prop `breathing`,
+// CU-03 paso 4): solo transform y opacity, en pausa con `breathingPaused` y anulada con
+// prefers-reduced-motion. Aparte hay un fundido de 350 ms entre etapas.
 
 import type { ReactElement } from "react";
 import {
@@ -55,6 +55,10 @@ export interface SunflowerStageWidgetProps {
   size?: number;
   /** Miniatura de tarjeta: sin halo, aura ni particulas. */
   mini?: boolean;
+  /** Respiracion suave durante la sesion (CU-03): solo `transform` y `opacity`. */
+  breathing?: boolean;
+  /** Pausa la respiracion (la pagina esta en segundo plano). */
+  breathingPaused?: boolean;
 }
 
 const PETAL_COUNT = 12;
@@ -142,6 +146,8 @@ export function SunflowerStageWidget({
   solarBonus = false,
   size,
   mini = false,
+  breathing = false,
+  breathingPaused = false,
 }: SunflowerStageWidgetProps) {
   const stage = stageForProgress(percentage);
   const dormant = isDormant(percentage, fallow);
@@ -150,6 +156,8 @@ export function SunflowerStageWidget({
   const classes = ["sunflower"];
   if (dormant) classes.push("sunflower--fallow");
   if (solarBonus && !mini) classes.push("sunflower--bonus");
+  if (breathing && !mini) classes.push("sunflower--breathing");
+  if (breathing && !mini && breathingPaused) classes.push("sunflower--breathing-paused");
 
   return (
     <div
