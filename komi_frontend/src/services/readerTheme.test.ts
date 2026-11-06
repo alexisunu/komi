@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { KOMOREBI, TSUKIMI } from "../core/theme/colorTokens";
-import { keyAction, SWIPE_MIN_PX, swipeAction, tapAction } from "./readerGestures";
+import { keyAction, SWIPE_MIN_PX, swipeAction, tapAction, toHostX } from "./readerGestures";
 import {
   buildReaderCss,
   DEFAULT_FONT_SIZE,
@@ -89,6 +89,20 @@ describe("gestos", () => {
     expect(tapAction(150, 300)).toBeNull();
     expect(tapAction(201, 300)).toBe("next");
     expect(tapAction(290, 300)).toBe("next");
+  });
+
+  it("toHostX: en la 2.a pagina el iframe esta desplazado y el tercio sigue siendo el de la pantalla", () => {
+    // Contenedor visible de 340 px en x=24. El iframe mide 3 paginas y esta corrido 1 pagina a la izquierda.
+    const hostLeft = 24;
+    const frameLeft = hostLeft - 340;
+    // Toque en el tercio derecho de la pantalla (300 px dentro del contenedor): clientX dentro del iframe = 340 + 300.
+    const clientX = 340 + 300;
+    const x = toHostX(clientX, frameLeft, hostLeft);
+    expect(x).toBe(300);
+    expect(tapAction(x, 340)).toBe("next");
+    // Con el ancho del iframe (1020) como referencia el mismo toque caia en el centro: el error que se corrige.
+    expect(tapAction(clientX, 1020)).toBeNull();
+    expect(tapAction(toHostX(340 + 20, frameLeft, hostLeft), 340)).toBe("prev");
   });
 
   it("entradas invalidas no pasan de pagina", () => {

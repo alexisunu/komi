@@ -121,7 +121,6 @@ describe("Comenzar Lectura: precondiciones de CU-03", () => {
     ["sin libros", [] as LocalBook[]],
     ["solo en barbecho", [book(1, { status: "FALLOW" })]],
     ["solo florecido", [book(1, { status: "BLOOMED", progress_percentage: 100 })]],
-    ["un EPUB (llega con el lector)", [book(1, { format_type: "EPUB", total_pages: null })]],
   ])("queda deshabilitado %s", async (_name, books) => {
     const { root } = await mountApp(books);
     expect(startButton(root).disabled).toBe(true);

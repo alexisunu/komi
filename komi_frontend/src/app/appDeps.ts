@@ -12,7 +12,9 @@ import { createLocalSessionRepository } from "../data/local_db/localSessionRepos
 import { getApiClient, type ApiClient } from "../data/network/apiClient";
 import { createOnboardingSync } from "../data/network/onboardingSync";
 import { createSyncService } from "../data/network/syncService";
+import { createEpubReaderService, type EpubReaderService } from "../services/epubReaderService";
 import { createEpubService, type EpubService } from "../services/epubService";
+import { parseReadingProgress, type ReadingProgress } from "../services/readingTracker";
 import { parseActiveSession } from "../services/focusSessionMachine";
 import {
   createFocusVisibilityService,
@@ -29,6 +31,8 @@ export interface AppOptions {
   api?: ApiClient;
   /** Solo para pruebas: motor de epubjs propio. */
   epub?: Pick<EpubService, "inspect" | "generateLocations">;
+  /** Solo para pruebas: lector EPUB propio (en jsdom epubjs no puede dibujar paginas). */
+  epubReader?: EpubReaderService;
   /** Solo para pruebas: reloj y Page Visibility del temporizador (el almacen y el guardado son reales). */
   focusEnv?: { now: () => number; doc: FocusDocument; win: FocusWindow };
   /** Solo para pruebas: pantalla encendida y puerta de recarga propios. */
@@ -59,14 +63,20 @@ export function createAppDeps(options: AppOptions = {}) {
     // Un 401 puede ser un onboarding aun en cola: se confirma y se reintenta una vez.
     recoverUnauthorized: async () => (await onboardingSync.flush()).status === "synced",
   });
+  const epub = options.epub ?? createEpubService();
+  const focusNow = options.focusEnv?.now ?? (() => Date.now());
   const focus = createFocusVisibilityService({
-    now: options.focusEnv?.now ?? (() => Date.now()),
+    now: focusNow,
     doc: options.focusEnv?.doc ?? document,
     win: options.focusEnv?.win ?? window,
     store: {
       load: async () => parseActiveSession(await meta.get(META_KEYS.activeSession)),
       save: (session) => meta.set(META_KEYS.activeSession, JSON.stringify(session)),
-      clear: () => meta.remove(META_KEYS.activeSession),
+      // La sesion termino (guardada, cancelada o descartada): tambien su avance de lectura.
+      clear: async () => {
+        await meta.remove(META_KEYS.activeSession);
+        await meta.remove(META_KEYS.activeSessionProgress);
+      },
     },
     // Gracia vencida: se guarda invalida (no toca el progreso) y se sube en cuanto se pueda.
     saveInvalidated: async (session, actualSec) => {
@@ -87,6 +97,17 @@ export function createAppDeps(options: AppOptions = {}) {
     sessions,
     /** Temporizador de lectura (RF-02): gracia de 15 s y registro `active_session`. */
     focus,
+    /** Lector EPUB: epubjs, archivo del dispositivo y avance de la sesion (`active_session_progress`). */
+    epubReader: {
+      reader: options.epubReader ?? createEpubReaderService(createEpubService()),
+      files: epubFiles,
+      progress: {
+        load: async () => parseReadingProgress(await meta.get(META_KEYS.activeSessionProgress)),
+        save: (progress: ReadingProgress) =>
+          meta.set(META_KEYS.activeSessionProgress, JSON.stringify(progress)),
+      },
+      now: focusNow,
+    },
     /** Pantalla encendida durante la sesion (SRS 19.12). */
     wakeLock: options.wakeLock ?? createWakeLockService(navigator, document),
     /** Puerta de recarga del Service Worker: se bloquea mientras dura la sesion. */
@@ -100,7 +121,7 @@ export function createAppDeps(options: AppOptions = {}) {
     /** Libros y sesiones pendientes (POST /profile/sync/). */
     syncService,
     plant: createPlantBookService({
-      epub: options.epub ?? createEpubService(),
+      epub,
       epubFiles,
       books,
     }),

@@ -1,5 +1,6 @@
 // Dashboard Zen (SRS 6): zonas 1 a 3. La zona 4 (navegacion) la pone el AppShell.
-// "Comenzar Lectura" se activa con un libro fisico que se pueda leer (CU-03); el EPUB espera al lector.
+// El boton principal se activa con un libro que se pueda leer (CU-03): "Comenzar Lectura" para un
+// libro fisico y "Abrir lector" para un EPUB (que ademas exige su archivo en el dispositivo).
 
 import { Settings } from "lucide-react";
 import { useState } from "react";
@@ -106,7 +107,7 @@ export function DashboardScreen({
           />
         </div>
         <ZenPrimaryButton disabled={!canStart || !onStart} onClick={() => onStart?.(minutes)}>
-          Comenzar Lectura
+          {book?.format_type === "EPUB" ? "Abrir lector" : "Comenzar Lectura"}
         </ZenPrimaryButton>
       </section>
 

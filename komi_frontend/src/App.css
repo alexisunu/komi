@@ -45,3 +45,11 @@
   gap: var(--space-1);
   padding: calc(var(--space-2) + env(safe-area-inset-top)) var(--screen-margin) 0;
 }
+
+/* "Preparando tu libro" antes de abrir el lector: solo el avance, centrado. */
+.app-preparing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--screen-margin);
+}

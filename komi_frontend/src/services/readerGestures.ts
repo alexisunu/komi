@@ -13,6 +13,15 @@ export function tapAction(x: number, width: number): TurnAction {
   return null;
 }
 
+/**
+ * epubjs en modo paginado hace el iframe de un capitulo tan ancho como todas sus paginas juntas y
+ * lo desplaza dentro del contenedor. `clientX` es relativo a ESE iframe, no a la pantalla: se pasa
+ * a coordenadas del contenedor visible sumando donde queda hoy el borde izquierdo del iframe.
+ */
+export function toHostX(clientX: number, frameLeft: number, hostLeft: number): number {
+  return frameLeft + clientX - hostLeft;
+}
+
 export const SWIPE_MIN_PX = 40;
 
 /** Deslizar a la izquierda pasa a la pagina siguiente; a la derecha, a la anterior. */

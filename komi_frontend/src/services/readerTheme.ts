@@ -19,8 +19,8 @@ export function isFontSize(value: unknown): value is ReaderFontSize {
 /** Siguiente tamano en la direccion pedida; se detiene en los extremos. */
 export function stepFontSize(current: ReaderFontSize, direction: "smaller" | "larger"): ReaderFontSize {
   const index = FONT_SIZES.indexOf(current);
-  const next = FONT_SIZES[direction === "larger" ? Math.min(index + 1, FONT_SIZES.length - 1) : Math.max(index - 1, 0)];
-  return next ?? current;
+  // Fuera de rango no hay valor: se queda donde esta.
+  return FONT_SIZES[index + (direction === "larger" ? 1 : -1)] ?? current;
 }
 
 export interface ReaderThemeInput {
