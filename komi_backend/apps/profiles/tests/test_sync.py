@@ -1013,3 +1013,169 @@ class ConcurrencyTests(TransactionTestCase):
         self.assertEqual(BookGarden.objects.get(pk=book["id"]).progress_percentage, Decimal("10"))
         profile.refresh_from_db()
         self.assertEqual(profile.current_streak, 1)
+
+
+class BatchBaselineTests(SyncTestCase):
+    """El libro llega en el lote con su estado final; la sesion se evalua contra el progreso
+    previo al lote (SRS 17, punto 18), no contra el libro ya fusionado."""
+
+    def entry(self, result, session):
+        return next(a for a in result["sessions"]["accepted"] if a["id"] == session["id"])
+
+    def test_a_new_book_finished_in_the_first_batch_with_a_short_session_is_early_valid(self):
+        book = book_item(total_pages=100, current_page=100)
+        short = session_item(book["id"], current_page=100, actual_duration_sec=23, **day(10))
+
+        result = self.ok(books=[book], sessions=[short])
+
+        self.assertEqual(codes(result, "sessions"), [])
+        accepted = self.entry(result, short)
+        self.assertEqual(accepted["session_status"], "EARLY_VALID")
+        self.assertEqual(accepted["progress_delta"], 100)
+        self.assertTrue(accepted["just_bloomed"])
+        stored = self.book(book["id"])
+        self.assertEqual(stored.status, "BLOOMED")
+        self.assertEqual(stored.progress_percentage, Decimal("100"))
+        self.assertIsNotNone(stored.completed_at)
+        self.assertEqual(self.reload_profile().current_streak, 1)
+
+    def test_a_book_that_bloomed_when_merged_keeps_its_completion_date(self):
+        book = book_item(total_pages=100, current_page=100)
+        short = session_item(book["id"], current_page=100, actual_duration_sec=23, **day(10))
+        sentinel = timezone.now() + timedelta(days=3650)
+        with mock.patch("apps.reading_sessions.services.timezone") as fake:
+            fake.now.return_value = sentinel
+            self.ok(books=[book], sessions=[short])
+        self.assertLess(self.book(book["id"]).completed_at, sentinel)
+
+    def test_an_existing_book_updated_in_the_same_batch_accepts_the_session_that_closes_it(self):
+        book = book_item(total_pages=100, current_page=40)
+        self.ok(books=[book])
+        finished = {**book, "current_page": 100, "updated_at": hours_ago(0)}
+        short = session_item(book["id"], current_page=100, actual_duration_sec=23, **day(10))
+
+        result = self.ok(books=[finished], sessions=[short])
+
+        accepted = self.entry(result, short)
+        self.assertEqual(accepted["session_status"], "EARLY_VALID")
+        self.assertEqual(accepted["progress_delta"], 60)
+        self.assertEqual(self.book(book["id"]).status, "BLOOMED")
+
+    def test_a_short_session_that_does_not_close_the_book_is_still_rejected(self):
+        book = book_item(total_pages=100, current_page=40)
+        short = session_item(book["id"], current_page=40, actual_duration_sec=23, **day(10))
+        result = self.ok(books=[book], sessions=[short])
+        self.assertEqual(codes(result, "sessions"), [(0, "below_50_percent")])
+
+        existing = book_item(total_pages=100, current_page=10)
+        self.ok(books=[existing])
+        moved = {**existing, "current_page": 40, "updated_at": hours_ago(0)}
+        short = session_item(existing["id"], current_page=40, actual_duration_sec=23, **day(10))
+        result = self.ok(books=[moved], sessions=[short])
+        self.assertEqual(codes(result, "sessions"), [(0, "below_50_percent")])
+
+    def test_the_delta_and_the_solar_bonus_use_the_progress_before_the_batch(self):
+        book = book_item(total_pages=1000, current_page=120)
+        session = session_item(book["id"], current_page=120, **day(10))
+        result = self.ok(books=[book], sessions=[session])
+        accepted = self.entry(result, session)
+        self.assertEqual(accepted["progress_delta"], 12)
+        stored = ReadingSession.objects.get(pk=session["id"])
+        self.assertFalse(stored.granted_solar_bonus)
+
+        small = book_item(total_pages=1000, current_page=5)
+        tiny = session_item(small["id"], current_page=5, **day(10))
+        result = self.ok(books=[small], sessions=[tiny])
+        self.assertEqual(self.entry(result, tiny)["progress_delta"], 0.5)
+        self.assertTrue(ReadingSession.objects.get(pk=tiny["id"]).granted_solar_bonus)
+
+    def test_two_sessions_split_the_progress_chronologically(self):
+        book = book_item(total_pages=1000, current_page=300)
+        late = session_item(book["id"], current_page=300, **day(11))
+        early = session_item(book["id"], current_page=100, **day(10))
+        result = self.ok(books=[book], sessions=[late, early])
+        self.assertEqual(self.entry(result, early)["progress_delta"], 10)
+        self.assertEqual(self.entry(result, late)["progress_delta"], 20)
+        self.assertEqual(self.book(book["id"]).progress_percentage, Decimal("30"))
+
+    def test_only_the_session_that_closes_the_book_reports_the_bloom(self):
+        book = book_item(total_pages=100, current_page=100)
+        first = session_item(book["id"], current_page=60, **day(10))
+        last = session_item(book["id"], current_page=100, **day(11))
+        result = self.ok(books=[book], sessions=[last, first])
+        self.assertFalse(self.entry(result, first)["just_bloomed"])
+        self.assertTrue(self.entry(result, last)["just_bloomed"])
+        self.assertEqual(self.entry(result, first)["progress_delta"], 60)
+        self.assertEqual(self.entry(result, last)["progress_delta"], 40)
+
+    def test_the_book_progress_never_goes_down_when_the_sessions_are_replayed(self):
+        book = book_item(total_pages=1000, current_page=300)
+        session = session_item(book["id"], current_page=100, **day(10))
+        self.ok(books=[book], sessions=[session])
+        stored = self.book(book["id"])
+        self.assertEqual(stored.progress_percentage, Decimal("30"))
+        self.assertEqual(stored.current_page, 300)
+
+    def test_a_rejected_session_does_not_move_the_baseline(self):
+        book = book_item(total_pages=100, current_page=100)
+        short_open = session_item(book["id"], current_page=30, actual_duration_sec=10, **day(10))
+        closing = session_item(book["id"], current_page=100, actual_duration_sec=10, **day(11))
+        result = self.ok(books=[book], sessions=[short_open, closing])
+        self.assertEqual(codes(result, "sessions"), [(0, "below_50_percent")])
+        self.assertEqual(self.entry(result, closing)["progress_delta"], 100)
+
+    def test_the_same_batch_replayed_changes_nothing(self):
+        book = book_item(total_pages=100, current_page=100)
+        short = session_item(book["id"], current_page=100, actual_duration_sec=23, **day(10))
+        self.ok(books=[book], sessions=[short])
+        before = self.book(book["id"])
+        again = self.ok(books=[book], sessions=[short])
+        self.assertEqual(again["sessions"]["accepted"][0]["result"], "duplicate")
+        after = self.book(book["id"])
+        self.assertEqual(
+            (after.progress_percentage, after.status, after.completed_at),
+            (before.progress_percentage, before.status, before.completed_at),
+        )
+        self.assertEqual(ReadingSession.objects.count(), 1)
+        self.assertEqual(self.reload_profile().current_streak, 1)
+
+    def test_an_epub_closed_in_its_first_batch_with_a_short_session_is_early_valid(self):
+        book = epub_item(progress_percentage=100)
+        short = {
+            "id": str(uuid.uuid4()),
+            "book_id": book["id"],
+            "planned_duration_sec": PLANNED,
+            "actual_duration_sec": 20,
+            "started_at_local": "2025-03-10T21:30:00",
+            "session_status": "EARLY_VALID",
+            "progress_percentage": 100,
+        }
+        result = self.ok(books=[book], sessions=[short])
+        self.assertEqual(codes(result, "sessions"), [])
+        self.assertEqual(self.entry(result, short)["session_status"], "EARLY_VALID")
+
+    def test_a_book_missing_from_the_batch_still_uses_its_stored_progress(self):
+        book = book_item(total_pages=1000, current_page=100)
+        self.ok(books=[book])
+        session = session_item(book["id"], current_page=300, **day(10))
+        result = self.ok(sessions=[session])
+        self.assertEqual(self.entry(result, session)["progress_delta"], 20)
+
+    def test_an_invalidated_session_does_not_move_the_baseline(self):
+        book = book_item(total_pages=100, current_page=100)
+        lost = session_item(
+            book["id"], session_status="INVALIDATED_GRACE_EXPIRED", current_page=100, **day(10)
+        )
+        closing = session_item(book["id"], current_page=100, actual_duration_sec=23, **day(11))
+        result = self.ok(books=[book], sessions=[lost, closing])
+        self.assertEqual(codes(result, "sessions"), [])
+        self.assertEqual(self.entry(result, closing)["session_status"], "EARLY_VALID")
+        self.assertEqual(self.entry(result, closing)["progress_delta"], 100)
+
+    def test_ids_in_upper_case_use_the_same_baseline(self):
+        book = book_item(total_pages=100, current_page=100)
+        book["id"] = book["id"].upper()
+        short = session_item(book["id"], current_page=100, actual_duration_sec=23, **day(10))
+        result = self.ok(books=[book], sessions=[short])
+        self.assertEqual(codes(result, "sessions"), [])
+        self.assertEqual(self.entry(result, short)["session_status"], "EARLY_VALID")

@@ -4,6 +4,7 @@ Consolida lotes de libros y sesiones, y arma la hidratacion de un cliente vacio.
 sesion viven en `apps.reading_sessions.services` y se comparten con `sessions/complete`.
 """
 
+import uuid
 from datetime import UTC, timedelta
 from decimal import ROUND_DOWN, Decimal
 
@@ -195,7 +196,38 @@ def _parse_session(item) -> dict:
     return dict(serializer.validated_data)
 
 
-def _sync_session(profile: ReaderProfile, data: dict, rejected_books: set) -> tuple:
+def _canonical_uuid(value) -> str | None:
+    try:
+        return str(uuid.UUID(str(value)))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def _snapshot_baselines(profile: ReaderProfile, books: list, sessions: list) -> dict:
+    """Progreso de cada libro del lote ANTES de fusionarlo (SRS 17, punto 18).
+
+    El cliente envia el libro con su estado final junto a sus sesiones y los libros se fusionan
+    antes de evaluar las sesiones: sin esta foto, `previous` seria el progreso final del lote y
+    una sesion corta que cierra el libro se rechazaria como `below_50_percent`. Un libro que no
+    existe todavia parte de 0. El valor avanza por cada sesion valida (reproduccion cronologica).
+    """
+    ids: set[str] = set()
+    for item in books:
+        ids.add(_canonical_uuid(_item_id(item)) or "")
+    for item in sessions:
+        book_id = item.get("book_id") if isinstance(item, dict) else None
+        ids.add(_canonical_uuid(book_id) or "")
+    ids.discard("")
+    rows = BookGarden.objects.filter(profile=profile, pk__in=ids).values_list(
+        "id", "progress_percentage"
+    )
+    known = {str(book_id): progress for book_id, progress in rows}
+    return {book_id: known.get(book_id, session_services.ZERO) for book_id in ids}
+
+
+def _sync_session(
+    profile: ReaderProfile, data: dict, rejected_books: set, baselines: dict | None = None
+) -> tuple:
     existing = session_services.find_existing_session(profile, data["id"])
     if existing is not None:
         return existing, "duplicate", False
@@ -208,8 +240,12 @@ def _sync_session(profile: ReaderProfile, data: dict, rejected_books: set) -> tu
     if book is None:
         raise _Rejected(BOOK_NOT_FOUND, "El libro no existe en el servidor ni en el lote.")
 
-    outcome = session_services.evaluate_session(book, data, strict=False)
+    key = str(book.id)
+    baseline = None if baselines is None else baselines.get(key)
+    outcome = session_services.evaluate_session(book, data, strict=False, baseline=baseline)
     session = session_services.persist_session(book, data, outcome)
+    if baselines is not None and outcome.is_valid:
+        baselines[key] = outcome.new_progress  # la siguiente sesion del lote parte de aqui
     return session, "created", outcome.just_bloomed
 
 
@@ -249,7 +285,7 @@ def _process_books(profile, books, report, touched, rejected_books) -> None:
             report["books"]["rejected"].append(_rejection(index, item_id, exc))
 
 
-def _process_sessions(profile, sessions, report, touched, rejected_books) -> None:
+def _process_sessions(profile, sessions, report, touched, rejected_books, baselines) -> None:
     rejected = report["sessions"]["rejected"]
     parsed: list[tuple[int, dict]] = []
     seen: set[str] = set()
@@ -273,7 +309,7 @@ def _process_sessions(profile, sessions, report, touched, rejected_books) -> Non
         item_id = str(data["id"])
         try:
             with transaction.atomic():
-                session, result, bloomed = _sync_session(profile, data, rejected_books)
+                session, result, bloomed = _sync_session(profile, data, rejected_books, baselines)
         except _Rejected as exc:
             rejected.append(_rejection(index, item_id, exc))
         except session_services.SessionConflict:
@@ -312,8 +348,9 @@ def sync_batch(profile_id, books: list, sessions: list) -> dict:
 
     with transaction.atomic():
         profile = session_services.lock_profile(profile_id)
+        baselines = _snapshot_baselines(profile, books, sessions)
         _process_books(profile, books, report, touched, rejected_books)
-        _process_sessions(profile, sessions, report, touched, rejected_books)
+        _process_sessions(profile, sessions, report, touched, rejected_books, baselines)
         _recompute_streak(profile)
 
         fresh = BookGarden.objects.filter(pk__in=touched.keys(), profile=profile)

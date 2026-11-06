@@ -76,21 +76,27 @@ def _required(data: dict, field: str, message: str):
     return data[field]
 
 
+def _reported_progress(book: BookGarden, data: dict) -> tuple[Decimal, int]:
+    """(progreso que reporta la sesion, pagina), sin compararlo con el guardado del libro."""
+    if book.format_type == BookGarden.FormatType.PHYSICAL:
+        page = _required(data, "current_page", "Es obligatorio para un libro fisico.")
+        if book.total_pages is None or page > book.total_pages:
+            raise ValidationError({"current_page": "Supera el total de paginas del libro."})
+        return _page_progress(page, book.total_pages), page
+
+    reported = _required(data, "progress_percentage", "Es obligatorio para un libro EPUB.")
+    return Decimal(reported).quantize(TWO_PLACES, rounding=ROUND_DOWN), 0
+
+
 def _new_progress(book: BookGarden, data: dict) -> tuple[Decimal, int, bool]:
     """Devuelve (progreso nuevo, pagina nueva, el cliente avanzo respecto al guardado).
 
     El progreso es monotonico: nunca baja del guardado (SRS 17, punto 8).
     """
     previous = book.progress_percentage
+    reported, page = _reported_progress(book, data)
     if book.format_type == BookGarden.FormatType.PHYSICAL:
-        page = _required(data, "current_page", "Es obligatorio para un libro fisico.")
-        if book.total_pages is None or page > book.total_pages:
-            raise ValidationError({"current_page": "Supera el total de paginas del libro."})
-        reported = _page_progress(page, book.total_pages)
         return max(previous, reported), max(book.current_page, page), reported >= previous
-
-    reported = _required(data, "progress_percentage", "Es obligatorio para un libro EPUB.")
-    reported = Decimal(reported).quantize(TWO_PLACES, rounding=ROUND_DOWN)
     return max(previous, min(reported, HUNDRED)), book.current_page, reported >= previous
 
 
@@ -115,8 +121,17 @@ def _validated_status(data: dict, new_progress: Decimal, previous: Decimal) -> s
     )
 
 
-def evaluate_session(book: BookGarden, data: dict, *, strict: bool) -> SessionOutcome:
-    """Evalua una sesion sin escribir nada. Lanza ValidationError o SessionConflict."""
+def evaluate_session(
+    book: BookGarden, data: dict, *, strict: bool, baseline: Decimal | None = None
+) -> SessionOutcome:
+    """Evalua una sesion sin escribir nada. Lanza ValidationError o SessionConflict.
+
+    `baseline` es el progreso del libro ANTES de esta sesion cuando el libro guardado ya incluye
+    el lote que se esta sincronizando (el cliente envia el libro con su estado final junto a sus
+    sesiones, y se fusiona antes de evaluarlas). Estado, `delta`, florecimiento y Bono Solar se
+    calculan contra el, igual que el cliente al cerrar la sesion. Sin `baseline` (sessions/complete)
+    se usa el progreso guardado. Pagina y CFI siguen decidiendose contra el libro real.
+    """
     if data["session_status"] == SessionStatus.INVALIDATED_GRACE_EXPIRED:
         # Periodo de gracia vencido: no toca progreso ni racha ni requiere datos de progreso.
         return SessionOutcome(
@@ -135,8 +150,11 @@ def evaluate_session(book: BookGarden, data: dict, *, strict: bool) -> SessionOu
         if book.progress_percentage >= HUNDRED:
             raise SessionConflict("El libro ya florecio.")
 
-    previous = book.progress_percentage
+    previous = book.progress_percentage if baseline is None else baseline
     new_progress, new_page, advanced = _new_progress(book, data)
+    if baseline is not None:
+        reported, _ = _reported_progress(book, data)
+        new_progress = max(baseline, min(reported, HUNDRED))
     status = _validated_status(data, new_progress, previous)
     delta = new_progress - previous
     return SessionOutcome(
@@ -158,19 +176,23 @@ def evaluate_session(book: BookGarden, data: dict, *, strict: bool) -> SessionOu
 def persist_session(book: BookGarden, data: dict, outcome: SessionOutcome) -> ReadingSession:
     """Aplica el resultado al libro (si la sesion es valida) y crea la sesion."""
     if outcome.is_valid:
+        # El progreso del libro nunca baja: con `baseline` el resultado puede ser menor que el
+        # guardado (el lote ya fusiono el estado final del libro).
+        progress = max(book.progress_percentage, outcome.new_progress)
         changed = (
-            book.progress_percentage != outcome.new_progress
+            book.progress_percentage != progress
             or book.current_page != outcome.new_page
             or outcome.update_cfi
             or outcome.just_bloomed
         )
-        book.progress_percentage = outcome.new_progress
+        book.progress_percentage = progress
         book.current_page = outcome.new_page
         if outcome.update_cfi:
             book.last_epub_cfi = data["last_epub_cfi"]
         if outcome.just_bloomed:
             book.status = BookGarden.Status.BLOOMED
-            book.completed_at = timezone.now()
+            if book.completed_at is None:  # un libro que florecio al fusionarse conserva su fecha
+                book.completed_at = timezone.now()
         # Solo se guarda si algo cambio: updated_at decide los conflictos de la sync.
         if changed:
             book.save()
