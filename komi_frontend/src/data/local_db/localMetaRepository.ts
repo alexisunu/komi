@@ -18,6 +18,10 @@ export const META_KEYS = {
   activeSession: "active_session",
   /** Id del libro que el lector eligio con "Leer este libro". El Dashboard lo usa si sigue siendo valido. */
   activeBookId: "active_book_id",
+  /** JSON del avance de la sesion EPUB en curso (CFI, porcentaje, extracto). Clave aparte del latido. */
+  activeSessionProgress: "active_session_progress",
+  /** Tamano de letra del lector EPUB (16, 18, 20 o 22). */
+  readerFontSize: "reader_font_size",
 } as const;
 
 export function createLocalMetaRepository(db: KomiDatabase = getDatabase()) {
