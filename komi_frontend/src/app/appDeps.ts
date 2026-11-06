@@ -25,12 +25,13 @@ import { createWakeLockService, type WakeLockService } from "../services/wakeLoc
 import { reloadGate, type ReloadGate } from "../pwa/reloadGate";
 import { createOnboardingService } from "../services/onboardingService";
 import { createPlantBookService } from "../services/plantBookService";
+import { createPostReadingService } from "../services/postReadingService";
 
 export interface AppOptions {
   db?: KomiDatabase;
   api?: ApiClient;
   /** Solo para pruebas: motor de epubjs propio. */
-  epub?: Pick<EpubService, "inspect" | "generateLocations">;
+  epub?: Pick<EpubService, "inspect" | "generateLocations"> & Partial<Pick<EpubService, "percentageAt">>;
   /** Solo para pruebas: lector EPUB propio (en jsdom epubjs no puede dibujar paginas). */
   epubReader?: EpubReaderService;
   /** Solo para pruebas: reloj y Page Visibility del temporizador (el almacen y el guardado son reales). */
@@ -63,7 +64,8 @@ export function createAppDeps(options: AppOptions = {}) {
     // Un 401 puede ser un onboarding aun en cola: se confirma y se reintenta una vez.
     recoverUnauthorized: async () => (await onboardingSync.flush()).status === "synced",
   });
-  const epub = options.epub ?? createEpubService();
+  const realEpub = createEpubService();
+  const epub = options.epub ?? realEpub;
   const focusNow = options.focusEnv?.now ?? (() => Date.now());
   const focus = createFocusVisibilityService({
     now: focusNow,
@@ -99,7 +101,7 @@ export function createAppDeps(options: AppOptions = {}) {
     focus,
     /** Lector EPUB: epubjs, archivo del dispositivo y avance de la sesion (`active_session_progress`). */
     epubReader: {
-      reader: options.epubReader ?? createEpubReaderService(createEpubService()),
+      reader: options.epubReader ?? createEpubReaderService(realEpub),
       files: epubFiles,
       progress: {
         load: async () => parseReadingProgress(await meta.get(META_KEYS.activeSessionProgress)),
@@ -108,6 +110,17 @@ export function createAppDeps(options: AppOptions = {}) {
       },
       now: focusNow,
     },
+    /** Cierre de la sesion (CU-04): guarda sesion y avance, recalcula la racha. */
+    postReading: createPostReadingService({
+      loadActiveSession: async () => parseActiveSession(await meta.get(META_KEYS.activeSession)),
+      loadProgress: async () => parseReadingProgress(await meta.get(META_KEYS.activeSessionProgress)),
+      books,
+      sessions,
+      epubFiles,
+      epub: { percentageAt: options.epub?.percentageAt ?? realEpub.percentageAt },
+      meta,
+      now: focusNow,
+    }),
     /** Pantalla encendida durante la sesion (SRS 19.12). */
     wakeLock: options.wakeLock ?? createWakeLockService(navigator, document),
     /** Puerta de recarga del Service Worker: se bloquea mientras dura la sesion. */
