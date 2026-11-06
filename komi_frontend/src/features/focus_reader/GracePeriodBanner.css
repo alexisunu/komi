@@ -1,0 +1,31 @@
+/* Alerta gentil del periodo de gracia. Solo tokens de core/theme. */
+
+.grace-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--color-state-warning);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.grace-banner__icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--color-state-warning);
+}
+
+.grace-banner__text {
+  margin: 0;
+  font-size: var(--font-body-size);
+  line-height: 1.5;
+}
+
+.grace-banner__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-state-warning);
+  font-weight: 600;
+}
