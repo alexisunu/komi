@@ -15,7 +15,7 @@ import { parseActiveSession, type ActiveSession } from "./services/focusSessionM
 import type { WakeLockService } from "./services/wakeLockService";
 import { createTestDb, fakeClock, uuid } from "./test/db";
 import { createFocusEnv, T0, type FocusEnv } from "./test/focusEnv";
-import { render } from "./test/render";
+import { render, typeInto } from "./test/render";
 
 let db: KomiDatabase;
 let mounted: ReturnType<typeof render> | null = null;
@@ -69,6 +69,14 @@ const byText = (root: ParentNode, selector: string, text: string) =>
   [...root.querySelectorAll(selector)].find((el) => el.textContent?.trim().startsWith(text)) ?? null;
 const navItem = (root: HTMLElement, label: string) =>
   [...root.querySelectorAll(".bottom-nav__item")].find((b) => b.textContent === label);
+/** La hoja post-lectura es un dialogo fuera del contenedor de la app. */
+const sheet = () => document.querySelector('[role="dialog"]');
+const sheetTitle = () => sheet()?.querySelector("h2")?.textContent;
+async function submitPage(page: string) {
+  typeInto(sheet()?.querySelector("input"), page);
+  await tap(byText(sheet() as HTMLElement, "button", "Actualizar Girasol"));
+  await settle();
+}
 const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lectura") as HTMLButtonElement;
 
 interface Setup {
@@ -164,37 +172,79 @@ describe("sesion de un libro fisico", () => {
     expect(root.querySelectorAll("[data-block]").length).toBeLessThanOrEqual(4);
   });
 
-  it("Terminé antes de tiempo con el 50 % o mas: pasa a la pantalla provisional sin guardar sesion", async () => {
-    const { root, env, wakeLock } = await mountApp([book(1)]);
+  it("Terminé antes de tiempo con el 50 % o mas: abre la hoja post-lectura y aun no guarda nada", async () => {
+    const { root, env, wakeLock, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(450_000); // 7:30 de 15:00 = 50 %
     await tap(byText(root, "button", "Terminé antes de tiempo"));
-    expect(root.querySelector("h1")?.textContent).toBe("Sesión terminada");
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
     expect(root.querySelector(".bottom-nav")).toBeNull();
-    expect(root.textContent).toContain("Leíste 7 minutos");
+    // Paso 1 abierto: la sesion sigue solo en el registro, la recarga sigue bloqueada.
     expect(await db.sessions.count()).toBe(0);
+    expect((await storedSession())?.finalSec).toBe(450);
+    expect(gate.isBlocked()).toBe(true);
     expect(wakeLock.release).toHaveBeenCalled();
   });
 
-  it("el boton de la pantalla provisional borra active_session y no hay bucle al reabrir", async () => {
+  it("Paso 1 -> guardar -> Paso 2: guarda sesion y avance, borra el registro y suelta la recarga", async () => {
+    const { root, env, gate } = await mountApp([book(1)]);
+    await tap(startButton(root));
+    env.advance(600_000);
+    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await settle();
+    expect(sheet()?.querySelector("input")?.value).toBe("30"); // ultima pagina guardada
+    await submitPage("60");
+
+    const sessions = await db.sessions.toArray();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      session_status: "EARLY_VALID",
+      actual_duration_sec: 600,
+      current_page: 60,
+      progress_percentage: null,
+    });
+    expect(await db.books.get(uuid(1))).toMatchObject({ current_page: 60, progress_percentage: 20 });
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+    expect(sheet()?.textContent).toContain("¿Quieres charlar un poco sobre lo que acabas de leer?");
+    expect((await db.meta.get(META_KEYS.streakCurrent))?.value).toBe(1);
+  });
+
+  it("al cerrar el Paso 2 con Por hoy no vuelve al Dashboard con la racha y el girasol actualizados", async () => {
+    const { root, env } = await mountApp([book(1)]);
+    await tap(startButton(root));
+    env.advance(900_000 + 5);
+    await settle(320);
+    await settle();
+    await submitPage("120");
+    await tap(byText(sheet() as HTMLElement, "button", "Por hoy no, volver al jardín"));
+    expect(sheet()).toBeNull();
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(root.querySelector(".bottom-nav")).not.toBeNull();
+    expect(root.querySelector(".streak-badge")?.textContent).toBe("1 día seguido");
+    expect(root.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain("40 por ciento");
+  });
+
+  it("cerrar la app en el Paso 1 sin pulsar nada no pierde la sesion: la hoja reaparece al reabrir", async () => {
     const first = await mountApp([book(1)]);
     await tap(startButton(first.root));
     first.env.advance(600_000);
     await tap(byText(first.root, "button", "Terminé antes de tiempo"));
     await settle();
-    expect((await storedSession())?.finalSec).toBe(600);
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    expect(await db.sessions.count()).toBe(0);
 
-    await tap(byText(first.root, "button", "Volver al jardín"));
-    expect(await storedSession()).toBeNull();
-    expect(first.gate.isBlocked()).toBe(false);
-    expect(first.root.querySelector(".bottom-nav")).not.toBeNull();
-    expect(first.root.querySelector("h1")?.textContent).toBe("Mi Jardín");
-
-    // Reabrir la app: ya no vuelve a la pantalla provisional.
     mounted?.unmount();
+    expect(sheet()).toBeNull();
     const again = await mountApp([], first.env);
-    expect(again.root.querySelector("h1")?.textContent).not.toBe("Sesión terminada");
-    expect(again.root.querySelector(".bottom-nav")).not.toBeNull();
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    expect(again.gate.isBlocked()).toBe(true);
+    await submitPage("45");
+    expect((await db.sessions.toArray())[0]).toMatchObject({ actual_duration_sec: 600, current_page: 45 });
+    expect(await storedSession()).toBeNull();
+    expect(again.gate.isBlocked()).toBe(false);
   });
 
   it("Terminé antes de tiempo con menos del 50 % pide confirmacion; Seguir leyendo no cambia nada", async () => {
@@ -230,16 +280,20 @@ describe("sesion de un libro fisico", () => {
     await tap(byText(root, "button", "Terminé antes de tiempo"));
     env.advance(300_000); // 500 s de 900 > 50 %
     await tap(byText(document.body, "button", "Cancelar sesión"));
-    expect(root.querySelector("h1")?.textContent).toBe("Sesión terminada");
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
   });
 
-  it("al llegar el tiempo a 00:00 se pasa a la pantalla provisional", async () => {
+  it("al llegar el tiempo a 00:00 se abre la hoja post-lectura", async () => {
     const { root, env } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(900_000 + 5);
     await settle(320);
-    expect(root.querySelector("h1")?.textContent).toBe("Sesión terminada");
-    expect(root.textContent).toContain("Leíste 15 minutos");
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    await submitPage("90");
+    expect(sheet()?.textContent).toContain("Leíste 15 minutos");
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
   });
 });
 
@@ -280,7 +334,7 @@ describe("periodo de gracia en pantalla", () => {
   });
 });
 
-describe("recuperacion y pantalla provisional sin trampas", () => {
+describe("recuperacion y hoja post-lectura sin trampas", () => {
   function saved(over: Partial<ActiveSession> = {}): ActiveSession {
     return {
       sessionId: uuid(500),
@@ -305,25 +359,43 @@ describe("recuperacion y pantalla provisional sin trampas", () => {
     expect(gate.isBlocked()).toBe(true);
   });
 
-  it("una sesion ya terminada y sin guardar abre la pantalla provisional, que siempre deja salir", async () => {
+  it("una sesion ya terminada y sin guardar abre la hoja, que guarda y deja salir", async () => {
     const env = createFocusEnv();
     await seedSession(saved({ finalSec: 600 }));
     const { root, gate } = await mountApp([book(1)], env);
-    expect(root.querySelector("h1")?.textContent).toBe("Sesión terminada");
-    await tap(byText(root, "button", "Volver al jardín"));
-    expect(root.querySelector("h1")?.textContent).toBe("Mi Jardín");
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    expect(gate.isBlocked()).toBe(true);
+    await submitPage("50");
+    await tap(byText(sheet() as HTMLElement, "button", "Por hoy no, volver al jardín"));
+    expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(await storedSession()).toBeNull();
     expect(gate.isBlocked()).toBe(false);
   });
 
-  it("aunque borrar el registro falle, el boton sale de la pantalla provisional", async () => {
+  it("un registro sin el libro muestra un mensaje claro y una salida segura", async () => {
     const env = createFocusEnv();
-    await seedSession(saved({ finalSec: 600 }));
+    await seedSession(saved({ finalSec: 600, bookId: uuid(99) }));
+    const { root, gate } = await mountApp([book(1)], env);
+    await settle();
+    expect(sheetTitle()).toBe("No encontramos esta sesión");
+    await tap(byText(sheet() as HTMLElement, "button", "Volver al jardín"));
+    expect(sheet()).toBeNull();
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+    expect(await db.sessions.count()).toBe(0);
+  });
+
+  it("aunque borrar el registro falle al salir de un mensaje de error, la hoja se cierra", async () => {
+    const env = createFocusEnv();
+    await seedSession(saved({ finalSec: 600, bookId: uuid(99) }));
     const { root } = await mountApp([book(1)], env);
+    await settle();
     const remove = vi.spyOn(db.meta, "delete").mockRejectedValue(new Error("sin espacio"));
-    await tap(byText(root, "button", "Volver al jardín"));
+    await tap(byText(sheet() as HTMLElement, "button", "Volver al jardín"));
     expect(remove).toHaveBeenCalled();
-    expect(root.querySelector("h1")?.textContent).not.toBe("Sesión terminada");
+    expect(sheet()).toBeNull();
     expect(root.querySelector(".bottom-nav")).not.toBeNull();
   });
 

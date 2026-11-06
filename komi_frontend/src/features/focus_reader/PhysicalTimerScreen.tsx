@@ -53,6 +53,12 @@ export function PhysicalTimerScreen({
     else void onCancel();
   };
 
+  // Con menos del 50 % solo vale si el libro se termino: la hoja pide la pagina y exige la ultima.
+  const finishBook = () => {
+    setConfirming(false);
+    onAcceptEarly();
+  };
+
   return (
     <div className="focus-timer">
       <section className="focus-timer__canvas" data-block="canvas" aria-label="Libro en lectura">
@@ -82,10 +88,14 @@ export function PhysicalTimerScreen({
         <ZenSheet title="¿Terminar sin guardar?" onClose={() => setConfirming(false)}>
           <p className="focus-timer__confirm-text">
             Llevas menos de la mitad del tiempo que programaste. Si terminas ahora, la sesión se
-            cancela y no se guarda ningún avance.
+            cancela y no se guarda ningún avance, salvo que hayas terminado el libro: en ese caso se
+            guarda si indicas la última página.
           </p>
           <div className="focus-timer__confirm-actions">
             <ZenPrimaryButton onClick={() => setConfirming(false)}>Seguir leyendo</ZenPrimaryButton>
+            <ZenPrimaryButton variant="secondary" onClick={finishBook}>
+              Terminé el libro
+            </ZenPrimaryButton>
             <ZenPrimaryButton variant="secondary" onClick={confirmCancel}>
               Cancelar sesión
             </ZenPrimaryButton>

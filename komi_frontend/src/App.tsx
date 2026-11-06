@@ -17,7 +17,7 @@ import { DashboardScreen } from "./features/dashboard/DashboardScreen";
 import { EpubReaderScreen } from "./features/focus_reader/EpubReaderScreen";
 import { GracePeriodBanner } from "./features/focus_reader/GracePeriodBanner";
 import { PhysicalTimerScreen } from "./features/focus_reader/PhysicalTimerScreen";
-import { SessionEndedScreen } from "./features/focus_reader/SessionEndedScreen";
+import { PostReadingSheet, type SavedReading } from "./features/focus_reader/PostReadingSheet";
 import { useFocusSession } from "./features/focus_reader/useFocusSession";
 import { MyGardenScreen } from "./features/garden_library/MyGardenScreen";
 import { useLibrary } from "./features/garden_library/useLibrary";
@@ -174,6 +174,11 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   const [preparing, setPreparing] = useState<number | null>(null);
   const [fontPx, setFontPx] = useState<ReaderFontSize>(DEFAULT_FONT_SIZE);
   const { theme } = useTheme();
+  // Racha del Dashboard: parte de lo guardado y sube al cerrar una sesion, sin esperar a la red.
+  const [streakDays, setStreakDays] = useState(initial?.streakDays ?? 0);
+  // Sesion que se esta cerrando. Se fija al terminar y sobrevive a `focus.leave()`: la hoja sigue
+  // en pantalla (Paso 2) aunque el registro de la sesion ya se haya borrado.
+  const [closing, setClosing] = useState<{ sessionId: string; actualSec: number | null } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -245,6 +250,22 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   );
 
   const snapshot = focus.snapshot;
+  if (closing === null && snapshot && (snapshot.phase === "completed" || snapshot.phase === "early")) {
+    setClosing({ sessionId: snapshot.sessionId, actualSec: snapshot.actualSec });
+  }
+
+  // Guardado terminado (CU-04): ya se pueden borrar los registros y soltar la recarga.
+  const onReadingSaved = async (result: SavedReading) => {
+    setStreakDays(result.streak);
+    try {
+      await focus.leave();
+    } catch {
+      // Guardar es idempotente: si el registro queda, la hoja reaparece una vez y se limpia.
+    }
+    void reload();
+    pushChanges();
+  };
+
   const canStart =
     chosenId !== undefined &&
     snapshot === null &&
@@ -329,20 +350,21 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
     );
   }
 
-  // Pantalla provisional (SRS 19.15): el bloque 6 la sustituye por PostReadingSheet.
-  if (snapshot && (snapshot.phase === "completed" || snapshot.phase === "early")) {
+  // Hoja post-lectura (CU-04 y CU-05): sin navegacion, sobre el girasol de la sesion.
+  if (closing !== null) {
     return (
       <div className="app-shell">
         <div className="app-shell__screen">
-          <SessionEndedScreen
-            book={library.books.find((book) => book.id === snapshot.bookId) ?? null}
-            minutesRead={Math.floor((snapshot.actualSec ?? 0) / 60)}
-            onLeave={async () => {
-              try {
-                await focus.leave();
-              } finally {
-                onNav("jardin");
-              }
+          <PostReadingSheet
+            key={closing.sessionId}
+            sessionId={closing.sessionId}
+            actualSec={closing.actualSec}
+            service={deps.postReading}
+            onSaved={onReadingSaved}
+            onDiscard={focus.leave}
+            onDone={() => {
+              setClosing(null);
+              onNav("lectura");
             }}
           />
         </div>
@@ -374,7 +396,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
         {nav === "lectura" && (
           <DashboardScreen
             key={profile?.daily_goal_minutes}
-            streakDays={initial?.streakDays ?? 0}
+            streakDays={streakDays}
             book={activeBook}
             dailyGoalMinutes={profile?.daily_goal_minutes ?? 15}
             canStart={canStart}

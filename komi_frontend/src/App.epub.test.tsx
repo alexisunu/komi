@@ -69,6 +69,8 @@ async function tap(el: Element | null | undefined) {
 }
 const byText = (root: ParentNode, selector: string, text: string) =>
   [...root.querySelectorAll(selector)].find((el) => el.textContent?.trim().startsWith(text)) ?? null;
+const sheet = () => document.querySelector('[role="dialog"]');
+const sheetTitle = () => sheet()?.querySelector("h2")?.textContent;
 const openButton = (root: HTMLElement) => byText(root, "button", "Abrir lector") as HTMLButtonElement;
 
 async function putFile(bookId: string, locations: string | null = LOCATIONS) {
@@ -311,23 +313,35 @@ describe("sesion EPUB", () => {
     );
   });
 
-  it("al terminar el tiempo el ultimo avance queda guardado para el cierre", async () => {
-    const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+  it("al terminar el tiempo la hoja guarda sola el ultimo avance y el extracto, y borra los registros", async () => {
+    const { root, fake, env, gate } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
     await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "" }));
     await settle();
     env.advance(1_000);
-    await act(async () => fake.see({ cfi: "cfi-final", percentage: 22.5, text: "" }));
+    await act(async () =>
+      fake.see({ cfi: "cfi-final", percentage: 22.5, text: "Texto leido durante la sesion de hoy." }),
+    );
     env.advance(900_000);
     await settle(320);
-    expect(root.querySelector("h1")?.textContent).toBe("Sesión terminada");
-    await settle();
-    expect(await storedProgress()).toMatchObject({ cfi: "cfi-final", percentage: 22.5 });
+    await settle(200);
     expect(fake.handle.destroy).toHaveBeenCalled();
+    // EPUB: no hay Paso 1; guarda directo y ofrece la charla.
+    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheet()?.querySelector("input")).toBeNull();
+    expect((await db.sessions.toArray())[0]).toMatchObject({
+      session_status: "COMPLETED",
+      last_epub_cfi: "cfi-final",
+      extracted_epub_excerpt: "Texto leido durante la sesion de hoy.",
+    });
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 22.5, last_epub_cfi: "cfi-final" });
+    expect(await storedProgress()).toBeNull();
+    expect(await db.meta.get(META_KEYS.activeSession)).toBeUndefined();
+    expect(gate.isBlocked()).toBe(false);
   });
 
-  it("cancelar o volver al jardin borra tambien el avance de lectura", async () => {
+  it("Por hoy no, volver al jardin deja el Dashboard sin registros de la sesion", async () => {
     const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
@@ -336,8 +350,11 @@ describe("sesion EPUB", () => {
     expect(await storedProgress()).not.toBeNull();
     env.advance(900_000);
     await settle(320);
-    await tap(byText(root, "button", "Volver al jardín"));
+    await settle(200);
+    await tap(byText(sheet() as HTMLElement, "button", "Por hoy no, volver al jardín"));
     await settle();
+    expect(sheet()).toBeNull();
+    expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(await db.meta.get(META_KEYS.activeSessionProgress)).toBeUndefined();
     expect(await db.meta.get(META_KEYS.activeSession)).toBeUndefined();
   });
@@ -353,18 +370,20 @@ describe("Terminé antes de tiempo en el lector", () => {
     return ctx;
   }
 
-  it("con el 100 % exacto del libro vale aunque falte tiempo", async () => {
+  it("con el 100 % exacto del libro vale aunque falte tiempo: se guarda y el girasol florece", async () => {
     const { root } = await startAndRead(100);
     await tap(byText(root, "button", "Terminé antes de tiempo"));
-    expect(root.querySelector("h1")?.textContent).toBe("Sesión terminada");
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await settle(200);
+    expect(sheetTitle()).toBe("Tu girasol floreció");
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 100, status: "BLOOMED" });
   });
 
   it("con 99,99 % no cuenta como terminado: pide confirmacion", async () => {
     const { root } = await startAndRead(99.99);
     await tap(byText(root, "button", "Terminé antes de tiempo"));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("no se guarda ningún avance");
-    expect(root.querySelector("h1")?.textContent).not.toBe("Sesión terminada");
+    expect(sheetTitle()).toBe("¿Terminar sin guardar?");
   });
 
   it("sin locations (porcentaje nulo) nunca se considera terminado", async () => {
@@ -386,7 +405,9 @@ describe("Terminé antes de tiempo en el lector", () => {
     const { root, env } = await startAndRead(5);
     env.advance(250_000); // 450 s de 900
     await tap(byText(root, "button", "Terminé antes de tiempo"));
-    expect(root.querySelector("h1")?.textContent).toBe("Sesión terminada");
+    await settle(200);
+    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12 });
   });
 });
 
