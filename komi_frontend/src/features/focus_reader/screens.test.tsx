@@ -6,7 +6,6 @@ import { click, render } from "../../test/render";
 import { formatClock } from "./clockFormat";
 import css from "./PhysicalTimerScreen.css?raw";
 import { PhysicalTimerScreen } from "./PhysicalTimerScreen";
-import { SessionEndedScreen } from "./SessionEndedScreen";
 
 let mounted: ReturnType<typeof render> | null = null;
 afterEach(() => {
@@ -156,35 +155,5 @@ describe("PhysicalTimerScreen", () => {
     expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(css).not.toMatch(/\brgba?\(|\bhsla?\(/);
     expect(css).not.toContain("animation");
-  });
-});
-
-describe("SessionEndedScreen (provisional)", () => {
-  it("avisa que la sesion aun no se guarda y tiene un solo boton", () => {
-    mounted = render(<SessionEndedScreen book={BOOK} minutesRead={1} onLeave={async () => {}} />);
-    const root = mounted.container;
-    expect(root.querySelector("h1")?.textContent).toBe("Sesión terminada");
-    expect(root.textContent).toContain("Leíste 1 minuto.");
-    expect(root.textContent).toContain("todavía no se guarda");
-    expect(root.querySelectorAll("button")).toHaveLength(1);
-  });
-
-  it("el boton llama a onLeave una sola vez aunque se pulse varias", () => {
-    const onLeave = vi.fn(() => new Promise<void>(() => {}));
-    mounted = render(<SessionEndedScreen book={BOOK} minutesRead={5} onLeave={onLeave} />);
-    const go = button(mounted.container, "Volver al jardín");
-    click(go);
-    click(go);
-    expect(onLeave).toHaveBeenCalledTimes(1);
-  });
-
-  it("si onLeave falla no lanza: el lector no queda atrapado", async () => {
-    const onLeave = vi.fn(async () => {
-      throw new Error("sin espacio");
-    });
-    mounted = render(<SessionEndedScreen book={null} minutesRead={5} onLeave={onLeave} />);
-    click(button(mounted.container, "Volver al jardín"));
-    await Promise.resolve();
-    expect(onLeave).toHaveBeenCalled();
   });
 });

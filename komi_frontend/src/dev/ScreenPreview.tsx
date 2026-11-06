@@ -10,7 +10,6 @@ import { EpubImportError } from "../services/epubService";
 import type { GardenPlantService } from "../services/plantBookService";
 import { DashboardScreen } from "../features/dashboard/DashboardScreen";
 import { PhysicalTimerScreen } from "../features/focus_reader/PhysicalTimerScreen";
-import { SessionEndedScreen } from "../features/focus_reader/SessionEndedScreen";
 import type { FocusSnapshot } from "../services/focusVisibilityService";
 import type { WakeLockService } from "../services/wakeLockService";
 import { MyGardenScreen } from "../features/garden_library/MyGardenScreen";
@@ -29,8 +28,7 @@ export type PreviewScreen =
   | "dashboard"
   | "timer"
   | "timer-grace"
-  | "timer-confirm"
-  | "ended";
+  | "timer-confirm";
 
 function book(over: Partial<LocalBook> & Pick<LocalBook, "id" | "title" | "author">): LocalBook {
   return {
@@ -145,9 +143,6 @@ function PreviewBody({ screen }: { screen: PreviewScreen }) {
       />
     );
   }
-  if (screen === "ended") {
-    return <SessionEndedScreen book={kokoro} minutesRead={12} onLeave={async () => {}} />;
-  }
   return null;
 }
 
@@ -160,7 +155,7 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
     <ThemeProvider storedMode={theme}>
       <div className="app-shell" data-preview={SCREEN_PREVIEW_MARKER}>
         <div className="app-shell__screen">
-          {["dashboard", "timer", "timer-grace", "timer-confirm", "ended"].includes(screen) ? (
+          {["dashboard", "timer", "timer-grace", "timer-confirm"].includes(screen) ? (
             <PreviewBody screen={screen} />
           ) : (
           <MyGardenScreen
@@ -175,7 +170,7 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
           />
           )}
         </div>
-        {["timer", "timer-grace", "timer-confirm", "ended"].includes(screen) ? null : (
+        {["timer", "timer-grace", "timer-confirm"].includes(screen) ? null : (
           <div data-block="nav">
             <BottomNavZen active={screen === "dashboard" ? "lectura" : "jardin"} onSelect={() => {}} />
           </div>
