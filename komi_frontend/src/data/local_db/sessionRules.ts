@@ -162,8 +162,21 @@ function deriveStatus(
   );
 }
 
+export interface EvaluateOptions {
+  /**
+   * Acepta una lectura valida sobre un libro en barbecho o florecido, como hace `/profile/sync/`
+   * (SRS 17.18): la sesion no se pierde, un florecido no cambia nada y un barbecho conserva su
+   * estado. Sin la opcion se replica `/sessions/complete/`, que responde 409.
+   */
+  acceptInactiveBook?: boolean;
+}
+
 /** Evalua una sesion contra el libro sin escribir nada. Lanza si el servidor la rechazaria. */
-export function evaluateSession(book: LocalBook, input: CompleteSessionInput): SessionOutcome {
+export function evaluateSession(
+  book: LocalBook,
+  input: CompleteSessionInput,
+  options: EvaluateOptions = {},
+): SessionOutcome {
   const previous = toHundredths(book.progress_percentage);
 
   if (input.session_status === "INVALIDATED_GRACE_EXPIRED") {
@@ -182,11 +195,12 @@ export function evaluateSession(book: LocalBook, input: CompleteSessionInput): S
     };
   }
 
-  if (book.status === "FALLOW") {
-    throw new SessionConflictError("book_fallow", "El libro esta en barbecho; restauralo para leerlo.");
-  }
-  if (previous >= FULL_HUNDREDTHS) {
-    throw new SessionConflictError("book_bloomed", "El libro ya florecio.");
+  const bloomed = book.status === "BLOOMED" || previous >= FULL_HUNDREDTHS;
+  if (!options.acceptInactiveBook) {
+    if (book.status === "FALLOW") {
+      throw new SessionConflictError("book_fallow", "El libro esta en barbecho; restauralo para leerlo.");
+    }
+    if (bloomed) throw new SessionConflictError("book_bloomed", "El libro ya florecio.");
   }
 
   let reported: number;
@@ -201,7 +215,8 @@ export function evaluateSession(book: LocalBook, input: CompleteSessionInput): S
       fail("current_page", "Supera el total de paginas del libro.");
     }
     reported = pageProgressHundredths(page, book.total_pages);
-    newPage = Math.max(book.current_page, page);
+    // Un libro florecido no cambia (ni la pagina): el servidor ignora el registro.
+    newPage = bloomed ? book.current_page : Math.max(book.current_page, page);
     reportedPage = page;
   } else {
     if (input.progress_percentage === undefined) {
@@ -226,6 +241,7 @@ export function evaluateSession(book: LocalBook, input: CompleteSessionInput): S
     // El CFI solo avanza si la lectura no retrocedio: uno atrasado no pisa uno nuevo.
     updateCfi:
       book.format_type === "EPUB" &&
+      !bloomed &&
       advanced &&
       input.last_epub_cfi !== undefined &&
       input.last_epub_cfi !== "",

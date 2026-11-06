@@ -6,6 +6,7 @@ import {
   evaluateSession,
   validateSessionInput,
   type CompleteSessionInput,
+  type EvaluateOptions,
 } from "./sessionRules";
 import { guardStorage } from "./storageGuard";
 import type { LocalBook, LocalSession } from "./types";
@@ -30,8 +31,13 @@ export function createLocalSessionRepository(
      *    lectura no retrocedio.
      *  - `updated_at` del libro solo cambia si algo cambio de verdad.
      *  - Una sesion invalidada (gracia vencida) se guarda sin tocar el libro.
+     *  - `acceptInactiveBook`: una lectura valida sobre un libro en barbecho o florecido se guarda
+     *    igual (la sesion es del lector y no se pierde), sin volver a florecer ni bajar el avance.
      */
-    async completeSession(input: CompleteSessionInput): Promise<CompleteSessionResult> {
+    async completeSession(
+      input: CompleteSessionInput,
+      options: EvaluateOptions = {},
+    ): Promise<CompleteSessionResult> {
       validateSessionInput(input);
 
       return await guardStorage(() =>
@@ -46,7 +52,7 @@ export function createLocalSessionRepository(
           const book = await db.books.get(input.book_id);
           if (!book) throw new BookNotFoundError(input.book_id);
 
-          const outcome = evaluateSession(book, input);
+          const outcome = evaluateSession(book, input, options);
           let nextBook = book;
 
           if (outcome.valid) {
