@@ -23,6 +23,8 @@ export interface MyGardenScreenProps {
   onPlanted: (book: LocalBook) => void;
   onSetStatus: (book: LocalBook, status: "ACTIVE" | "FALLOW") => Promise<void>;
   onReimport: (book: LocalBook, file: File) => Promise<void>;
+  /** "Leer este libro" (guarda el libro del Dashboard). */
+  onRead: (book: LocalBook) => Promise<void>;
 }
 
 const EMPTY_TEXT: Record<GardenTab, string> = {
@@ -45,6 +47,7 @@ export function MyGardenScreen({
   onPlanted,
   onSetStatus,
   onReimport,
+  onRead,
 }: MyGardenScreenProps) {
   const [tab, setTab] = useState<GardenTab>("active");
   const [planting, setPlanting] = useState(false);
@@ -113,6 +116,7 @@ export function MyGardenScreen({
               onArchive={(target) => void run(target, () => onSetStatus(target, "FALLOW"))}
               onRestore={(target) => void run(target, () => onSetStatus(target, "ACTIVE"))}
               onReimport={(target, file) => void run(target, () => onReimport(target, file))}
+              onRead={(target) => void run(target, () => onRead(target))}
             />
           ))
         )}

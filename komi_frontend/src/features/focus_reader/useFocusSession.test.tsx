@@ -105,6 +105,20 @@ describe("useFocusSession y reloadGate", () => {
     view.unmount();
   });
 
+  it("al invalidarse la sesion suelta el bloqueo de recarga (ya quedo guardada)", async () => {
+    const { env, gate, reload, view } = setup();
+    await act(async () => hook().start(input));
+    gate.request();
+    act(() => env.hide());
+    env.advance(16_000);
+    await act(async () => env.show());
+    await flush();
+    expect(hook().snapshot?.phase).toBe("invalidated");
+    expect(gate.isBlocked()).toBe(false);
+    expect(reload).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
   it("cancelar (leave) con menos del 50 % libera el bloqueo y no guarda sesion", async () => {
     const { env, gate, view } = setup();
     await act(async () => hook().start(input));

@@ -16,6 +16,8 @@ export const META_KEYS = {
   syncBookRejections: "sync_book_rejections",
   /** JSON de la sesion de lectura en curso (focusSessionMachine.ActiveSession). Se borra al terminar. */
   activeSession: "active_session",
+  /** Id del libro que el lector eligio con "Leer este libro". El Dashboard lo usa si sigue siendo valido. */
+  activeBookId: "active_book_id",
 } as const;
 
 export function createLocalMetaRepository(db: KomiDatabase = getDatabase()) {

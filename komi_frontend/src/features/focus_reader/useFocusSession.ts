@@ -55,6 +55,12 @@ export function useFocusSession(service: FocusVisibilityService, gate: ReloadGat
   }, [service, hold, drop]);
 
   const phase = snapshot?.phase;
+
+  // Una sesion invalidada ya quedo guardada: no hay nada que proteger de una recarga.
+  useEffect(() => {
+    if (phase === "invalidated") drop();
+  }, [phase, drop]);
+
   useEffect(() => {
     if (phase !== "running" && phase !== "grace") return;
     const id = window.setInterval(() => void service.tick(), REPAINT_MS);

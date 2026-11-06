@@ -1,0 +1,64 @@
+/* Pantalla de concentracion del libro fisico (CU-03). Sin navegacion inferior. Solo tokens. */
+
+.focus-timer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: calc(var(--space-3) + env(safe-area-inset-top)) var(--screen-margin)
+    calc(var(--space-3) + env(safe-area-inset-bottom));
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+.focus-timer__canvas {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 0;
+  text-align: center;
+}
+
+.focus-timer__title {
+  margin: 0;
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
+.focus-timer__middle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.focus-timer__clock {
+  font-size: var(--font-display-timer-size);
+  line-height: var(--font-display-timer-line);
+  font-weight: var(--font-display-timer-weight);
+  text-align: center;
+}
+
+.focus-timer__actions {
+  display: flex;
+  flex-direction: column;
+}
+
+.focus-timer__confirm-text {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-body-size);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.focus-timer__confirm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}

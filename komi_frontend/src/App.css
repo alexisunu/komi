@@ -37,3 +37,11 @@
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }
+
+/* Aviso de sesion invalidada (FA-3.2): banner terracota con salida explicita. */
+.session-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: calc(var(--space-2) + env(safe-area-inset-top)) var(--screen-margin) 0;
+}

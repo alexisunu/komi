@@ -8,6 +8,11 @@ import { ThemeProvider } from "../core/theme/ThemeContext";
 import type { LocalBook } from "../data/local_db/types";
 import { EpubImportError } from "../services/epubService";
 import type { PlantBookService } from "../services/plantBookService";
+import { DashboardScreen } from "../features/dashboard/DashboardScreen";
+import { PhysicalTimerScreen } from "../features/focus_reader/PhysicalTimerScreen";
+import { SessionEndedScreen } from "../features/focus_reader/SessionEndedScreen";
+import type { FocusSnapshot } from "../services/focusVisibilityService";
+import type { WakeLockService } from "../services/wakeLockService";
 import { MyGardenScreen } from "../features/garden_library/MyGardenScreen";
 import "../App.css";
 
@@ -20,7 +25,12 @@ export type PreviewScreen =
   | "plant-epub-ready"
   | "plant-error"
   | "plant-preparing"
-  | "plant-physical";
+  | "plant-physical"
+  | "dashboard"
+  | "timer"
+  | "timer-grace"
+  | "timer-confirm"
+  | "ended";
 
 function book(over: Partial<LocalBook> & Pick<LocalBook, "id" | "title" | "author">): LocalBook {
   return {
@@ -75,6 +85,11 @@ const buttonByText = (text: string) =>
 
 /** Reproduce los toques que llevan a cada estado del modal. */
 async function drive(screen: PreviewScreen) {
+  if (screen === "timer-confirm") {
+    await wait(50);
+    buttonByText("Terminé antes de tiempo")?.click();
+    return;
+  }
   if (!screen.startsWith("plant")) return;
   await wait(50);
   buttonByText("Plantar libro")?.click();
@@ -97,6 +112,44 @@ async function drive(screen: PreviewScreen) {
   if (screen === "plant-preparing") buttonByText("Plantar Semilla")?.click();
 }
 
+const FAKE_WAKE_LOCK = { acquire: async () => {}, release: async () => {} } as unknown as WakeLockService;
+
+function snapshot(phase: "running" | "grace"): FocusSnapshot {
+  return {
+    phase,
+    remainingMs: 754_200,
+    elapsedMs: 145_800,
+    plannedSec: 900,
+    graceRemainingMs: phase === "grace" ? 9_100 : 0,
+    actualSec: null,
+    sessionId: "s",
+    bookId: "1",
+  };
+}
+
+function PreviewBody({ screen }: { screen: PreviewScreen }) {
+  const kokoro = BOOKS[0] as LocalBook;
+  if (screen === "dashboard") {
+    return <DashboardScreen streakDays={4} book={kokoro} dailyGoalMinutes={15} canStart onStart={() => {}} />;
+  }
+  if (screen === "timer" || screen === "timer-grace" || screen === "timer-confirm") {
+    return (
+      <PhysicalTimerScreen
+        book={kokoro}
+        snapshot={snapshot(screen === "timer-grace" ? "grace" : "running")}
+        wakeLock={FAKE_WAKE_LOCK}
+        peekEarlyFinish={() => ({ actualSec: 145, belowHalf: true })}
+        onAcceptEarly={() => {}}
+        onCancel={() => {}}
+      />
+    );
+  }
+  if (screen === "ended") {
+    return <SessionEndedScreen book={kokoro} minutesRead={12} onLeave={async () => {}} />;
+  }
+  return null;
+}
+
 export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme: "light" | "dark" | null }) {
   useEffect(() => {
     void drive(screen);
@@ -106,6 +159,9 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
     <ThemeProvider storedMode={theme}>
       <div className="app-shell" data-preview={SCREEN_PREVIEW_MARKER}>
         <div className="app-shell__screen">
+          {["dashboard", "timer", "timer-grace", "timer-confirm", "ended"].includes(screen) ? (
+            <PreviewBody screen={screen} />
+          ) : (
           <MyGardenScreen
             books={screen === "garden-empty" ? [] : BOOKS}
             missingFiles={new Set(screen === "garden" ? ["2"] : [])}
@@ -114,11 +170,15 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
             onPlanted={() => {}}
             onSetStatus={async () => {}}
             onReimport={async () => {}}
+            onRead={async () => {}}
           />
+          )}
         </div>
-        <div data-block="nav">
-          <BottomNavZen active="jardin" onSelect={() => {}} />
-        </div>
+        {["timer", "timer-grace", "timer-confirm", "ended"].includes(screen) ? null : (
+          <div data-block="nav">
+            <BottomNavZen active={screen === "dashboard" ? "lectura" : "jardin"} onSelect={() => {}} />
+          </div>
+        )}
       </div>
     </ThemeProvider>
   );

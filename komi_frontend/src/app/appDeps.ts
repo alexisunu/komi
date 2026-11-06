@@ -14,7 +14,13 @@ import { createOnboardingSync } from "../data/network/onboardingSync";
 import { createSyncService } from "../data/network/syncService";
 import { createEpubService, type EpubService } from "../services/epubService";
 import { parseActiveSession } from "../services/focusSessionMachine";
-import { createFocusVisibilityService } from "../services/focusVisibilityService";
+import {
+  createFocusVisibilityService,
+  type FocusDocument,
+  type FocusWindow,
+} from "../services/focusVisibilityService";
+import { createWakeLockService, type WakeLockService } from "../services/wakeLockService";
+import { reloadGate, type ReloadGate } from "../pwa/reloadGate";
 import { createOnboardingService } from "../services/onboardingService";
 import { createPlantBookService } from "../services/plantBookService";
 
@@ -23,6 +29,11 @@ export interface AppOptions {
   api?: ApiClient;
   /** Solo para pruebas: motor de epubjs propio. */
   epub?: Pick<EpubService, "inspect" | "generateLocations">;
+  /** Solo para pruebas: reloj y Page Visibility del temporizador (el almacen y el guardado son reales). */
+  focusEnv?: { now: () => number; doc: FocusDocument; win: FocusWindow };
+  /** Solo para pruebas: pantalla encendida y puerta de recarga propios. */
+  wakeLock?: WakeLockService;
+  gate?: ReloadGate;
   /** Aviso en consola si el servidor responde otra meta (solo desarrollo). */
   warnOnMismatch?: boolean;
 }
@@ -49,9 +60,9 @@ export function createAppDeps(options: AppOptions = {}) {
     recoverUnauthorized: async () => (await onboardingSync.flush()).status === "synced",
   });
   const focus = createFocusVisibilityService({
-    now: () => Date.now(),
-    doc: document,
-    win: window,
+    now: options.focusEnv?.now ?? (() => Date.now()),
+    doc: options.focusEnv?.doc ?? document,
+    win: options.focusEnv?.win ?? window,
     store: {
       load: async () => parseActiveSession(await meta.get(META_KEYS.activeSession)),
       save: (session) => meta.set(META_KEYS.activeSession, JSON.stringify(session)),
@@ -76,6 +87,10 @@ export function createAppDeps(options: AppOptions = {}) {
     sessions,
     /** Temporizador de lectura (RF-02): gracia de 15 s y registro `active_session`. */
     focus,
+    /** Pantalla encendida durante la sesion (SRS 19.12). */
+    wakeLock: options.wakeLock ?? createWakeLockService(navigator, document),
+    /** Puerta de recarga del Service Worker: se bloquea mientras dura la sesion. */
+    gate: options.gate ?? reloadGate,
     books,
     epubFiles,
     reflections: createLocalReflectionRepository(db, systemClock),

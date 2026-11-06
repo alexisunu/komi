@@ -54,6 +54,8 @@ export function createFocusEnv(start = T0) {
 
   return {
     service: make(),
+    doc,
+    win,
     /** Otro servicio sobre el mismo almacen: lo que pasa tras una recarga. */
     reload: make,
     store,

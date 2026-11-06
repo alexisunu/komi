@@ -5,7 +5,7 @@ import { StorageQuotaError } from "../../data/local_db/errors";
 import type { LocalBook } from "../../data/local_db/types";
 import { EpubImportError } from "../../services/epubService";
 import type { PlantBookService } from "../../services/plantBookService";
-import { chooseFile, render, typeInto } from "../../test/render";
+import { chooseFile, click, render, typeInto } from "../../test/render";
 import { BookGardenCard } from "./BookGardenCard";
 import { MyGardenScreen } from "./MyGardenScreen";
 import { PlantBookModal } from "./PlantBookModal";
@@ -143,6 +143,36 @@ function fakePlant(over: Partial<PlantBookService> = {}): PlantBookService {
   };
 }
 
+describe("BookGardenCard: Leer este libro", () => {
+  const readButton = (root: HTMLElement) =>
+    [...root.querySelectorAll("button")].find((b) => b.textContent === "Leer este libro");
+
+  it("aparece en libros activos que no son el del Dashboard y avisa con el libro", () => {
+    const onRead = vi.fn();
+    const root = mount(<BookGardenCard book={book({ title: "Kokoro" })} onRead={onRead} />);
+    click(readButton(root));
+    expect(onRead).toHaveBeenCalledWith(expect.objectContaining({ title: "Kokoro" }));
+  });
+
+  it("no aparece en el libro que ya es el del Dashboard", () => {
+    const root = mount(<BookGardenCard book={book()} active onRead={() => {}} />);
+    expect(readButton(root)).toBeUndefined();
+  });
+
+  it("no aparece en barbecho ni en libros florecidos (CU-03)", () => {
+    const fallow = mount(<BookGardenCard book={book({ status: "FALLOW" })} onRead={() => {}} onRestore={() => {}} />);
+    expect(readButton(fallow)).toBeUndefined();
+    const bloomed = mount(
+      <BookGardenCard book={book({ status: "BLOOMED", progress_percentage: 100 })} onRead={() => {}} />,
+    );
+    expect(readButton(bloomed)).toBeUndefined();
+  });
+
+  it("sin onRead no hay boton", () => {
+    expect(readButton(mount(<BookGardenCard book={book()} />))).toBeUndefined();
+  });
+});
+
 describe("MyGardenScreen", () => {
   function screen(books: LocalBook[], over: Partial<Parameters<typeof MyGardenScreen>[0]> = {}) {
     return mount(
@@ -154,6 +184,7 @@ describe("MyGardenScreen", () => {
         onPlanted={() => {}}
         onSetStatus={async () => {}}
         onReimport={async () => {}}
+        onRead={async () => {}}
         {...over}
       />,
     );

@@ -4,7 +4,7 @@ import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
 import { wholePercent } from "../../services/botanicCalculator";
-import { progressLabel } from "../dashboard/activeBook";
+import { canReadBook, progressLabel } from "../dashboard/activeBook";
 import { SunflowerStageWidget } from "../dashboard/SunflowerStageWidget";
 import "./BookGardenCard.css";
 import { reimportMessage } from "./libraryTabs";
@@ -19,6 +19,8 @@ export interface BookGardenCardProps {
   onArchive?: (book: LocalBook) => void;
   onRestore?: (book: LocalBook) => void;
   onReimport?: (book: LocalBook, file: File) => void;
+  /** "Leer este libro": lo elige para el Dashboard. Solo en libros que se pueden leer. */
+  onRead?: (book: LocalBook) => void;
 }
 
 const ICON_SIZE = 20;
@@ -32,6 +34,7 @@ export function BookGardenCard({
   onArchive,
   onRestore,
   onReimport,
+  onRead,
 }: BookGardenCardProps) {
   const picker = useRef<HTMLInputElement>(null);
   const percent = wholePercent(book.progress_percentage);
@@ -51,6 +54,17 @@ export function BookGardenCard({
               {percent}%
             </span>
           </div>
+          {onRead && !active && canReadBook(book) && (
+            <button
+              type="button"
+              className="book-card__read"
+              aria-label={`Leer este libro: ${book.title}`}
+              disabled={busy}
+              onClick={() => onRead(book)}
+            >
+              Leer este libro
+            </button>
+          )}
         </div>
         {!bloomed && fallow && onRestore && (
           <button

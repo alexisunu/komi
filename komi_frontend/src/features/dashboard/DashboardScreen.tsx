@@ -1,5 +1,5 @@
 // Dashboard Zen (SRS 6): zonas 1 a 3. La zona 4 (navegacion) la pone el AppShell.
-// "Comenzar Lectura" queda deshabilitado hasta la Fase 4 (lector y temporizador real).
+// "Comenzar Lectura" se activa con un libro fisico que se pueda leer (CU-03); el EPUB espera al lector.
 
 import { Settings } from "lucide-react";
 import { useState } from "react";
@@ -25,12 +25,22 @@ export interface DashboardScreenProps {
   streakDays: number;
   book: LocalBook | null;
   dailyGoalMinutes: number;
+  /** Hay libro, se puede leer y no hay otra sesion. Sin esto el boton queda deshabilitado. */
+  canStart?: boolean;
+  /** Inicia la sesion con los minutos del selector. */
+  onStart?: (minutes: number) => void;
 }
 
 const ICON_SIZE = 22;
 const EMPTY_TITLE = "Tu primera semilla te espera";
 
-export function DashboardScreen({ streakDays, book, dailyGoalMinutes }: DashboardScreenProps) {
+export function DashboardScreen({
+  streakDays,
+  book,
+  dailyGoalMinutes,
+  canStart = false,
+  onStart,
+}: DashboardScreenProps) {
   const [minutes, setMinutes] = useState(() => initialMinutes(dailyGoalMinutes));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const percent = book ? wholePercent(book.progress_percentage) : 0;
@@ -95,7 +105,9 @@ export function DashboardScreen({ streakDays, book, dailyGoalMinutes }: Dashboar
             onClick={() => setMinutes((value) => stepMinutes(value, "increment"))}
           />
         </div>
-        <ZenPrimaryButton disabled>Comenzar Lectura</ZenPrimaryButton>
+        <ZenPrimaryButton disabled={!canStart || !onStart} onClick={() => onStart?.(minutes)}>
+          Comenzar Lectura
+        </ZenPrimaryButton>
       </section>
 
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}

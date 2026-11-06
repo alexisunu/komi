@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BookStatus, LocalBook } from "../../data/local_db/types";
-import { pickActiveBook, progressLabel } from "./activeBook";
+import { canReadBook, pickActiveBook, progressLabel, resolveActiveBook } from "./activeBook";
 
 function book(over: Partial<LocalBook> = {}): LocalBook {
   return {
@@ -59,5 +59,44 @@ describe("progressLabel", () => {
 
   it("fisico sin total de paginas cae al porcentaje", () => {
     expect(progressLabel(book({ total_pages: null }))).toBe("33%");
+  });
+});
+
+describe("canReadBook (precondicion de CU-03)", () => {
+  it("acepta libros en curso por debajo del 100 %", () => {
+    expect(canReadBook(book({ status: "ACTIVE" }))).toBe(true);
+    expect(canReadBook(book({ status: "GROWING", progress_percentage: 99.99 }))).toBe(true);
+  });
+
+  it("rechaza barbecho, florecido y cualquier libro al 100 %", () => {
+    expect(canReadBook(book({ status: "FALLOW" }))).toBe(false);
+    expect(canReadBook(book({ status: "BLOOMED", progress_percentage: 100 }))).toBe(false);
+    expect(canReadBook(book({ status: "ACTIVE", progress_percentage: 100 }))).toBe(false);
+  });
+});
+
+describe("resolveActiveBook (Leer este libro)", () => {
+  const a = book({ id: "a", title: "A" });
+  const b = book({ id: "b", title: "B" });
+
+  it("usa el libro elegido si sigue siendo valido", () => {
+    expect(resolveActiveBook([a, b], "b")?.id).toBe("b");
+  });
+
+  it("sin eleccion o con un id desconocido, aplica la regla por defecto", () => {
+    expect(resolveActiveBook([a, b], null)?.id).toBe("a");
+    expect(resolveActiveBook([a, b], undefined)?.id).toBe("a");
+    expect(resolveActiveBook([a, b], "no-existe")?.id).toBe("a");
+  });
+
+  it("si el elegido pasa a barbecho o florece, vuelve a la regla por defecto", () => {
+    expect(resolveActiveBook([a, book({ id: "b", status: "FALLOW" })], "b")?.id).toBe("a");
+    expect(
+      resolveActiveBook([a, book({ id: "b", status: "BLOOMED", progress_percentage: 100 })], "b")?.id,
+    ).toBe("a");
+  });
+
+  it("sin libros no hay lienzo", () => {
+    expect(resolveActiveBook([], "b")).toBeNull();
   });
 });
