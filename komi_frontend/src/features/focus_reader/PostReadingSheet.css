@@ -87,11 +87,3 @@
   flex-direction: column;
   gap: var(--space-1);
 }
-
-.post-reading__soon {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--font-caption-size);
-  line-height: var(--font-caption-line);
-  text-align: center;
-}

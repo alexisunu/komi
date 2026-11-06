@@ -282,14 +282,13 @@ describe("Terminé el libro (menos del 50 % del tiempo)", () => {
 });
 
 describe("Paso 2: invitacion opcional a la charla", () => {
-  it("Si, conversar con Komi esta deshabilitado con Próximamente; Por hoy no vuelve al Dashboard", async () => {
+  it("Si, conversar con Komi esta habilitado (abre la charla, bloque 7); Por hoy no vuelve al Dashboard", async () => {
     const ctx = await mountApp([book()]);
     await finishPhysical(ctx, 600_000);
     await enterPage("90");
     expect(sheet()?.textContent).toContain("¿Quieres charlar un poco sobre lo que acabas de leer?");
-    const chat = sheetButton("Sí, conversar con Komi");
-    expect(chat?.disabled).toBe(true);
-    expect(sheet()?.textContent).toContain("Próximamente");
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(false);
+    expect(sheet()?.textContent).not.toContain("Próximamente");
     await tap(sheetButton("Por hoy no, volver al jardín"));
     expect(sheet()).toBeNull();
     expect(ctx.root.querySelector(".dashboard")).not.toBeNull();

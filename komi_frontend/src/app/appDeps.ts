@@ -10,6 +10,7 @@ import { createLocalProfileRepository } from "../data/local_db/localProfileRepos
 import { createLocalReflectionRepository } from "../data/local_db/localReflectionRepository";
 import { createLocalSessionRepository } from "../data/local_db/localSessionRepository";
 import { getApiClient, type ApiClient } from "../data/network/apiClient";
+import { createCompanionClient } from "../data/network/companionClient";
 import { createOnboardingSync } from "../data/network/onboardingSync";
 import { createSyncService } from "../data/network/syncService";
 import { createEpubReaderService, type EpubReaderService } from "../services/epubReaderService";
@@ -25,6 +26,7 @@ import { createWakeLockService, type WakeLockService } from "../services/wakeLoc
 import { reloadGate, type ReloadGate } from "../pwa/reloadGate";
 import { createOnboardingService } from "../services/onboardingService";
 import { createPlantBookService } from "../services/plantBookService";
+import { createCompanionService } from "../services/companionService";
 import { createPostReadingService } from "../services/postReadingService";
 
 export interface AppOptions {
@@ -51,6 +53,7 @@ export function createAppDeps(options: AppOptions = {}) {
   const sessions = createLocalSessionRepository(db, systemClock);
   const books = createLocalBookRepository(db, systemClock);
   const epubFiles = createLocalEpubRepository(db, systemClock);
+  const reflections = createLocalReflectionRepository(db, systemClock);
   const onboardingSync = createOnboardingSync({
     db,
     api,
@@ -121,13 +124,19 @@ export function createAppDeps(options: AppOptions = {}) {
       meta,
       now: focusNow,
     }),
+    /** Charla con Komi (CU-05): exige la sesion en el servidor; guarda la semilla en `reflections`. */
+    companion: createCompanionService({
+      client: createCompanionClient(api),
+      sync: syncService,
+      reflections,
+    }),
     /** Pantalla encendida durante la sesion (SRS 19.12). */
     wakeLock: options.wakeLock ?? createWakeLockService(navigator, document),
     /** Puerta de recarga del Service Worker: se bloquea mientras dura la sesion. */
     gate: options.gate ?? reloadGate,
     books,
     epubFiles,
-    reflections: createLocalReflectionRepository(db, systemClock),
+    reflections,
     onboarding: createOnboardingService(db, systemClock, profiles),
     /** Cola del onboarding (POST /profile/onboarding/). */
     sync: onboardingSync,

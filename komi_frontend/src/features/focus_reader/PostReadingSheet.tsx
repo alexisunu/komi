@@ -1,6 +1,6 @@
 // Hoja post-lectura (CU-04 y CU-05). Paso 1: pagina alcanzada (solo libro fisico, validada contra
 // `total_pages`). Guardar: sesion y avance en Dexie ANTES de invitar a la charla (CU-05, precondicion).
-// Paso 2: invitacion opcional a conversar con Komi (el chat es el bloque 7).
+// Paso 2: invitacion opcional a conversar con Komi (`onChat` abre la charla, bloque 7).
 //
 // La sesion no se pierde: los registros `active_session` y `active_session_progress` y la puerta de
 // recarga se sueltan (`onSaved`) solo cuando el guardado termino bien. Si se cierra la app en el
@@ -35,6 +35,8 @@ export interface PostReadingSheetProps {
   onDiscard: () => Promise<void>;
   /** La hoja termina: volver al Dashboard. */
   onDone: () => void;
+  /** "Si, conversar con Komi": abre la charla de esta sesion ya guardada. */
+  onChat: (result: SavedReading) => void;
 }
 
 type Stage =
@@ -63,6 +65,7 @@ export function PostReadingSheet({
   onSaved,
   onDiscard,
   onDone,
+  onChat,
 }: PostReadingSheetProps) {
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
   const [prepared, setPrepared] = useState<Ready | null>(null);
@@ -295,12 +298,7 @@ export function PostReadingSheet({
           )}
           {saved && (
             <>
-              <ZenPrimaryButton disabled aria-describedby="post-reading-soon">
-                Sí, conversar con Komi
-              </ZenPrimaryButton>
-              <p className="post-reading__soon" id="post-reading-soon">
-                Próximamente
-              </p>
+              <ZenPrimaryButton onClick={() => onChat(saved)}>Sí, conversar con Komi</ZenPrimaryButton>
               <ZenPrimaryButton variant="secondary" onClick={onDone}>
                 Por hoy no, volver al jardín
               </ZenPrimaryButton>

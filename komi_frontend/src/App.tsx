@@ -12,6 +12,7 @@ import { watchSync } from "./data/network/syncService";
 import { requestPersistentStorage } from "./pwa/persistStorage";
 import type { LocalBook, LocalProfile } from "./data/local_db/types";
 import { META_KEYS } from "./data/local_db/localMetaRepository";
+import { CompanionChatScreen } from "./features/ai_companion/CompanionChatScreen";
 import { canReadBook, resolveActiveBook } from "./features/dashboard/activeBook";
 import { DashboardScreen } from "./features/dashboard/DashboardScreen";
 import { EpubReaderScreen } from "./features/focus_reader/EpubReaderScreen";
@@ -179,6 +180,8 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   // Sesion que se esta cerrando. Se fija al terminar y sobrevive a `focus.leave()`: la hoja sigue
   // en pantalla (Paso 2) aunque el registro de la sesion ya se haya borrado.
   const [closing, setClosing] = useState<{ sessionId: string; actualSec: number | null } | null>(null);
+  // Charla con Komi (CU-05) de la sesion recien guardada; sustituye a la hoja mientras dura.
+  const [chat, setChat] = useState<{ sessionId: string; book: LocalBook } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -350,6 +353,27 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
     );
   }
 
+  if (closing !== null && chat !== null) {
+    return (
+      <div className="app-shell">
+        <div className="app-shell__screen">
+          <CompanionChatScreen
+            key={chat.sessionId}
+            service={deps.companion}
+            gate={deps.gate}
+            sessionId={chat.sessionId}
+            book={chat.book}
+            onLeave={() => {
+              setChat(null);
+              setClosing(null);
+              onNav("lectura");
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Hoja post-lectura (CU-04 y CU-05): sin navegacion, sobre el girasol de la sesion.
   if (closing !== null) {
     return (
@@ -362,6 +386,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             service={deps.postReading}
             onSaved={onReadingSaved}
             onDiscard={focus.leave}
+            onChat={(result) => setChat({ sessionId: result.session.id, book: result.book })}
             onDone={() => {
               setClosing(null);
               onNav("lectura");
