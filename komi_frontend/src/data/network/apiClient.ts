@@ -51,14 +51,44 @@ export class ApiError extends Error {
   readonly status: number | null;
   /** Si vale la pena reintentar mas tarde (sin red, tiempo agotado, 408, 425, 429 y 5xx). */
   readonly retryable: boolean;
+  /** `code` estable del cuerpo JSON del error (por ejemplo `chat_closed`), si el servidor lo envio. */
+  readonly code: string | null;
+  /** Segundos de la cabecera Retry-After, si venia. */
+  readonly retryAfterSec: number | null;
 
-  constructor(kind: ApiErrorKind, message: string, status: number | null, retryable: boolean) {
+  constructor(
+    kind: ApiErrorKind,
+    message: string,
+    status: number | null,
+    retryable: boolean,
+    extra: { code?: string | null; retryAfterSec?: number | null } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.kind = kind;
     this.status = status;
     this.retryable = retryable;
+    this.code = extra.code ?? null;
+    this.retryAfterSec = extra.retryAfterSec ?? null;
   }
+}
+
+/** Lee `code` del cuerpo de un error sin consumir la respuesta original ni lanzar. */
+async function readErrorCode(response: Response): Promise<string | null> {
+  try {
+    const body: unknown = await response.clone().json();
+    const code = (body as { code?: unknown } | null)?.code;
+    return typeof code === "string" ? code : null;
+  } catch {
+    return null;
+  }
+}
+
+function readRetryAfter(response: Response): number | null {
+  const raw = response.headers?.get?.("Retry-After");
+  if (raw === null || raw === undefined) return null;
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : null;
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -128,6 +158,7 @@ export function createApiClient(options: ApiClientOptions) {
         `El servidor respondio con el codigo ${response.status}.`,
         response.status,
         isRetryableStatus(response.status),
+        { code: await readErrorCode(response), retryAfterSec: readRetryAfter(response) },
       );
     }
     let data: T;
@@ -140,9 +171,51 @@ export function createApiClient(options: ApiClientOptions) {
     return { status: response.status, data };
   }
 
+  /**
+   * POST que responde por SSE (chat con Komi). Devuelve la respuesta con el cuerpo SIN leer; el
+   * llamador lo consume y decide el tiempo maximo (la `signal` es suya). Los errores previos al
+   * stream (404, 409, 429...) llegan como ApiError con su `code`. Si la `signal` aborta, se
+   * relanza el AbortError original.
+   */
+  async function openStream(path: string, { body, signal }: { body: unknown; signal: AbortSignal }): Promise<Response> {
+    if (baseUrl === null) {
+      throw new ApiError("not_configured", "No hay un servidor configurado (VITE_API_URL).", null, false);
+    }
+    const fetchFn = options.fetchFn ?? globalThis.fetch.bind(globalThis);
+    const id = (await getProfileId?.()) ?? null;
+    const headers: Record<string, string> = { Accept: "text/event-stream", "Content-Type": "application/json" };
+    if (id !== null && isUuid(id)) headers[PROFILE_HEADER] = id;
+
+    let response: Response;
+    try {
+      response = await fetchFn(`${baseUrl}${API_PREFIX}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        credentials: "omit",
+        cache: "no-store",
+        signal,
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      throw new ApiError("network", "No se pudo conectar con el servidor.", null, true);
+    }
+    if (!response.ok) {
+      throw new ApiError(
+        "http",
+        `El servidor respondio con el codigo ${response.status}.`,
+        response.status,
+        isRetryableStatus(response.status),
+        { code: await readErrorCode(response), retryAfterSec: readRetryAfter(response) },
+      );
+    }
+    return response;
+  }
+
   return {
     /** Hay una URL base valida; sin ella ninguna peticion sale del dispositivo. */
     isConfigured: baseUrl !== null,
+    openStream,
     get: <T>(path: string, options?: RequestOptions) => request<T>("GET", path, options),
     post: <T>(path: string, options?: RequestOptions) => request<T>("POST", path, options),
     patch: <T>(path: string, options?: RequestOptions) => request<T>("PATCH", path, options),

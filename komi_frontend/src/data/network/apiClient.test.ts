@@ -193,3 +193,91 @@ describe("errores", () => {
     }
   });
 });
+
+describe("codigo del error y Retry-After (bloque 7)", () => {
+  it("un error JSON con `code` lo expone sin consumir la respuesta", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => json({ detail: "x", code: "chat_closed" }, 409));
+    const error = await clientWith(fetchFn)
+      .post("/x/", { body: {} })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 409, code: "chat_closed", retryable: false });
+  });
+
+  it("sin cuerpo JSON el codigo es null y no lanza otra cosa", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response("<html>", { status: 502 }));
+    const error = await clientWith(fetchFn).get("/x/").catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 502, code: null, retryAfterSec: null });
+  });
+
+  it("lee Retry-After en segundos y descarta valores invalidos", async () => {
+    const withHeader = (value: string) =>
+      vi.fn<typeof fetch>(async () => new Response("{}", { status: 429, headers: { "Retry-After": value } }));
+    expect(await clientWith(withHeader("30")).get("/x/").catch((e: unknown) => e)).toMatchObject({
+      retryAfterSec: 30,
+    });
+    expect(await clientWith(withHeader("abc")).get("/x/").catch((e: unknown) => e)).toMatchObject({
+      retryAfterSec: null,
+    });
+  });
+});
+
+describe("openStream (bloque 7)", () => {
+  const body = { content: "hola", turn: 1 };
+
+  it("pide text/event-stream con el perfil y devuelve la respuesta sin leer el cuerpo", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response("event: done\n\n", { status: 200 }));
+    const response = await clientWith(fetchFn).openStream("/companion/c/message/", {
+      body,
+      signal: new AbortController().signal,
+    });
+    expect(response.bodyUsed).toBe(false);
+    expect(headersOf(fetchFn)).toMatchObject({ Accept: "text/event-stream", "X-Profile-Id": ID });
+    expect(fetchFn.mock.calls[0]?.[0]).toBe(`${BASE}/api/v1/companion/c/message/`);
+    expect(JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body))).toEqual(body);
+  });
+
+  it("sin servidor configurado no sale ninguna peticion", async () => {
+    const fetchFn = vi.fn<typeof fetch>();
+    const client = createApiClient({ baseUrl: null, fetchFn });
+    await expect(client.openStream("/x/", { body, signal: new AbortController().signal })).rejects.toMatchObject({
+      kind: "not_configured",
+    });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("errores previos al stream: ApiError con status y code", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => json({ code: "turn_mismatch" }, 409));
+    await expect(
+      clientWith(fetchFn).openStream("/x/", { body, signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ kind: "http", status: 409, code: "turn_mismatch" });
+  });
+
+  it("fallo de red -> network; cancelacion -> se relanza el AbortError original", async () => {
+    const down = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    await expect(
+      clientWith(down).openStream("/x/", { body, signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ kind: "network" });
+
+    const controller = new AbortController();
+    const aborting = vi.fn<typeof fetch>(async () => {
+      controller.abort();
+      throw new DOMException("Aborted", "AbortError");
+    });
+    const error = await clientWith(aborting)
+      .openStream("/x/", { body, signal: controller.signal })
+      .catch((e: unknown) => e);
+    expect(error).not.toBeInstanceOf(ApiError);
+    expect((error as { name?: string }).name).toBe("AbortError");
+  });
+
+  it("el UUID del perfil no aparece en los errores del stream", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => json({ detail: ID }, 500));
+    const error = await clientWith(fetchFn)
+      .openStream("/x/", { body, signal: new AbortController().signal })
+      .catch((e: unknown) => e as Error);
+    expect((error as Error).message).not.toContain(ID);
+  });
+});
