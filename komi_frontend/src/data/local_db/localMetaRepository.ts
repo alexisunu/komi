@@ -14,6 +14,8 @@ export const META_KEYS = {
   streakCurrent: "streak_current",
   /** JSON { [book_id]: codigo } de libros con rechazo permanente del servidor: no se reenvian. */
   syncBookRejections: "sync_book_rejections",
+  /** JSON de la sesion de lectura en curso (focusSessionMachine.ActiveSession). Se borra al terminar. */
+  activeSession: "active_session",
 } as const;
 
 export function createLocalMetaRepository(db: KomiDatabase = getDatabase()) {
