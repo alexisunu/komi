@@ -1,0 +1,46 @@
+/* Avance de "Preparando tu libro". Solo tokens de core/theme. */
+
+.preparation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-sans);
+}
+
+.preparation__label {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  text-align: center;
+}
+
+.preparation__bar {
+  width: 100%;
+  max-width: 240px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-surface);
+}
+
+.preparation__fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-secondary);
+  transition: width var(--transition-ui);
+}
+
+.preparation__percent {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preparation__fill {
+    transition: none;
+  }
+}

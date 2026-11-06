@@ -128,6 +128,52 @@ describe("plantar un libro fisico", () => {
   });
 });
 
+describe("ensureLocations (antes de abrir el lector)", () => {
+  // fake-indexeddb devuelve el ArrayBuffer de otro "realm" de jsdom y epubjs no lo reconoce; en un
+  // navegador real es el mismo tipo. Se copia a un ArrayBuffer local solo en esta prueba.
+  const sameRealm = {
+    inspect: epub.inspect,
+    generateLocations: (data: ArrayBuffer, onProgress?: (fraction: number) => void) =>
+      epub.generateLocations(new Uint8Array(data).slice().buffer, onProgress),
+  };
+
+  async function planted() {
+    const clock = fakeClock();
+    const epubFiles = createLocalEpubRepository(db, clock);
+    const books = createLocalBookRepository(db, clock);
+    const service = createPlantBookService({ epub: sameRealm, epubFiles, books });
+    const prepared = await service.prepareEpub(file(buildEpub()));
+    const book = await service.plantEpub(prepared, { title: "A", author: "B" });
+    return { service, epubFiles, book };
+  }
+
+  it("si ya estan listas no hace nada ni avisa", async () => {
+    const { service, book } = await planted();
+    const preparing = vi.fn();
+    expect(await service.ensureLocations(book.id, preparing)).toBe(true);
+    expect(preparing).not.toHaveBeenCalled();
+  });
+
+  it("si faltan, las genera con avance real y las guarda", async () => {
+    const { service, epubFiles, book } = await planted();
+    const row = await epubFiles.getFile(book.id);
+    await db.epub_files.put({ ...(row as NonNullable<typeof row>), locations: null });
+    const preparing = vi.fn();
+    const progress: number[] = [];
+    expect(await service.ensureLocations(book.id, preparing, (f) => progress.push(f))).toBe(true);
+    expect(preparing).toHaveBeenCalledTimes(1);
+    expect(progress.at(-1)).toBe(1);
+    expect(JSON.parse((await epubFiles.getLocations(book.id)) ?? "null") as string[]).not.toHaveLength(0);
+  });
+
+  it("si el archivo ya no esta, devuelve falso sin crear nada", async () => {
+    const { service, book } = await planted();
+    await db.epub_files.delete(book.id);
+    expect(await service.ensureLocations(book.id)).toBe(false);
+    expect(await db.epub_files.count()).toBe(0);
+  });
+});
+
 describe("reimportar un EPUB", () => {
   it("restituye el archivo y las locations sin tocar el libro ni su progreso", async () => {
     const { service, epubFiles, books } = setup();

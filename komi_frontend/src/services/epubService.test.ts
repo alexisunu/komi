@@ -137,6 +137,53 @@ describe("inspect (epubjs real)", () => {
   });
 });
 
+describe("percentageAt (epubjs real)", () => {
+  const chapters = ["Uno. ".repeat(400), "Dos. ".repeat(400), "Tres. ".repeat(400)];
+  const book = () => buildEpub({ chapters });
+
+  async function locationsOf(): Promise<{ json: string; list: string[] }> {
+    const json = await service.generateLocations(book());
+    return { json, list: JSON.parse(json) as string[] };
+  }
+
+  it("con locations guardadas: la primera posicion es 0 y la ultima es 100 exacto", async () => {
+    const { json, list } = await locationsOf();
+    expect(await service.percentageAt(book(), list[0] as string, json)).toBe(0);
+    expect(await service.percentageAt(book(), list[list.length - 1] as string, json)).toBe(100);
+  });
+
+  it("una posicion intermedia no llega a 100", async () => {
+    const { json, list } = await locationsOf();
+    const middle = await service.percentageAt(book(), list[Math.floor(list.length / 2)] as string, json);
+    expect(middle).toBeGreaterThan(0);
+    expect(middle).toBeLessThan(100);
+  });
+
+  it("sin locations las genera y da el mismo valor exacto, con avance real", async () => {
+    const { json, list } = await locationsOf();
+    const target = list[Math.floor(list.length / 2)] as string;
+    const seen: number[] = [];
+    const exact = await service.percentageAt(book(), target, null, (f) => seen.push(f));
+    expect(exact).toBe(await service.percentageAt(book(), target, json));
+    expect(seen.at(-1)).toBe(1);
+    expect(seen.length).toBeGreaterThan(1);
+  });
+
+  it("trunca a 2 decimales (nunca redondea hacia arriba)", async () => {
+    const { json, list } = await locationsOf();
+    const value = await service.percentageAt(book(), list[list.length - 2] as string, json);
+    expect(value).not.toBeNull();
+    expect(value).toBeLessThan(100);
+    expect(Math.round((value as number) * 100) / 100).toBe(value);
+  });
+
+  it("libera el libro y rechaza un archivo invalido", async () => {
+    expect(await problemOf(service.percentageAt(new TextEncoder().encode("x").buffer, "epubcfi(/6/2)", null))).toBe(
+      "not_epub",
+    );
+  });
+});
+
 describe("generateLocations (epubjs real)", () => {
   it("genera locations en JSON y se pueden volver a cargar", async () => {
     const json = await service.generateLocations(buildEpub());
@@ -144,6 +191,21 @@ describe("generateLocations (epubjs real)", () => {
     expect(Array.isArray(list)).toBe(true);
     expect(list.length).toBeGreaterThan(1);
     expect(list[0]).toMatch(/^epubcfi\(/);
+  });
+
+  it("informa un avance real: un paso por capitulo, creciente y termina en 1", async () => {
+    const seen: number[] = [];
+    const chapters = ["Uno. ".repeat(300), "Dos. ".repeat(300), "Tres. ".repeat(300), "Cuatro. ".repeat(300)];
+    await service.generateLocations(buildEpub({ chapters }), (fraction) => seen.push(fraction));
+    expect(seen.length).toBe(5); // 4 capitulos + el cierre
+    expect(seen.slice(0, 4)).toEqual([0.25, 0.5, 0.75, 0.99]);
+    expect(seen[4]).toBe(1);
+    expect([...seen].sort((a, b) => a - b)).toEqual(seen);
+  });
+
+  it("sin callback genera igual", async () => {
+    const json = await service.generateLocations(buildEpub());
+    expect((JSON.parse(json) as string[]).length).toBeGreaterThan(1);
   });
 
   it("un archivo invalido no deja la promesa colgada", async () => {

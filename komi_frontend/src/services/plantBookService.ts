@@ -12,7 +12,7 @@ import { pickVariant as defaultPickVariant, type VariantPicker } from "./pickVar
 
 export interface PlantBookDeps {
   epub: Pick<EpubService, "inspect" | "generateLocations">;
-  epubFiles: Pick<LocalEpubRepository, "plantEpubBook" | "saveFile" | "saveLocations">;
+  epubFiles: Pick<LocalEpubRepository, "plantEpubBook" | "saveFile" | "saveLocations" | "getFile">;
   books: Pick<LocalBookRepository, "createBook">;
   pickVariant?: VariantPicker;
 }
@@ -71,9 +71,10 @@ export function createPlantBookService(deps: PlantBookDeps) {
       prepared: PreparedEpub,
       fields: { title: string; author: string },
       onPreparing?: () => void,
+      onProgress?: (fraction: number) => void,
     ): Promise<LocalBook> {
       onPreparing?.();
-      const locations = await deps.epub.generateLocations(prepared.data);
+      const locations = await deps.epub.generateLocations(prepared.data, onProgress);
       const { book } = await deps.epubFiles.plantEpubBook(
         { title: fields.title, author: fields.author, sunflower_variant: pickVariant() },
         prepared.data,
@@ -94,6 +95,26 @@ export function createPlantBookService(deps: PlantBookDeps) {
     },
 
     /**
+     * Deja listas las `locations` de un EPUB ya guardado antes de leerlo. Si ya estaban, no hace
+     * nada. Si faltan (por ejemplo, no se alcanzaron a guardar), las genera con avance real y las
+     * guarda. `onPreparing` solo se llama cuando hay trabajo lento. Devuelve falso si el archivo
+     * ya no esta.
+     */
+    async ensureLocations(
+      bookId: string,
+      onPreparing?: () => void,
+      onProgress?: (fraction: number) => void,
+    ): Promise<boolean> {
+      const file = await deps.epubFiles.getFile(bookId);
+      if (!file) return false;
+      if (file.locations) return true;
+      onPreparing?.();
+      const locations = await deps.epub.generateLocations(file.data, onProgress);
+      await deps.epubFiles.saveLocations(bookId, locations);
+      return true;
+    },
+
+    /**
      * Reimporta el archivo de un libro cuyo .epub ya no esta (Safari lo purgo). Conserva el
      * girasol y el progreso; vuelve a preparar las locations.
      */
@@ -107,3 +128,9 @@ export function createPlantBookService(deps: PlantBookDeps) {
 }
 
 export type PlantBookService = ReturnType<typeof createPlantBookService>;
+
+/** Lo que usa Mi Jardin: plantar y reimportar. Preparar el libro para leerlo es cosa de la sesion. */
+export type GardenPlantService = Pick<
+  PlantBookService,
+  "prepareEpub" | "plantEpub" | "plantPhysical" | "reimportEpub"
+>;

@@ -5,6 +5,7 @@
 // El .epub se queda en el dispositivo (CLAUDE.md 6); nada de este modulo toca la red.
 
 import type Book from "epubjs/types/book";
+import { toPercentage } from "./readingTracker";
 
 /** Tope de cordura para no agotar la memoria de un iPhone al leer el archivo completo. */
 export const MAX_EPUB_BYTES = 100 * 1024 * 1024;
@@ -98,6 +99,28 @@ async function readEntry(book: Book, path: string): Promise<string | null> {
   }
 }
 
+/**
+ * epubjs 0.3.93 no avisa del avance de `locations.generate`: procesa los capitulos (secciones
+ * lineales del spine) uno a uno. Se envuelve `process`, que `generate` encola, para contar los
+ * capitulos terminados. El avance es real: capitulos hechos / capitulos totales.
+ */
+function trackLocationProgress(book: Book, onProgress: (fraction: number) => void): void {
+  let total = 0;
+  book.spine.each((section: { linear?: boolean }) => {
+    if (section.linear) total += 1;
+  });
+  if (total === 0) return;
+  let done = 0;
+  const locations = book.locations;
+  const original = locations.process.bind(locations);
+  locations.process = async (section) => {
+    const result = await original(section);
+    done += 1;
+    onProgress(Math.min(done / total, 0.99));
+    return result;
+  };
+}
+
 export interface EpubServiceOptions {
   loadEpubjs?: () => Promise<EpubFactory>;
   openTimeoutMs?: number;
@@ -169,14 +192,60 @@ export function createEpubService(options: EpubServiceOptions = {}) {
     },
 
     /**
-     * Genera las `locations` (JSON de epubjs) con las que se calcula el porcentaje desde un CFI.
-     * Es lento en libros grandes; la interfaz muestra "Preparando tu libro" mientras tanto.
+     * Abre el libro para leerlo (lector EPUB). Mismas validaciones y tope de tiempo que el resto;
+     * quien lo pide debe llamar a `destroy()`.
      */
-    async generateLocations(data: ArrayBuffer): Promise<string> {
+    async openBook(data: ArrayBuffer): Promise<Book> {
       const book = await open(data);
       try {
         await book.ready;
+      } catch (error) {
+        book.destroy();
+        throw new EpubImportError("unreadable", error);
+      }
+      return book;
+    },
+
+    /**
+     * Porcentaje EXACTO (0 a 100, truncado) de un CFI. Si ya hay `locations` las usa; si no, las
+     * genera aqui (SRS 19, punto 7: nunca se guarda un porcentaje provisional). `null` si el CFI
+     * no se puede ubicar.
+     */
+    async percentageAt(
+      data: ArrayBuffer,
+      cfi: string,
+      locations: string | null,
+      onProgress?: (fraction: number) => void,
+    ): Promise<number | null> {
+      const book = await open(data);
+      try {
+        await book.ready;
+        if (locations) {
+          book.locations.load(locations);
+        } else {
+          if (onProgress) trackLocationProgress(book, onProgress);
+          await book.locations.generate(LOCATION_CHARS);
+          onProgress?.(1);
+        }
+        return toPercentage(book.locations.percentageFromCfi(cfi));
+      } catch (error) {
+        throw error instanceof EpubImportError ? error : new EpubImportError("unreadable", error);
+      } finally {
+        book.destroy();
+      }
+    },
+
+    /**
+     * Genera las `locations` (JSON de epubjs) con las que se calcula el porcentaje desde un CFI.
+     * Es lento en libros grandes; la interfaz muestra "Preparando tu libro" mientras tanto.
+     */
+    async generateLocations(data: ArrayBuffer, onProgress?: (fraction: number) => void): Promise<string> {
+      const book = await open(data);
+      try {
+        await book.ready;
+        if (onProgress) trackLocationProgress(book, onProgress);
         await book.locations.generate(LOCATION_CHARS);
+        onProgress?.(1);
         return book.locations.save();
       } catch (error) {
         throw error instanceof EpubImportError ? error : new EpubImportError("unreadable", error);

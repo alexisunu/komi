@@ -7,7 +7,7 @@ import { BottomNavZen } from "../core/components/BottomNavZen";
 import { ThemeProvider } from "../core/theme/ThemeContext";
 import type { LocalBook } from "../data/local_db/types";
 import { EpubImportError } from "../services/epubService";
-import type { PlantBookService } from "../services/plantBookService";
+import type { GardenPlantService } from "../services/plantBookService";
 import { DashboardScreen } from "../features/dashboard/DashboardScreen";
 import { PhysicalTimerScreen } from "../features/focus_reader/PhysicalTimerScreen";
 import { SessionEndedScreen } from "../features/focus_reader/SessionEndedScreen";
@@ -58,15 +58,16 @@ const BOOKS: LocalBook[] = [
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function fakePlant(screen: PreviewScreen): PlantBookService {
+function fakePlant(screen: PreviewScreen): GardenPlantService {
   return {
     prepareEpub: async () => {
       await wait(30);
       if (screen === "plant-error") throw new EpubImportError("drm");
       return { data: new ArrayBuffer(8), metadata: { title: "Ficciones", author: "Jorge Luis Borges" } };
     },
-    plantEpub: (_prepared, _fields, onPreparing) => {
+    plantEpub: (_prepared, _fields, onPreparing, onProgress) => {
       onPreparing?.();
+      onProgress?.(0.42);
       return new Promise<LocalBook>(() => {});
     },
     plantPhysical: async () => BOOKS[0] as LocalBook,

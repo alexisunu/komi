@@ -4,7 +4,7 @@ import { ThemeProvider } from "../../core/theme/ThemeContext";
 import { StorageQuotaError } from "../../data/local_db/errors";
 import type { LocalBook } from "../../data/local_db/types";
 import { EpubImportError } from "../../services/epubService";
-import type { PlantBookService } from "../../services/plantBookService";
+import type { GardenPlantService } from "../../services/plantBookService";
 import { chooseFile, click, render, typeInto } from "../../test/render";
 import { BookGardenCard } from "./BookGardenCard";
 import { MyGardenScreen } from "./MyGardenScreen";
@@ -130,7 +130,7 @@ describe("BookGardenCard", () => {
   });
 });
 
-function fakePlant(over: Partial<PlantBookService> = {}): PlantBookService {
+function fakePlant(over: Partial<GardenPlantService> = {}): GardenPlantService {
   return {
     prepareEpub: vi.fn(async () => ({
       data: new ArrayBuffer(8),
@@ -314,7 +314,7 @@ describe("PlantBookModal: libro fisico", () => {
 
   it("un error del almacenamiento se muestra y permite reintentar", async () => {
     const plantPhysical = vi
-      .fn<PlantBookService["plantPhysical"]>()
+      .fn<GardenPlantService["plantPhysical"]>()
       .mockRejectedValueOnce(new StorageQuotaError())
       .mockResolvedValueOnce(book());
     const { onPlanted } = await openPhysical(fakePlant({ plantPhysical }));
@@ -343,7 +343,7 @@ describe("PlantBookModal: .epub", () => {
   const text = () => document.body.textContent ?? "";
   const planButton = () => byText(document.body, "button", "Plantar Semilla") as HTMLButtonElement;
 
-  function open(plant: PlantBookService, onPlanted = vi.fn(), onClose = vi.fn()) {
+  function open(plant: GardenPlantService, onPlanted = vi.fn(), onClose = vi.fn()) {
     mount(<PlantBookModal plant={plant} onClose={onClose} onPlanted={onPlanted} />);
     return { onPlanted, onClose };
   }
@@ -365,6 +365,7 @@ describe("PlantBookModal: .epub", () => {
     expect(plant.plantEpub).toHaveBeenCalledWith(
       expect.anything(),
       { title: "Ficciones", author: "Borges" },
+      expect.any(Function),
       expect.any(Function),
     );
     expect(onPlanted).toHaveBeenCalledTimes(1);
@@ -429,9 +430,35 @@ describe("PlantBookModal: .epub", () => {
     expect(onPlanted).toHaveBeenCalledTimes(1);
   });
 
+  it("'Preparando tu libro' muestra un avance real que sigue al progreso de las locations", async () => {
+    let report: (fraction: number) => void = () => {};
+    let finish: (value: LocalBook) => void = () => {};
+    const plant = fakePlant({
+      plantEpub: vi.fn(
+        (_p, _f, onPreparing, onProgress) =>
+          new Promise<LocalBook>((resolve) => {
+            onPreparing?.();
+            report = onProgress ?? (() => {});
+            finish = resolve;
+          }),
+      ),
+    });
+    open(plant);
+    await chooseFile(picker(), epubFile());
+    await tap(planButton());
+    const bar = () => document.querySelector('[role="progressbar"]');
+    expect(bar()?.getAttribute("aria-valuenow")).toBe("0");
+    act(() => report(0.37));
+    expect(bar()?.getAttribute("aria-valuenow")).toBe("37");
+    expect(document.body.textContent).toContain("37 %");
+    act(() => report(0.99));
+    expect(bar()?.getAttribute("aria-valuenow")).toBe("99");
+    await act(async () => finish(book({ format_type: "EPUB" })));
+  });
+
   it("si plantar falla, vuelve a poder intentarlo y avisa", async () => {
     const plantEpub = vi
-      .fn<PlantBookService["plantEpub"]>()
+      .fn<GardenPlantService["plantEpub"]>()
       .mockRejectedValueOnce(new StorageQuotaError())
       .mockResolvedValueOnce(book());
     const plant = fakePlant({ plantEpub });

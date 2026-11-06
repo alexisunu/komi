@@ -4,24 +4,23 @@
 
 import { FileUp } from "lucide-react";
 import { useId, useRef, useState } from "react";
+import { PreparationProgress } from "../../core/components/PreparationProgress";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ZenSheet } from "../../core/components/ZenSheet";
 import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
 import { EpubImportError } from "../../services/epubService";
-import type { PlantBookService, PreparedEpub } from "../../services/plantBookService";
+import type { GardenPlantService, PreparedEpub } from "../../services/plantBookService";
 import "./PlantBookModal.css";
 
 export interface PlantBookModalProps {
-  plant: PlantBookService;
+  plant: GardenPlantService;
   onClose: () => void;
   onPlanted: (book: LocalBook) => void;
 }
 
 type Tab = "epub" | "physical";
 type EpubPhase = "idle" | "inspecting" | "ready" | "planting";
-
-const PREPARING_TEXT = "Preparando tu libro";
 
 function titleFromFileName(name: string): string {
   return name.replace(/\.epub$/i, "").replace(/[_-]+/g, " ").trim();
@@ -44,6 +43,7 @@ export function PlantBookModal({ plant, onClose, onPlanted }: PlantBookModalProp
   const [author, setAuthor] = useState("");
   const [pages, setPages] = useState("");
   const [saving, setSaving] = useState(false);
+  const [fraction, setFraction] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [offerPhysical, setOfferPhysical] = useState(false);
 
@@ -82,8 +82,14 @@ export function PlantBookModal({ plant, onClose, onPlanted }: PlantBookModalProp
     if (!prepared) return;
     setError(null);
     setOfferPhysical(false);
+    setFraction(null);
     try {
-      const book = await plant.plantEpub(prepared, { title, author }, () => setPhase("planting"));
+      const book = await plant.plantEpub(
+        prepared,
+        { title, author },
+        () => setPhase("planting"),
+        setFraction,
+      );
       onPlanted(book);
     } catch (failure) {
       setError(messageOf(failure));
@@ -157,11 +163,7 @@ export function PlantBookModal({ plant, onClose, onPlanted }: PlantBookModalProp
                 Revisando tu libro
               </p>
             )}
-            {phase === "planting" && (
-              <p className="plant__status" role="status">
-                {PREPARING_TEXT}
-              </p>
-            )}
+            {phase === "planting" && <PreparationProgress fraction={fraction} />}
           </>
         )}
 

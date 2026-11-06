@@ -7,7 +7,7 @@ import { useState } from "react";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
-import type { PlantBookService } from "../../services/plantBookService";
+import type { GardenPlantService } from "../../services/plantBookService";
 import { BookGardenCard } from "./BookGardenCard";
 import "./MyGardenScreen.css";
 import { booksForTab, GARDEN_TABS, tabCounts, type GardenTab } from "./libraryTabs";
@@ -19,7 +19,7 @@ export interface MyGardenScreenProps {
   missingFiles: ReadonlySet<string>;
   /** Libro del Dashboard (borde de acento). */
   activeBookId: string | null;
-  plant: PlantBookService;
+  plant: GardenPlantService;
   onPlanted: (book: LocalBook) => void;
   onSetStatus: (book: LocalBook, status: "ACTIVE" | "FALLOW") => Promise<void>;
   onReimport: (book: LocalBook, file: File) => Promise<void>;
