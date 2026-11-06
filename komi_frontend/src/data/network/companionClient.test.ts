@@ -299,6 +299,25 @@ describe("send: errores", () => {
 });
 
 describe("send: cancelacion y tiempo maximo", () => {
+  it("al terminar libera la conexion aunque el servidor deje el stream abierto", async () => {
+    const server = createFakeServer();
+    const chat = await startChat(server);
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            'event: done' + String.fromCharCode(10) + 'data: {"turn":2,"is_closed":false,"key_takeaway":null,"content":"ok"}' + String.fromCharCode(10, 10),
+          ),
+        );
+      },
+      cancel,
+    });
+    server.fetchFn.mockResolvedValueOnce(new Response(body, { status: 200 }));
+    await setup(server).send({ chatId: chat.chat_id, content: "Hola", turn: 1, onChunk: () => {} });
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalled());
+  });
+
   it("cancelar con la signal corta el stream, lanza aborted y avisa al servidor", async () => {
     const server = createFakeServer();
     const chat = await startChat(server);
