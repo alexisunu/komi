@@ -10,6 +10,7 @@ import { MAX_MESSAGE_CHARS } from "../../data/network/companionClient";
 import type { LocalBook } from "../../data/local_db/types";
 import type { ReloadGate } from "../../pwa/reloadGate";
 import { MAX_TURNS, type CompanionService } from "../../services/companionService";
+import { GATE_MESSAGES } from "./chatGateMessages";
 import { useCompanionChat } from "./useCompanionChat";
 import "./CompanionChatScreen.css";
 
@@ -78,11 +79,10 @@ export function CompanionChatScreen({ service, gate, sessionId, book, onLeave }:
           </p>
         )}
 
-        {chat.phase === "offline" && (
+        {(chat.phase === "offline" || chat.phase === "unsynced" || chat.phase === "rejected") && (
           <div className="companion__status-block">
             <p className="companion__status" role="status">
-              Tu progreso y tu racha ya están guardados en este dispositivo. La charla con Komi necesita
-              conexión: puedes volver a intentarlo cuando tengas internet.
+              {GATE_MESSAGES[chat.phase]}
             </p>
           </div>
         )}
@@ -190,10 +190,14 @@ export function CompanionChatScreen({ service, gate, sessionId, book, onLeave }:
           </>
         )}
 
-        {(chat.phase === "offline" || chat.phase === "failed") && (
+        {(chat.phase === "offline" ||
+          chat.phase === "unsynced" ||
+          chat.phase === "rejected" ||
+          chat.phase === "failed") && (
           <>
             {chat.phase === "offline" ||
-            (chat.openFailure !== "session_invalid" && chat.openFailure !== "not_found") ? (
+            chat.phase === "unsynced" ||
+            (chat.phase === "failed" && chat.openFailure !== "session_invalid" && chat.openFailure !== "not_found") ? (
               <ZenPrimaryButton onClick={chat.reopen}>Reintentar</ZenPrimaryButton>
             ) : null}
             <ZenPrimaryButton variant="secondary" onClick={onLeave}>

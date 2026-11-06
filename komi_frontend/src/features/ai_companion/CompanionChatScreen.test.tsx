@@ -9,6 +9,7 @@ import { createApiClient } from "../../data/network/apiClient";
 import { createCompanionClient } from "../../data/network/companionClient";
 import { createReloadGate, type ReloadGate } from "../../pwa/reloadGate";
 import { createCompanionService } from "../../services/companionService";
+import type { SessionGate } from "../../data/network/syncService";
 import { createFakeServer, deferred, type FakeServer } from "../../test/fakeCompanionServer";
 import { createTestDb, fakeClock, uuid } from "../../test/db";
 import { render } from "../../test/render";
@@ -38,7 +39,7 @@ let server: FakeServer;
 let gate: ReloadGate;
 let reload: ReturnType<typeof vi.fn<() => void>>;
 let mounted: ReturnType<typeof render> | null = null;
-let onServer: boolean;
+let gateState: SessionGate;
 const onLeave = vi.fn();
 const flush = vi.fn(async () => {});
 
@@ -46,7 +47,7 @@ beforeEach(() => {
   db = createTestDb();
   server = createFakeServer({ profileId: PROFILE });
   server.knowSession(SESSION);
-  onServer = true;
+  gateState = { state: "ready" };
   reload = vi.fn<() => void>();
   gate = createReloadGate(reload);
   onLeave.mockClear();
@@ -67,7 +68,7 @@ function makeService() {
   });
   return createCompanionService({
     client: createCompanionClient(api),
-    sync: { isSessionOnServer: async () => onServer, flush },
+    sync: { sessionGate: async (): Promise<SessionGate> => gateState, flush },
     reflections: createLocalReflectionRepository(db, fakeClock()),
     wait: async () => {},
   });
@@ -130,7 +131,7 @@ describe("apertura", () => {
   });
 
   it("mientras abre dice que conecta y no bloquea la recarga", async () => {
-    onServer = true;
+    gateState = { state: "ready" };
     const hold = deferred();
     server.fetchFn.mockImplementationOnce(async () => {
       await hold.promise;
@@ -146,10 +147,36 @@ describe("apertura", () => {
   });
 
   it("sin la sesion en el servidor: mensaje de FA-5.2 con salida al jardin", async () => {
-    onServer = false;
+    gateState = { state: "offline" };
     await mountChat();
-    expect(text()).toContain("Tu progreso y tu racha ya están guardados en este dispositivo");
-    expect(text()).toContain("necesita conexión");
+    expect(text()).toContain("No hay conexión con el servidor");
+    expect(text()).not.toContain("no pudo validar");
+    expect(button("Reintentar")).toBeDefined();
+    expect(field()).toBeNull();
+    expect(server.startCalls()).toHaveLength(0);
+    await tap(button("Volver al jardín"));
+    expect(onLeave).toHaveBeenCalledTimes(1);
+  });
+
+  it("no se pudo sincronizar ahora: mensaje propio (no culpa a internet) y con Reintentar", async () => {
+    gateState = { state: "unsynced" };
+    await mountChat();
+    expect(text()).toContain("No pudimos sincronizar tu sesión ahora");
+    expect(text()).not.toContain("No hay conexión");
+    expect(button("Reintentar")).toBeDefined();
+    expect(server.startCalls()).toHaveLength(0);
+    gateState = { state: "ready" };
+    await tap(button("Reintentar"));
+    await settle(60);
+    expect(field()).not.toBeNull();
+  });
+
+  it("sesion no validada por el servidor: mensaje claro, sin Reintentar y sin el codigo en pantalla", async () => {
+    gateState = { state: "rejected", code: "below_50_percent" };
+    await mountChat();
+    expect(text()).toContain("El servidor no pudo validar esta sesión");
+    expect(text()).not.toContain("below_50_percent");
+    expect(button("Reintentar")).toBeUndefined();
     expect(field()).toBeNull();
     expect(server.startCalls()).toHaveLength(0);
     await tap(button("Volver al jardín"));
@@ -157,9 +184,9 @@ describe("apertura", () => {
   });
 
   it("Reintentar tras estar sin conexion abre la charla cuando vuelve la red", async () => {
-    onServer = false;
+    gateState = { state: "offline" };
     await mountChat();
-    onServer = true;
+    gateState = { state: "ready" };
     await tap(button("Reintentar"));
     await settle(60);
     expect(root().querySelector('[data-testid="zen-cycle"]')?.textContent).toBe("Ciclo Zen: Turno 1 de 5");

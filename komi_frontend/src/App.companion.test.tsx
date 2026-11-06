@@ -197,30 +197,80 @@ describe("de la hoja a la charla", () => {
     expect(await db.reflections.count()).toBe(1);
   });
 
-  it("sin conexion (la sesion no llego al servidor): FA-5.2 y la sesion sigue pendiente", async () => {
+  it("el servidor no responde (503): la hoja no ofrece la charla, lo dice sin culpar a internet y Reintentar la habilita", async () => {
     server.state.syncDown = true;
     await savedSheet();
-    await tap(sheetButton("Sí, conversar con Komi"));
-    await settle(100);
-    expect(screenText()).toContain("Tu progreso y tu racha ya están guardados en este dispositivo");
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(true);
+    expect(sheet()?.textContent).toContain("No pudimos sincronizar tu sesión ahora");
+    expect(sheet()?.textContent).not.toContain("No hay conexión");
     expect(server.startCalls()).toHaveLength(0);
     expect((await db.sessions.toArray())[0]?.pending_sync).toBe(1);
-    // Vuelve la red: Reintentar sube la sesion y abre la charla.
+    // Vuelve el servidor: Reintentar sube la sesion y habilita la charla.
     server.state.syncDown = false;
-    await tap(chatButton("Reintentar"));
+    await tap(sheetButton("Reintentar"));
     await settle(150);
-    expect(zen()).toBe("Ciclo Zen: Turno 1 de 5");
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(false);
     expect((await db.sessions.toArray())[0]?.pending_sync).toBe(0);
-  });
-
-  it("sin conexion: Volver al jardin lleva al Dashboard y no pierde nada", async () => {
-    server.state.syncDown = true;
-    const ctx = await savedSheet();
     await tap(sheetButton("Sí, conversar con Komi"));
     await settle(100);
+    expect(zen()).toBe("Ciclo Zen: Turno 1 de 5");
+  });
+
+  it("sin conexion: mensaje de sin conexion, con Reintentar, y sin abrir la charla", async () => {
+    server.state.syncOffline = true;
+    await savedSheet();
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(true);
+    expect(sheet()?.textContent).toContain("No hay conexión con el servidor");
+    expect(sheetButton("Reintentar")).not.toBeNull();
+    server.state.syncOffline = false;
+    await tap(sheetButton("Reintentar"));
+    await settle(150);
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(false);
+  });
+
+  it("sesion no validada por el servidor (below_50_percent): no se ofrece la charla, sin Reintentar y sin el codigo", async () => {
+    server.state.rejectSessionsWith = "below_50_percent";
+    await savedSheet();
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(true);
+    expect(sheet()?.textContent).toContain("El servidor no pudo validar esta sesión");
+    expect(sheet()?.textContent).not.toContain("below_50_percent");
+    expect(sheetButton("Reintentar")).toBeNull();
+    expect(server.startCalls()).toHaveLength(0);
+    // La lectura sigue guardada y el lector puede volver al jardin.
+    expect(await db.sessions.count()).toBe(1);
+    await tap(sheetButton("Por hoy no, volver al jardín"));
+    expect(sheet()).toBeNull();
+  });
+
+  it("mientras sincroniza: 'Sincronizando tu sesion' y el boton deshabilitado hasta tener respuesta", async () => {
+    const hold = deferred();
+    const slow: typeof fetch = async (input, init) => {
+      await hold.promise;
+      return server.fetchFn(input, init);
+    };
+    const ctx = await mountApp([book()], { fetchFn: slow });
+    await finishPhysical(ctx, 600_000);
+    await enterPage("90");
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(true);
+    expect(sheet()?.textContent).toContain("Sincronizando tu sesión");
+    hold.resolve();
+    await settle(150);
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(false);
+    expect(sheet()?.textContent).not.toContain("Sincronizando tu sesión");
+  });
+
+  it("sin conexion: si el lector abre la charla despues, la pantalla de la charla usa el mismo motivo", async () => {
+    await savedSheet();
+    const open = sheetButton("Sí, conversar con Komi");
+    expect(open?.disabled).toBe(false);
+    server.state.syncOffline = true;
+    await db.sessions.toCollection().modify({ pending_sync: 1 });
+    await tap(open);
+    await settle(150);
+    expect(screenText()).toContain("No hay conexión con el servidor");
+    expect(chatButton("Reintentar")).not.toBeNull();
     await tap(chatButton("Volver al jardín"));
     await settle();
-    expect(ctx.root.querySelector(".dashboard")).not.toBeNull();
     expect(await db.sessions.count()).toBe(1);
     expect(await db.reflections.count()).toBe(0);
   });

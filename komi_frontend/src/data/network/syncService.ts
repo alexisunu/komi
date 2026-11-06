@@ -147,8 +147,23 @@ export type SyncStatus =
   | "failed" // 4xx permanente de la peticion completa (413, 400): nada se descarta
   | "not_configured"; // sin VITE_API_URL valida
 
+/** Por que fallo una corrida: sin red o tiempo agotado (`network`) u otra respuesta del servidor (`http`). */
+export type SyncCause = "network" | "http";
+
+/**
+ * Estado de una sesion para abrir el chat. `offline` y `unsynced` se pueden reintentar;
+ * `rejected` es permanente (el servidor la invalida, por ejemplo `below_50_percent`).
+ */
+export type SessionGate =
+  | { state: "ready" }
+  | { state: "offline" }
+  | { state: "unsynced" }
+  | { state: "rejected"; code: string };
+
 export interface SyncResult {
   status: SyncStatus;
+  /** Solo en `retry_later`, `partial`, `failed` y `unauthorized`. */
+  cause: SyncCause | null;
   sentBooks: number;
   sentSessions: number;
   /** Sesiones descartadas de forma permanente en esta corrida. */
@@ -159,6 +174,7 @@ export interface SyncResult {
 
 const EMPTY: SyncResult = {
   status: "nothing",
+  cause: null,
   sentBooks: 0,
   sentSessions: 0,
   rejectedSessions: [],
@@ -304,7 +320,9 @@ export function createSyncService(options: SyncServiceOptions = {}) {
         response = await post(buildSyncBatch(request.books, request.sessions));
       } catch (error) {
         const done = sentBooks > 0 || sentSessions > 0;
-        const base = { ...EMPTY, sentBooks, sentSessions, rejectedSessions };
+        const cause: SyncCause =
+          error instanceof ApiError && (error.kind === "network" || error.kind === "timeout") ? "network" : "http";
+        const base = { ...EMPTY, sentBooks, sentSessions, rejectedSessions, cause };
         if (error instanceof ApiError) {
           if (error.status === 401) return { ...base, status: "unauthorized" };
           if (!error.retryable) {
@@ -328,7 +346,7 @@ export function createSyncService(options: SyncServiceOptions = {}) {
       streak = effectiveStreak(lastStreak.current, lastStreak.last_valid_session_date, today);
       await meta.set(META_KEYS.streakCurrent, streak);
     }
-    return { status: "synced", sentBooks, sentSessions, rejectedSessions, streak };
+    return { status: "synced", cause: null, sentBooks, sentSessions, rejectedSessions, streak };
   }
 
   async function runLoop(): Promise<SyncResult> {
@@ -358,12 +376,37 @@ export function createSyncService(options: SyncServiceOptions = {}) {
    * esta en el servidor: sincronizada y sin rechazo. Sin red, falso.
    */
   async function isSessionOnServer(sessionId: string): Promise<boolean> {
-    await flush();
-    const session = await sessions.getSession(sessionId);
-    return session !== undefined && session.pending_sync === 0 && session.sync_rejection === null;
+    return (await sessionGate(sessionId)).state === "ready";
   }
 
-  return { flush, isSessionOnServer };
+  /**
+   * Sincroniza y dice por que se puede o no abrir el chat: la sesion ya esta aceptada (`ready`),
+   * no hay conexion (`offline`), no se pudo sincronizar ahora (`unsynced`, reintentable) o el
+   * servidor la invalida (`rejected`, permanente). El codigo del rechazo va solo al registro.
+   */
+  async function sessionGate(sessionId: string): Promise<SessionGate> {
+    const result = await flush();
+    const session = await sessions.getSession(sessionId);
+    if (session === undefined) return { state: "unsynced" };
+    if (session.sync_rejection !== null) {
+      log.warn(`El servidor no valido la sesion (codigo ${session.sync_rejection}); no se abre el chat.`);
+      return { state: "rejected", code: session.sync_rejection };
+    }
+    if (session.pending_sync === 0) return { state: "ready" };
+
+    // Un libro rechazado de forma permanente nunca envia sus sesiones: tambien es un rechazo.
+    const bookCode = (await loadRejectedBooks())[session.book_id];
+    if (bookCode !== undefined) {
+      log.warn(`El servidor rechazo el libro de la sesion (codigo ${bookCode}); no se abre el chat.`);
+      return { state: "rejected", code: bookCode };
+    }
+    const offline =
+      result.status === "not_configured" ||
+      ((result.status === "retry_later" || result.status === "partial") && result.cause === "network");
+    return { state: offline ? "offline" : "unsynced" };
+  }
+
+  return { flush, isSessionOnServer, sessionGate };
 }
 
 export type SyncService = ReturnType<typeof createSyncService>;

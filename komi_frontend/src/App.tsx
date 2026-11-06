@@ -387,6 +387,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             onSaved={onReadingSaved}
             onDiscard={focus.leave}
             onChat={(result) => setChat({ sessionId: result.session.id, book: result.book })}
+            checkChat={deps.companion.gate}
             onDone={() => {
               setClosing(null);
               onNav("lectura");

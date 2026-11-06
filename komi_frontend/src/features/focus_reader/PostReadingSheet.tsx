@@ -18,6 +18,8 @@ import {
   type PreparedSession,
   type SaveResult,
 } from "../../services/postReadingService";
+import type { SessionGate } from "../../data/network/syncService";
+import { canRetryGate, GATE_MESSAGES, type GateBlock } from "../ai_companion/chatGateMessages";
 import { SunflowerStageWidget } from "../dashboard/SunflowerStageWidget";
 import "./PostReadingSheet.css";
 
@@ -37,7 +39,11 @@ export interface PostReadingSheetProps {
   onDone: () => void;
   /** "Si, conversar con Komi": abre la charla de esta sesion ya guardada. */
   onChat: (result: SavedReading) => void;
+  /** Sincroniza y dice si el servidor acepto la sesion: solo entonces se ofrece la charla. No rechaza nunca (un fallo es `unsynced`). */
+  checkChat: (sessionId: string) => Promise<SessionGate>;
 }
+
+type ChatGate = { kind: "checking" } | { kind: "ready" } | { kind: "blocked"; block: GateBlock };
 
 type Stage =
   | { kind: "loading" }
@@ -66,11 +72,14 @@ export function PostReadingSheet({
   onDiscard,
   onDone,
   onChat,
+  checkChat,
 }: PostReadingSheetProps) {
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
   const [prepared, setPrepared] = useState<Ready | null>(null);
   const [page, setPage] = useState("");
   const [leaving, setLeaving] = useState(false);
+  const [chatGate, setChatGate] = useState<ChatGate>({ kind: "checking" });
+  const [gateAttempt, setGateAttempt] = useState(0);
   const mounted = useRef(false);
   const started = useRef(false);
   const pageId = useId();
@@ -172,6 +181,24 @@ export function PostReadingSheet({
   const book = prepared?.book ?? null;
   const total = book?.total_pages ?? null;
   const saved = stage.kind === "saved" ? stage.result : null;
+
+  // Guardada la lectura, se espera al resultado del servidor antes de ofrecer la charla (CU-05).
+  useEffect(() => {
+    if (saved === null) return undefined;
+    let alive = true;
+    void checkChat(sessionId).then((gate) => {
+      if (!alive) return;
+      setChatGate(gate.state === "ready" ? { kind: "ready" } : { kind: "blocked", block: gate.state });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [saved, sessionId, checkChat, gateAttempt]);
+
+  const retryGate = () => {
+    setChatGate({ kind: "checking" });
+    setGateAttempt((value) => value + 1);
+  };
   const percentage = saved ? saved.book.progress_percentage : (book?.progress_percentage ?? 0);
   const fallow = saved === null && book?.status === "FALLOW";
   const showAura = saved !== null && (saved.solarBonus || saved.bloomed);
@@ -282,6 +309,16 @@ export function PostReadingSheet({
           )}
 
           {saved && <p className="post-reading__question">¿Quieres charlar un poco sobre lo que acabas de leer?</p>}
+          {saved && chatGate.kind === "checking" && (
+            <p className="post-reading__text" role="status">
+              Sincronizando tu sesión
+            </p>
+          )}
+          {saved && chatGate.kind === "blocked" && (
+            <p className="post-reading__text" role="status">
+              {GATE_MESSAGES[chatGate.block]}
+            </p>
+          )}
         </div>
 
         <div className="post-reading__actions" data-block="actions">
@@ -298,7 +335,14 @@ export function PostReadingSheet({
           )}
           {saved && (
             <>
-              <ZenPrimaryButton onClick={() => onChat(saved)}>Sí, conversar con Komi</ZenPrimaryButton>
+              <ZenPrimaryButton disabled={chatGate.kind !== "ready"} onClick={() => onChat(saved)}>
+                Sí, conversar con Komi
+              </ZenPrimaryButton>
+              {chatGate.kind === "blocked" && canRetryGate(chatGate.block) && (
+                <ZenPrimaryButton variant="secondary" onClick={retryGate}>
+                  Reintentar
+                </ZenPrimaryButton>
+              )}
               <ZenPrimaryButton variant="secondary" onClick={onDone}>
                 Por hoy no, volver al jardín
               </ZenPrimaryButton>

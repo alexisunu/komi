@@ -90,12 +90,13 @@ function fakeServer(rule: Rule | ((batch: Batch, call: number) => Rule | Respons
 
 function serviceWith(
   fetchFn: ReturnType<typeof fakeServer>["fetchFn"],
-  extra: { baseUrl?: string | null; recoverUnauthorized?: () => Promise<boolean> } = {},
+  extra: { baseUrl?: string | null; recoverUnauthorized?: () => Promise<boolean>; timeoutMs?: number } = {},
 ) {
   const api = createApiClient({
     baseUrl: extra.baseUrl === undefined ? "https://api.komi.test" : extra.baseUrl,
     fetchFn,
     getProfileId: () => PROFILE,
+    ...(extra.timeoutMs === undefined ? {} : { timeoutMs: extra.timeoutMs }),
   });
   return createSyncService({
     db,
@@ -477,6 +478,109 @@ describe("isSessionOnServer (puerta del chat)", () => {
   });
 });
 
+describe("sessionGate (puerta del chat con motivo)", () => {
+  async function pending() {
+    const b = await book();
+    return addSession(b.id);
+  }
+
+  it("aceptada por el servidor: ready", async () => {
+    const s = await pending();
+    expect(await serviceWith(fakeServer().fetchFn).sessionGate(s.id)).toEqual({ state: "ready" });
+  });
+
+  it("sin red: offline, y la corrida informa la causa de red", async () => {
+    const s = await pending();
+    const fetchFn = vi.fn<typeof fetch>(() => Promise.reject(new TypeError("offline")));
+    const service = serviceWith(fetchFn);
+    expect(await service.sessionGate(s.id)).toEqual({ state: "offline" });
+    expect((await service.flush()).cause).toBe("network");
+  });
+
+  it("sin servidor configurado: offline", async () => {
+    const s = await pending();
+    expect(await serviceWith(fakeServer().fetchFn, { baseUrl: null }).sessionGate(s.id)).toEqual({
+      state: "offline",
+    });
+  });
+
+  it("el servidor responde 500: unsynced (no es falta de internet)", async () => {
+    const s = await pending();
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response("{}", { status: 500 }));
+    const service = serviceWith(fetchFn);
+    expect(await service.sessionGate(s.id)).toEqual({ state: "unsynced" });
+    expect((await service.flush()).cause).toBe("http");
+  });
+
+  it("tiempo agotado: cuenta como falta de conexion (offline)", async () => {
+    const s = await pending();
+    const fetchFn = vi.fn<typeof fetch>(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("abort", "AbortError")));
+        }),
+    );
+    const service = serviceWith(fetchFn, { timeoutMs: 10 });
+    expect(await service.sessionGate(s.id)).toEqual({ state: "offline" });
+  });
+
+  it("401 (perfil desconocido): unsynced", async () => {
+    const s = await pending();
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response("{}", { status: 401 }));
+    expect(await serviceWith(fetchFn).sessionGate(s.id)).toEqual({ state: "unsynced" });
+  });
+
+  it("4xx del lote completo (400): unsynced", async () => {
+    const s = await pending();
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response("{}", { status: 400 }));
+    expect(await serviceWith(fetchFn).sessionGate(s.id)).toEqual({ state: "unsynced" });
+  });
+
+  it("rechazo permanente de la sesion: rejected con su codigo, que solo va al registro", async () => {
+    const s = await pending();
+    const server = fakeServer({ rejectSessions: { [s.id]: "below_50_percent" } });
+    log.warn.mockClear();
+    expect(await serviceWith(server.fetchFn).sessionGate(s.id)).toEqual({
+      state: "rejected",
+      code: "below_50_percent",
+    });
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("below_50_percent"));
+  });
+
+  it("rechazo reintentable del libro (updated_at_in_future): unsynced, la sesion sigue pendiente", async () => {
+    const b = await book();
+    const s = await addSession(b.id);
+    const server = fakeServer({
+      rejectBooks: { [b.id]: "updated_at_in_future" },
+      rejectSessions: { [s.id]: "book_rejected" },
+    });
+    expect(await serviceWith(server.fetchFn).sessionGate(s.id)).toEqual({ state: "unsynced" });
+    expect((await db.sessions.get(s.id))?.pending_sync).toBe(1);
+  });
+
+  it("libro rechazado antes de forma permanente: rejected, sin enviar nada", async () => {
+    const b = await book();
+    const s = await addSession(b.id);
+    const first = fakeServer({ rejectBooks: { [b.id]: "id_conflict" }, rejectSessions: { [s.id]: "book_rejected" } });
+    await serviceWith(first.fetchFn).flush();
+    await db.sessions.update(s.id, { sync_rejection: null, pending_sync: 1 });
+    const second = fakeServer();
+    expect(await serviceWith(second.fetchFn).sessionGate(s.id)).toEqual({ state: "rejected", code: "id_conflict" });
+    expect(second.calls()).toBe(0);
+  });
+
+  it("sesion ya sincronizada: ready aunque ahora no haya red", async () => {
+    const b = await book(true);
+    const s = await addSession(b.id, { pending_sync: 0 });
+    const fetchFn = vi.fn<typeof fetch>(() => Promise.reject(new TypeError("offline")));
+    expect(await serviceWith(fetchFn).sessionGate(s.id)).toEqual({ state: "ready" });
+  });
+
+  it("una sesion que no existe: unsynced", async () => {
+    expect(await serviceWith(fakeServer().fetchFn).sessionGate(uuid(777))).toEqual({ state: "unsynced" });
+  });
+});
+
 describe("parseSyncResponse", () => {
   const ok = {
     books: { accepted: [{ id: "a", result: "created" }], rejected: [] },
@@ -508,6 +612,7 @@ describe("parseSyncResponse", () => {
 describe("watchSync", () => {
   it("intenta al empezar y al volver la red, y deja de escuchar al detenerse", async () => {
     const flush = vi.fn(async () => ({
+      cause: null,
       status: "nothing" as const,
       sentBooks: 0,
       sentSessions: 0,

@@ -1,5 +1,5 @@
 // Servicio de la charla con Komi (CU-05). Reglas que el cliente aplica por su cuenta:
-//   - el chat solo abre si ESTA sesion ya esta en el servidor (`isSessionOnServer`, que hace flush);
+//   - el chat solo abre si ESTA sesion ya esta aceptada por el servidor (`sessionGate`, que hace flush);
 //   - `start/` es idempotente: retoma la charla de la sesion con sus mensajes;
 //   - 404: se sube lo pendiente (flush) y se reintenta una vez antes de rendirse;
 //   - `turn_mismatch` y `chat_closed`: se resincroniza con `start/` (el servidor manda);
@@ -20,6 +20,7 @@ import {
   type CompanionMessage,
 } from "../data/network/companionClient";
 import type { LocalReflectionRepository } from "../data/local_db/localReflectionRepository";
+import type { SessionGate } from "../data/network/syncService";
 
 /** Pausa antes de reintentar un `reply_in_progress`. */
 export const REPLY_IN_PROGRESS_WAIT_MS = 2_500;
@@ -33,7 +34,12 @@ export interface CompanionTarget {
 
 export type OpenResult =
   | { kind: "ready"; chat: CompanionChat }
+  /** Sin conexion con el servidor (reintentable). */
   | { kind: "offline" }
+  /** No se pudo sincronizar la sesion ahora (reintentable). */
+  | { kind: "unsynced" }
+  /** El servidor invalida la sesion (permanente: sin reintento). */
+  | { kind: "rejected" }
   | { kind: "failed"; failure: CompanionFailureKind };
 
 export type SendResult =
@@ -44,7 +50,7 @@ export type SendResult =
 
 export interface CompanionServiceDeps {
   client: Pick<CompanionClient, "start" | "send">;
-  sync: { isSessionOnServer(sessionId: string): Promise<boolean>; flush(): Promise<unknown> };
+  sync: { sessionGate(sessionId: string): Promise<SessionGate>; flush(): Promise<unknown> };
   reflections: Pick<LocalReflectionRepository, "upsert">;
   /** Pausa cancelable; en pruebas se reemplaza. */
   wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -86,10 +92,19 @@ export function createCompanionService(deps: CompanionServiceDeps) {
     return error instanceof CompanionError ? error : new CompanionError("unavailable");
   }
 
+  /** Estado de la sesion ante el servidor; un fallo inesperado cuenta como "no se pudo sincronizar". */
+  async function checkGate(sessionId: string): Promise<SessionGate> {
+    try {
+      return await sync.sessionGate(sessionId);
+    } catch {
+      return { state: "unsynced" };
+    }
+  }
+
   /** Abre o retoma la charla de la sesion. */
   async function open(target: CompanionTarget): Promise<OpenResult> {
-    const onServer = await sync.isSessionOnServer(target.sessionId).catch(() => false);
-    if (!onServer) return { kind: "offline" };
+    const gate = await checkGate(target.sessionId);
+    if (gate.state !== "ready") return { kind: gate.state === "rejected" ? "rejected" : gate.state };
 
     let attempt = 0;
     for (;;) {
@@ -193,7 +208,7 @@ export function createCompanionService(deps: CompanionServiceDeps) {
     }
   }
 
-  return { open, send };
+  return { open, send, gate: checkGate };
 }
 
 export type CompanionService = ReturnType<typeof createCompanionService>;

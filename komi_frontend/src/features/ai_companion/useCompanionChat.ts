@@ -12,7 +12,7 @@ import { MAX_MESSAGE_CHARS, countChars, type CompanionChat, type CompanionFailur
 import type { ReloadGate } from "../../pwa/reloadGate";
 import type { CompanionService, CompanionTarget } from "../../services/companionService";
 
-export type ChatPhase = "opening" | "ready" | "offline" | "failed";
+export type ChatPhase = "opening" | "ready" | "offline" | "unsynced" | "rejected" | "failed";
 
 export interface ChatNotice {
   message: string;
@@ -114,8 +114,8 @@ export function useCompanionChat(
       if (result.kind === "ready") {
         setChat(result.chat);
         setPhase("ready");
-      } else if (result.kind === "offline") {
-        setPhase("offline");
+      } else if (result.kind === "offline" || result.kind === "unsynced" || result.kind === "rejected") {
+        setPhase(result.kind);
       } else {
         setOpenFailure(result.failure);
         setPhase("failed");

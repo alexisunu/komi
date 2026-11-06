@@ -7,11 +7,13 @@ import { createApiClient } from "../data/network/apiClient";
 import { createCompanionClient, type CompanionChat } from "../data/network/companionClient";
 import { createFakeServer, type FakeServer } from "../test/fakeCompanionServer";
 import { createTestDb, fakeClock, uuid } from "../test/db";
+import type { SessionGate } from "../data/network/syncService";
 import { REPLY_IN_PROGRESS_WAIT_MS, createCompanionService, type CompanionService } from "./companionService";
 
 const PROFILE = uuid(77);
 const SESSION = uuid(10);
 const BOOK = uuid(1);
+const READY: SessionGate = { state: "ready" };
 const TARGET = { sessionId: SESSION, bookId: BOOK };
 
 let db: KomiDatabase;
@@ -37,7 +39,7 @@ beforeEach(() => {
   });
   service = createCompanionService({
     client: createCompanionClient(api),
-    sync: { isSessionOnServer: async () => onServer, flush },
+    sync: { sessionGate: async (): Promise<SessionGate> => (onServer ? READY : { state: "offline" }), flush },
     reflections: createLocalReflectionRepository(db, fakeClock()),
     wait: async (ms) => {
       waits.push(ms);
@@ -84,18 +86,43 @@ describe("open", () => {
     expect(await db.reflections.count()).toBe(0);
   });
 
-  it("si isSessionOnServer falla, se trata como sin conexion", async () => {
+  it("si la puerta falla de forma inesperada: no se pudo sincronizar (no se culpa a internet)", async () => {
     const broken = createCompanionService({
       client: { start: vi.fn(), send: vi.fn() },
       sync: {
-        isSessionOnServer: async () => {
+        sessionGate: async () => {
           throw new Error("boom");
         },
         flush,
       },
       reflections: createLocalReflectionRepository(db, fakeClock()),
     });
-    expect(await broken.open(TARGET)).toEqual({ kind: "offline" });
+    expect(await broken.open(TARGET)).toEqual({ kind: "unsynced" });
+    expect(await broken.gate(SESSION)).toEqual({ state: "unsynced" });
+  });
+
+  it.each([
+    [{ state: "unsynced" }, { kind: "unsynced" }],
+    [{ state: "rejected", code: "below_50_percent" }, { kind: "rejected" }],
+    [{ state: "offline" }, { kind: "offline" }],
+  ] as const)("la puerta %j da %j y no llama a start/", async (gate, expected) => {
+    const start = vi.fn();
+    const gated = createCompanionService({
+      client: { start, send: vi.fn() },
+      sync: { sessionGate: async () => gate as SessionGate, flush },
+      reflections: createLocalReflectionRepository(db, fakeClock()),
+    });
+    expect(await gated.open(TARGET)).toEqual(expected);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("gate() devuelve el estado de la puerta tal cual, sin el codigo en un mensaje", async () => {
+    const gated = createCompanionService({
+      client: { start: vi.fn(), send: vi.fn() },
+      sync: { sessionGate: async () => ({ state: "rejected", code: "below_50_percent" }), flush },
+      reflections: createLocalReflectionRepository(db, fakeClock()),
+    });
+    expect(await gated.gate(SESSION)).toEqual({ state: "rejected", code: "below_50_percent" });
   });
 
   it("sin red al llamar a start/: offline", async () => {
@@ -124,7 +151,7 @@ describe("open", () => {
     const late = createCompanionService({
       client: createCompanionClient(api),
       sync: {
-        isSessionOnServer: async () => true,
+        sessionGate: async (): Promise<SessionGate> => READY,
         flush: async () => {
           lateServer.knowSession(SESSION);
         },
@@ -157,7 +184,7 @@ describe("open", () => {
       client: createCompanionClient(
         createApiClient({ baseUrl: "https://api.komi.test", fetchFn: server.fetchFn, getProfileId: () => PROFILE }),
       ),
-      sync: { isSessionOnServer: async () => true, flush },
+      sync: { sessionGate: async (): Promise<SessionGate> => READY, flush },
       reflections: {
         upsert: async () => {
           throw new Error("cuota llena");
@@ -372,7 +399,7 @@ describe("send", () => {
       client: createCompanionClient(
         createApiClient({ baseUrl: "https://api.komi.test", fetchFn: server.fetchFn, getProfileId: () => PROFILE }),
       ),
-      sync: { isSessionOnServer: async () => true, flush },
+      sync: { sessionGate: async (): Promise<SessionGate> => READY, flush },
       reflections: createLocalReflectionRepository(db, fakeClock()),
       wait: async () => controller.abort(),
     });

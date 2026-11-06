@@ -71,6 +71,10 @@ export function createFakeServer(options: { profileId?: string } = {}) {
   const state = {
     /** /profile/sync/ responde 503 (para probar la sesion pendiente). */
     syncDown: false,
+    /** /profile/sync/ falla como sin conexion (fetch rechaza). */
+    syncOffline: false,
+    /** /profile/sync/ rechaza todas las sesiones con este codigo (200 con `rejected`). */
+    rejectSessionsWith: null as string | null,
     /** El stream de mensajes fue cancelado por el cliente. */
     cancelled: 0,
     nextId: 1,
@@ -299,11 +303,20 @@ export function createFakeServer(options: { profileId?: string } = {}) {
   }
 
   function handleSync(body: { books?: Array<{ id: string }>; sessions?: Array<{ id: string }> }) {
+    if (state.syncOffline) throw new TypeError("Failed to fetch");
     if (state.syncDown) return json(503, { detail: "No disponible." });
-    for (const session of body.sessions ?? []) knownSessions.add(session.id);
+    const rejecting = state.rejectSessionsWith;
+    const sessions = body.sessions ?? [];
+    if (rejecting === null) for (const session of sessions) knownSessions.add(session.id);
     return json(200, {
       books: { accepted: (body.books ?? []).map((book) => ({ id: book.id, result: "created" })), rejected: [] },
-      sessions: { accepted: (body.sessions ?? []).map((session) => ({ id: session.id, result: "created" })), rejected: [] },
+      sessions: {
+        accepted: rejecting === null ? sessions.map((session) => ({ id: session.id, result: "created" })) : [],
+        rejected:
+          rejecting === null
+            ? []
+            : sessions.map((session, index) => ({ index, id: session.id, code: rejecting, detail: "x" })),
+      },
       server_books: [],
       streak: { current: 1, longest: 1, last_valid_session_date: null },
     });
