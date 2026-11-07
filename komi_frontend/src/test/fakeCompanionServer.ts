@@ -75,6 +75,10 @@ export function createFakeServer(options: { profileId?: string } = {}) {
     syncOffline: false,
     /** /profile/sync/ rechaza todas las sesiones con este codigo (200 con `rejected`). */
     rejectSessionsWith: null as string | null,
+    /** /health/ (despertar del servidor): `ok`, `starting` (503 del proxy) o `network` (fetch rechaza). */
+    health: "ok" as "ok" | "starting" | "network",
+    /** Si se fija, /health/ espera a que se resuelva antes de responder (arranque en frio). */
+    healthHold: null as Deferred | null,
     /** El stream de mensajes fue cancelado por el cliente. */
     cancelled: 0,
     nextId: 1,
@@ -329,6 +333,13 @@ export function createFakeServer(options: { profileId?: string } = {}) {
     const signal = (init?.signal as AbortSignal | undefined) ?? null;
     calls.push({ url, method: init?.method ?? "GET", headers: rawHeaders, body, signal });
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    // La ruta de salud no necesita perfil (el servidor real tampoco lo pide).
+    if (url.endsWith("/health/")) {
+      if (state.healthHold) await state.healthHold.promise;
+      if (state.health === "network") throw new TypeError("Failed to fetch");
+      if (state.health === "starting") return json(503, { detail: "Arrancando." });
+      return json(200, { status: "ok" });
+    }
     if (options.profileId && rawHeaders["X-Profile-Id"] !== options.profileId) {
       return json(401, { detail: "Perfil no valido." });
     }
@@ -359,6 +370,7 @@ export function createFakeServer(options: { profileId?: string } = {}) {
     messageCalls: () => calls.filter((call) => /\/message\/$/.test(call.url)),
     startCalls: () => calls.filter((call) => call.url.endsWith("/companion/start/")),
     syncCalls: () => calls.filter((call) => call.url.endsWith("/profile/sync/")),
+    healthCalls: () => calls.filter((call) => call.url.endsWith("/health/")),
     /** Fuerza el estado de una charla (por ejemplo, ya cerrada). */
     chatOf: (sessionId: string) => [...chats.values()].find((chat) => chat.session_id === sessionId),
     lock(sessionId: string) {

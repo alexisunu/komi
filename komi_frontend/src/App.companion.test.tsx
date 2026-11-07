@@ -14,6 +14,8 @@ import type { WakeLockService } from "./services/wakeLockService";
 import { createTestDb, fakeClock, uuid } from "./test/db";
 import { createFakeServer, deferred, type FakeServer } from "./test/fakeCompanionServer";
 import { createFocusEnv, type FocusEnv } from "./test/focusEnv";
+import { createFakeWake } from "./test/noWake";
+import type { WakeService } from "./data/network/wakeService";
 import { createFakeReader } from "./test/readerEnv";
 import { render, typeInto } from "./test/render";
 
@@ -74,6 +76,7 @@ const sheetButton = (text: string) => byText(sheet() as HTMLElement, "button", t
 interface MountOptions {
   env?: FocusEnv;
   fetchFn?: typeof fetch;
+  wake?: WakeService;
 }
 
 async function mountApp(books: LocalBook[], options: MountOptions = {}) {
@@ -104,6 +107,7 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
         gate,
         wakeLock: wakeLock as unknown as WakeLockService,
         epubReader: fake.reader,
+        ...(options.wake ? { wake: options.wake } : {}),
       }}
     />,
   );
@@ -333,4 +337,89 @@ describe("de la hoja a la charla", () => {
     expect(await db.reflections.toCollection().first()).toMatchObject({ turn_count: 1, is_closed: false });
     expect(ctx.gate.isBlocked()).toBe(false);
   });
+});
+
+describe("despertar del servidor (arranque en frio del plan gratuito)", () => {
+  it("al abrir la app sondea /health/ una sola vez y la interfaz no espera al servidor", async () => {
+    const hold = deferred();
+    server.state.healthHold = hold;
+    const ctx = await mountApp([book()], { fetchFn: server.fetchFn });
+    // El servidor sigue sin responder y el Dashboard ya esta en pantalla.
+    expect(ctx.root.querySelector(".dashboard")).not.toBeNull();
+    expect(startButton(ctx.root).disabled).toBe(false);
+    expect(server.healthCalls()).toHaveLength(1);
+    expect(server.healthCalls()[0]?.method).toBe("GET");
+    hold.resolve();
+    await settle();
+    expect(server.healthCalls()).toHaveLength(1);
+  });
+
+  it("la charla en arranque en frio dice 'Despertando a Komi' (no 'sin conexion') y se abre al responder", async () => {
+    const hold = deferred();
+    server.state.healthHold = hold;
+    const ctx = await mountApp([book()], { fetchFn: server.fetchFn });
+    // Pasado el umbral de 2,5 s el sondeo sigue sin respuesta: el servidor esta arrancando.
+    await settle(2_700);
+    await finishPhysical(ctx, 600_000);
+    await enterPage("90");
+    await settle(100);
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(true);
+    expect(sheet()?.textContent).toContain("Despertando a Komi");
+    expect(sheet()?.textContent).not.toContain("Sincronizando tu sesión");
+    expect(sheet()?.textContent).not.toContain("No hay conexión");
+    expect(sheet()?.textContent).not.toContain("No pudimos sincronizar");
+    // El servidor despierta: la puerta sincroniza y la charla se habilita.
+    hold.resolve();
+    await settle(200);
+    expect(sheet()?.textContent).not.toContain("Despertando a Komi");
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(false);
+    await tap(sheetButton("Sí, conversar con Komi"));
+    await settle(100);
+    expect(zen()).toBe("Ciclo Zen: Turno 1 de 5");
+    expect(server.healthCalls()).toHaveLength(1);
+  }, 15_000);
+
+  it("si el servidor vuelve a dormirse al abrir la charla, la pantalla de la charla dice 'Despertando a Komi'", async () => {
+    const fakeWake = createFakeWake();
+    const ctx = await mountApp([book()], { fetchFn: server.fetchFn, wake: fakeWake.wake });
+    await finishPhysical(ctx, 600_000);
+    await enterPage("90");
+    await settle(100);
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(false);
+    let wakeUp!: (value: boolean) => void;
+    fakeWake.hold(new Promise<boolean>((resolve) => (wakeUp = resolve)));
+    fakeWake.set("waking");
+    await tap(sheetButton("Sí, conversar con Komi"));
+    await settle(100);
+    expect(screenText()).toContain("Despertando a Komi");
+    expect(screenText()).not.toContain("Conectando con Komi");
+    expect(server.startCalls()).toHaveLength(0);
+    fakeWake.set("awake");
+    wakeUp(true);
+    await settle(150);
+    expect(screenText()).not.toContain("Despertando a Komi");
+    expect(zen()).toBe("Ciclo Zen: Turno 1 de 5");
+  });
+
+  it("un servidor que responde rapido no muestra nunca 'Despertando a Komi'", async () => {
+    const ctx = await savedSheet();
+    expect(screenText()).not.toContain("Despertando a Komi");
+    expect(sheetButton("Sí, conversar con Komi")?.disabled).toBe(false);
+    expect(ctx.root).not.toBeNull();
+  });
+
+  it("al despertar sube lo que se quedo pendiente mientras el servidor dormia", async () => {
+    server.state.syncDown = true;
+    const hold = deferred();
+    server.state.healthHold = hold;
+    await mountApp([book({ pending_sync: 1 })], { fetchFn: server.fetchFn });
+    await settle(100);
+    // Al abrir, el envio fallo (el servidor dormia) y el libro sigue pendiente.
+    expect((await db.books.toArray())[0]?.pending_sync).toBe(1);
+    await settle(2_700);
+    server.state.syncDown = false;
+    hold.resolve();
+    await settle(300);
+    expect((await db.books.toArray())[0]?.pending_sync).toBe(0);
+  }, 15_000);
 });

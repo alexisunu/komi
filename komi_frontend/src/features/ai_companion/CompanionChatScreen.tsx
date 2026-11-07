@@ -17,6 +17,8 @@ import "./CompanionChatScreen.css";
 export interface CompanionChatScreenProps {
   service: CompanionService;
   gate: ReloadGate;
+  /** El servidor esta arrancando (plan gratuito): se avisa en lugar de "Conectando con Komi". */
+  waking?: boolean;
   sessionId: string;
   book: LocalBook;
   /** Volver al jardin: la charla termino, se abandonó o no se pudo abrir. */
@@ -38,7 +40,14 @@ function cooldownText(seconds: number): string {
   return seconds >= 100 ? `Podrás reintentar en ${Math.ceil(seconds / 60)} min` : `Podrás reintentar en ${seconds} s`;
 }
 
-export function CompanionChatScreen({ service, gate, sessionId, book, onLeave }: CompanionChatScreenProps) {
+export function CompanionChatScreen({
+  service,
+  gate,
+  waking = false,
+  sessionId,
+  book,
+  onLeave,
+}: CompanionChatScreenProps) {
   const chat = useCompanionChat(service, { sessionId, bookId: book.id }, gate);
   const [confirming, setConfirming] = useState(false);
   const fieldId = useId();
@@ -75,7 +84,7 @@ export function CompanionChatScreen({ service, gate, sessionId, book, onLeave }:
       <section className="companion__conversation" data-block="conversation" aria-label="Conversación con Komi">
         {chat.phase === "opening" && (
           <p className="companion__status" role="status">
-            Conectando con Komi
+            {waking ? "Despertando a Komi" : "Conectando con Komi"}
           </p>
         )}
 

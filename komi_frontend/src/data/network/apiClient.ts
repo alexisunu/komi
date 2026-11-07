@@ -104,6 +104,8 @@ export interface RequestOptions {
   body?: unknown;
   /** Perfil a usar en la cabecera; por defecto el del dispositivo (getProfileId). */
   profileId?: string | null;
+  /** Tiempo maximo de esta peticion; por defecto el del cliente (10 s). */
+  timeoutMs?: number;
 }
 
 export interface ApiClientOptions {
@@ -119,7 +121,7 @@ export function createApiClient(options: ApiClientOptions) {
   async function request<T>(
     method: "GET" | "POST" | "PATCH",
     path: string,
-    { body, profileId }: RequestOptions = {},
+    { body, profileId, timeoutMs: requestTimeoutMs }: RequestOptions = {},
   ): Promise<ApiResponse<T>> {
     if (baseUrl === null) {
       throw new ApiError("not_configured", "No hay un servidor configurado (VITE_API_URL).", null, false);
@@ -132,7 +134,7 @@ export function createApiClient(options: ApiClientOptions) {
     if (id !== null && isUuid(id)) headers[PROFILE_HEADER] = id;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), requestTimeoutMs ?? timeoutMs);
     let response: Response;
     try {
       response = await fetchFn(`${baseUrl}${API_PREFIX}${path}`, {

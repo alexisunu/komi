@@ -57,6 +57,78 @@ async function openChat(): Promise<CompanionChat> {
 }
 const noop = { onChunk: () => {} };
 
+describe("despertar del servidor antes de la puerta", () => {
+  function withWake(ensureAwake: (maxMs?: number) => Promise<boolean>, order: string[]) {
+    const api = createApiClient({
+      baseUrl: "https://api.komi.test",
+      fetchFn: server.fetchFn,
+      getProfileId: () => PROFILE,
+    });
+    return createCompanionService({
+      client: createCompanionClient(api),
+      sync: {
+        sessionGate: async (): Promise<SessionGate> => {
+          order.push("gate");
+          return onServer ? READY : { state: "offline" };
+        },
+        flush,
+      },
+      wake: {
+        ensureAwake: async (maxMs) => {
+          order.push(`wake:${maxMs ?? "defecto"}`);
+          return ensureAwake(maxMs);
+        },
+      },
+      reflections: createLocalReflectionRepository(db, fakeClock()),
+      wait: async () => {},
+    });
+  }
+
+  it("espera a que el servidor despierte ANTES de sincronizar la sesion", async () => {
+    const order: string[] = [];
+    let release!: () => void;
+    const slow = new Promise<boolean>((resolve) => {
+      release = () => resolve(true);
+    });
+    const svc = withWake(() => slow, order);
+    const pending = svc.gate(SESSION);
+    await Promise.resolve();
+    expect(order).toEqual(["wake:defecto"]);
+    release();
+    expect(await pending).toEqual(READY);
+    expect(order).toEqual(["wake:defecto", "gate"]);
+  });
+
+  it("abrir la charla tambien espera al despertar", async () => {
+    const order: string[] = [];
+    const svc = withWake(async () => true, order);
+    const result = await svc.open(TARGET);
+    expect(result.kind).toBe("ready");
+    expect(order.slice(0, 2)).toEqual(["wake:defecto", "gate"]);
+  });
+
+  it("si no despierta, la puerta decide por su cuenta (sin conexion)", async () => {
+    onServer = false;
+    const order: string[] = [];
+    const svc = withWake(async () => false, order);
+    expect(await svc.gate(SESSION)).toEqual({ state: "offline" });
+    expect(order).toEqual(["wake:defecto", "gate"]);
+  });
+
+  it("un fallo inesperado del despertar nunca impide la puerta", async () => {
+    const order: string[] = [];
+    const svc = withWake(async () => {
+      throw new Error("raro");
+    }, order);
+    expect(await svc.gate(SESSION)).toEqual(READY);
+    expect(order).toEqual(["wake:defecto", "gate"]);
+  });
+
+  it("sin despertar configurado la puerta funciona igual", async () => {
+    expect(await service.gate(SESSION)).toEqual(READY);
+  });
+});
+
 describe("open", () => {
   it("abre la charla con la apertura de Komi y la guarda en reflections", async () => {
     const chat = await openChat();

@@ -7,6 +7,7 @@ import { createLocalMetaRepository, META_KEYS } from "./data/local_db/localMetaR
 import { createLocalProfileRepository } from "./data/local_db/localProfileRepository";
 import { createApiClient } from "./data/network/apiClient";
 import { createTestDb, fakeClock, uuid } from "./test/db";
+import { noWake } from "./test/noWake";
 import { render } from "./test/render";
 
 let db: KomiDatabase;
@@ -49,7 +50,7 @@ type FetchMock = ReturnType<typeof vi.fn<typeof fetch>>;
 
 function mountApp(fetchFn: FetchMock) {
   const api = createApiClient({ baseUrl: BASE, fetchFn, getProfileId: () => ID });
-  mounted = render(<App options={{ db, api }} />);
+  mounted = render(<App options={{ db, api, wake: noWake }} />);
   return mounted.container;
 }
 

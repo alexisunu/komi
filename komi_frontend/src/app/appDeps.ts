@@ -13,6 +13,7 @@ import { getApiClient, type ApiClient } from "../data/network/apiClient";
 import { createCompanionClient } from "../data/network/companionClient";
 import { createOnboardingSync } from "../data/network/onboardingSync";
 import { createSyncService } from "../data/network/syncService";
+import { createWakeService, type WakeService } from "../data/network/wakeService";
 import { createEpubReaderService, type EpubReaderService } from "../services/epubReaderService";
 import { createEpubService, type EpubService } from "../services/epubService";
 import { parseReadingProgress, type ReadingProgress } from "../services/readingTracker";
@@ -42,6 +43,8 @@ export interface AppOptions {
   /** Solo para pruebas: pantalla encendida y puerta de recarga propios. */
   wakeLock?: WakeLockService;
   gate?: ReloadGate;
+  /** Solo para pruebas: despertar del servidor propio (por defecto sondea GET /health/). */
+  wake?: WakeService;
   /** Aviso en consola si el servidor responde otra meta (solo desarrollo). */
   warnOnMismatch?: boolean;
 }
@@ -68,6 +71,7 @@ export function createAppDeps(options: AppOptions = {}) {
     // Un 401 puede ser un onboarding aun en cola: se confirma y se reintenta una vez.
     recoverUnauthorized: async () => (await onboardingSync.flush()).status === "synced",
   });
+  const wake = options.wake ?? createWakeService({ api });
   const realEpub = createEpubService();
   const epub = options.epub ?? realEpub;
   const focusNow = options.focusEnv?.now ?? (() => Date.now());
@@ -129,8 +133,11 @@ export function createAppDeps(options: AppOptions = {}) {
     companion: createCompanionService({
       client: createCompanionClient(api),
       sync: syncService,
+      wake,
       reflections,
     }),
+    /** Despertar del servidor al abrir (arranque en frio del plan gratuito). */
+    wake,
     /** Pantalla encendida durante la sesion (SRS 19.12). */
     wakeLock: options.wakeLock ?? createWakeLockService(navigator, document),
     /** Puerta de recarga del Service Worker: se bloquea mientras dura la sesion. */

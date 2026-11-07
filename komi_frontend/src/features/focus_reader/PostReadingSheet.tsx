@@ -41,6 +41,8 @@ export interface PostReadingSheetProps {
   onChat: (result: SavedReading) => void;
   /** Sincroniza y dice si el servidor acepto la sesion: solo entonces se ofrece la charla. No rechaza nunca (un fallo es `unsynced`). */
   checkChat: (sessionId: string) => Promise<SessionGate>;
+  /** El servidor esta arrancando (plan gratuito): se avisa en lugar de "Sincronizando". */
+  waking?: boolean;
 }
 
 type ChatGate = { kind: "checking" } | { kind: "ready" } | { kind: "blocked"; block: GateBlock };
@@ -73,6 +75,7 @@ export function PostReadingSheet({
   onDone,
   onChat,
   checkChat,
+  waking = false,
 }: PostReadingSheetProps) {
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
   const [prepared, setPrepared] = useState<Ready | null>(null);
@@ -311,7 +314,7 @@ export function PostReadingSheet({
           {saved && <p className="post-reading__question">¿Quieres charlar un poco sobre lo que acabas de leer?</p>}
           {saved && chatGate.kind === "checking" && (
             <p className="post-reading__text" role="status">
-              Sincronizando tu sesión
+              {waking ? "Despertando a Komi" : "Sincronizando tu sesión"}
             </p>
           )}
           {saved && chatGate.kind === "blocked" && (

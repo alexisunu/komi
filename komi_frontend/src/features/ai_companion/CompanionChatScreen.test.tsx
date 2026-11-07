@@ -146,6 +146,30 @@ describe("apertura", () => {
     hold.resolve();
   });
 
+  it("si el servidor esta arrancando dice 'Despertando a Komi' en lugar de 'Conectando'", async () => {
+    gateState = { state: "ready" };
+    const hold = deferred();
+    server.fetchFn.mockImplementationOnce(async () => {
+      await hold.promise;
+      return new Response("{}", { status: 500 });
+    });
+    mounted = render(
+      <CompanionChatScreen
+        service={makeService()}
+        gate={gate}
+        waking
+        sessionId={SESSION}
+        book={BOOK}
+        onLeave={onLeave}
+      />,
+    );
+    await settle();
+    expect(text()).toContain("Despertando a Komi");
+    expect(text()).not.toContain("Conectando con Komi");
+    expect(gate.isBlocked()).toBe(false);
+    hold.resolve();
+  });
+
   it("sin la sesion en el servidor: mensaje de FA-5.2 con salida al jardin", async () => {
     gateState = { state: "offline" };
     await mountChat();

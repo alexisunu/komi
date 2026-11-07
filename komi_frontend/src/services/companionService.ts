@@ -51,6 +51,11 @@ export type SendResult =
 export interface CompanionServiceDeps {
   client: Pick<CompanionClient, "start" | "send">;
   sync: { sessionGate(sessionId: string): Promise<SessionGate>; flush(): Promise<unknown> };
+  /**
+   * Despertar del servidor (arranque en frio del plan gratuito): antes de la puerta se espera a que
+   * responda, hasta unos 90 s. Si no responde, la puerta decide con su propio resultado.
+   */
+  wake?: { ensureAwake(maxMs?: number): Promise<boolean> };
   reflections: Pick<LocalReflectionRepository, "upsert">;
   /** Pausa cancelable; en pruebas se reemplaza. */
   wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -70,7 +75,7 @@ function defaultWait(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export function createCompanionService(deps: CompanionServiceDeps) {
-  const { client, sync, reflections } = deps;
+  const { client, sync, reflections, wake } = deps;
   const wait = deps.wait ?? defaultWait;
 
   async function remember(target: CompanionTarget, chat: CompanionChat): Promise<void> {
@@ -95,6 +100,9 @@ export function createCompanionService(deps: CompanionServiceDeps) {
   /** Estado de la sesion ante el servidor; un fallo inesperado cuenta como "no se pudo sincronizar". */
   async function checkGate(sessionId: string): Promise<SessionGate> {
     try {
+      // Un servidor dormido tarda en responder: sin esta espera el flush agotaria sus 10 s y la
+      // puerta diria "sin conexion". Nunca lanza; si no despierta, sigue el flujo normal.
+      await wake?.ensureAwake().catch(() => false);
       return await sync.sessionGate(sessionId);
     } catch {
       return { state: "unsynced" };

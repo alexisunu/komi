@@ -8,6 +8,7 @@ import { createLocalProfileRepository } from "./data/local_db/localProfileReposi
 import { createApiClient } from "./data/network/apiClient";
 import { buildEpub } from "./test/epubFixture";
 import { createTestDb, fakeClock, uuid } from "./test/db";
+import { noWake } from "./test/noWake";
 import { chooseFile, render, typeInto } from "./test/render";
 
 let db: KomiDatabase;
@@ -64,7 +65,7 @@ async function mountApp(fetchFn: ReturnType<typeof serverFetch>["fetchFn"]) {
   });
   await profiles.updateProfile({ onboarding_synced: true });
   const api = createApiClient({ baseUrl: "https://api.komi.test", fetchFn, getProfileId: () => PROFILE });
-  mounted = render(<App options={{ db, api }} />);
+  mounted = render(<App options={{ db, api, wake: noWake }} />);
   await settle();
   return mounted.container;
 }

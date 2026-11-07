@@ -9,6 +9,8 @@ import { createAppDeps, type AppDeps, type AppOptions } from "./app/appDeps";
 import { loadInitialState, type InitialState } from "./app/loadInitialState";
 import { watchOnboardingSync } from "./data/network/onboardingSync";
 import { watchSync } from "./data/network/syncService";
+import { watchWake } from "./data/network/wakeService";
+import { useWakeState } from "./app/useWakeState";
 import { requestPersistentStorage } from "./pwa/persistStorage";
 import type { LocalBook, LocalProfile } from "./data/local_db/types";
 import { META_KEYS } from "./data/local_db/localMetaRepository";
@@ -99,6 +101,15 @@ function Session({ deps, initial }: SessionProps) {
   // Sube libros y sesiones pendientes al abrir y cada vez que vuelve la red.
   useEffect(() => watchSync(deps.syncService, window), [deps]);
 
+  // Despierta al servidor al abrir (sin bloquear la interfaz); si tardo, sube lo pendiente al despertar.
+  useEffect(
+    () =>
+      watchWake(deps.wake, window, document, () => {
+        void deps.syncService.flush().catch(() => {});
+      }),
+    [deps],
+  );
+
   const persistTheme = useCallback(
     (mode: ThemeId) => {
       deps.profiles.updateProfile({ theme_mode: mode }).catch(() => {
@@ -165,6 +176,8 @@ interface MainAppProps {
 function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   const library = useLibrary(deps, initial?.books ?? []);
   const { reload } = library;
+  // El servidor (plan gratuito) puede estar arrancando: la charla avisa en vez de decir "sin conexion".
+  const waking = useWakeState(deps.wake) === "waking";
   // Libro elegido con "Leer este libro"; undefined mientras se lee de meta (el boton espera).
   const [chosenId, setChosenId] = useState<string | null | undefined>(undefined);
   const activeBook = resolveActiveBook(library.books, chosenId);
@@ -361,6 +374,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             key={chat.sessionId}
             service={deps.companion}
             gate={deps.gate}
+            waking={waking}
             sessionId={chat.sessionId}
             book={chat.book}
             onLeave={() => {
@@ -388,6 +402,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             onDiscard={focus.leave}
             onChat={(result) => setChat({ sessionId: result.session.id, book: result.book })}
             checkChat={deps.companion.gate}
+            waking={waking}
             onDone={() => {
               setClosing(null);
               onNav("lectura");
