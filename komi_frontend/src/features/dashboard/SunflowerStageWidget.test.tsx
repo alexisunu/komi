@@ -336,23 +336,81 @@ describe("movimiento", () => {
     expect(css).toMatch(/\.sunflower__stage \{[^}]*transition: opacity var\(--transition-ui\)/);
   });
 
-  it("fuera de reduced-motion, la unica animacion continua es la respiracion", () => {
-    const users = [...outsideReducedMotion.matchAll(/([^{}]+)\{[^{}]*animation(?:-play-state)?\s*:/g)].map(
-      (m) => (m[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim(),
+  const motionBlocks = () =>
+    [...outsideReducedMotion.matchAll(/([^{}@]+)\{([^{}]*)\}/g)]
+      .map((m) => ({ selector: (m[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim(), body: m[2] ?? "" }))
+      .filter((b) => /animation/.test(b.body));
+  const keyframes = (name: string) => {
+    const start = css.indexOf(`@keyframes ${name}`);
+    expect(start, name).toBeGreaterThanOrEqual(0);
+    let depth = 0;
+    for (let i = css.indexOf("{", start); i < css.length; i += 1) {
+      if (css[i] === "{") depth += 1;
+      if (css[i] === "}" && (depth -= 1) === 0) return css.slice(start, i + 1);
+    }
+    throw new Error(name);
+  };
+
+  it("fuera de reduced-motion, solo se anima bajo .sunflower--breathing (ni Dashboard ni miniaturas)", () => {
+    const blocks = motionBlocks();
+    expect(blocks.length).toBeGreaterThanOrEqual(4);
+    for (const block of blocks) expect(block.selector, block.selector).toMatch(/^\.sunflower--breathing/);
+  });
+
+  it("los keyframes del balanceo y la respiracion animan solo transform (nada de opacidad ni layout)", () => {
+    for (const name of ["sunflower-sway", "sunflower-head-breathe", "sunflower-seed-breathe"]) {
+      const properties = [...keyframes(name).matchAll(/^\s+([a-z-]+)\s*:/gm)].map((m) => m[1]);
+      expect(new Set(properties), name).toEqual(new Set(["transform"]));
+    }
+    expect(css).not.toContain("sunflower-breathe ");
+  });
+
+  it("el balanceo es de pocos grados y la respiracion no pasa de 1,02", () => {
+    const degrees = [...keyframes("sunflower-sway").matchAll(/rotate\((-?[\d.]+)deg\)/g)].map((m) =>
+      Math.abs(Number(m[1])),
     );
-    expect(users).toEqual([".sunflower--breathing .sunflower__svg", ".sunflower--breathing-paused .sunflower__svg"]);
+    expect(degrees.length).toBeGreaterThan(0);
+    expect(Math.max(...degrees)).toBeLessThanOrEqual(2);
+    for (const name of ["sunflower-head-breathe", "sunflower-seed-breathe"]) {
+      const scales = [...keyframes(name).matchAll(/scale\(([\d.]+)\)/g)].map((m) => Number(m[1]));
+      expect(Math.max(...scales), name).toBeLessThanOrEqual(1.02);
+    }
   });
 
-  it("los keyframes de la respiracion animan solo transform y opacity", () => {
-    const start = css.indexOf("@keyframes sunflower-breathe");
-    const end = css.indexOf(".sunflower--breathing .sunflower__svg");
-    expect(start).toBeGreaterThanOrEqual(0);
-    const properties = [...css.slice(start, end).matchAll(/^\s+([a-z-]+)\s*:/gm)].map((m) => m[1]);
-    expect(new Set(properties)).toEqual(new Set(["transform", "opacity"]));
+  it("ciclos lentos de 4 a 6 s con ease-in-out, y la cabeza con otro ciclo y desfase", () => {
+    const animated = motionBlocks().filter((b) => /animation:/.test(b.body));
+    expect(animated).toHaveLength(3);
+    for (const { body } of animated) {
+      const seconds = Number(/animation:\s*[\w-]+\s+([\d.]+)s/.exec(body)?.[1]);
+      expect(seconds).toBeGreaterThanOrEqual(4);
+      expect(seconds).toBeLessThanOrEqual(6);
+      expect(body).toContain("ease-in-out");
+    }
+    const sway = animated.find((b) => b.body.includes("sunflower-sway"));
+    const head = animated.find((b) => b.body.includes("sunflower-head-breathe"));
+    expect(/sunflower-sway\s+([\d.]+)s/.exec(sway?.body ?? "")?.[1]).not.toBe(
+      /sunflower-head-breathe\s+([\d.]+)s/.exec(head?.body ?? "")?.[1],
+    );
+    expect(head?.body).toMatch(/ease-in-out\s+-[\d.]+s\s+infinite/);
   });
 
-  it("la respiracion se pausa en segundo plano con animation-play-state", () => {
-    expect(css).toMatch(/\.sunflower--breathing-paused \.sunflower__svg \{[^}]*animation-play-state: paused/);
+  it("los pivotes estan en unidades del viewBox: base del tallo y centro de la flor, con transform-box view-box", () => {
+    const body = (key: string) => motionBlocks().find((b) => b.body.includes(key))?.body ?? "";
+    expect(body("sunflower-sway")).toMatch(/transform-origin:\s*110px 178px/);
+    expect(body("sunflower-head-breathe")).toMatch(/transform-origin:\s*110px 78px/);
+    for (const key of ["sunflower-sway", "sunflower-seed-breathe", "sunflower-head-breathe"]) {
+      expect(body(key), key).toMatch(/transform-box:\s*view-box/);
+    }
+  });
+
+  it("solo respira la cabeza de la etapa visible", () => {
+    expect(css).toMatch(/\.sunflower__stage\[data-active="true"\] \.sf-head/);
+  });
+
+  it("el movimiento se pausa en segundo plano con animation-play-state", () => {
+    expect(css).toMatch(
+      /\.sunflower--breathing-paused \.sf-plant,\s*\.sunflower--breathing-paused \.sf-head \{[^}]*animation-play-state: paused/,
+    );
   });
 
   it("prefers-reduced-motion anula transiciones y animaciones del widget", () => {
@@ -393,5 +451,65 @@ describe("prop breathing", () => {
     expect(mounted.container.querySelector(".sunflower")?.className).not.toContain("breathing");
     mounted.rerender(<SunflowerStageWidget percentage={30} breathing mini />);
     expect(mounted.container.querySelector(".sunflower")?.className).not.toContain("breathing");
+  });
+});
+
+describe("capas del movimiento", () => {
+  const q = (selector: string) => mounted?.container.querySelector(selector) ?? null;
+
+  it("la planta envuelve las cuatro etapas y el suelo queda fuera", () => {
+    mounted = render(<SunflowerStageWidget percentage={70} breathing />);
+    const plant = q(".sf-plant");
+    expect(plant).not.toBeNull();
+    expect(plant?.querySelectorAll(".sunflower__stage")).toHaveLength(4);
+    expect(plant?.querySelector(".sf-soil, .sf-soil-line")).toBeNull();
+    expect(q(".sf-soil")?.closest(".sf-plant")).toBeNull();
+  });
+
+  it("el aura y los destellos tampoco se mueven con la planta", () => {
+    mounted = render(<SunflowerStageWidget percentage={100} solarBonus breathing />);
+    expect(q('[data-testid="solar-aura"]')?.closest(".sf-plant")).toBeNull();
+    expect(q('[data-testid="bloom-sparkles"]')?.closest(".sf-plant")).toBeNull();
+  });
+
+  it("la semilla respira y las demas etapas se mecen", () => {
+    mounted = render(<SunflowerStageWidget percentage={10} breathing />);
+    expect(q(".sf-plant")?.getAttribute("data-motion")).toBe("seed");
+    for (const percentage of [30, 70, 100]) {
+      mounted.rerender(<SunflowerStageWidget percentage={percentage} breathing />);
+      expect(q(".sf-plant")?.getAttribute("data-motion"), String(percentage)).toBe("sway");
+    }
+  });
+
+  it("solo el capullo y la flor tienen cabeza; la flor la agrupa completa", () => {
+    mounted = render(<SunflowerStageWidget percentage={70} breathing />);
+    const heads = (name: string) => q(`[data-stage-name="${name}"]`)?.querySelectorAll(".sf-head").length;
+    expect(heads("SEED_1")).toBe(0);
+    expect(heads("STEM_2")).toBe(0);
+    expect(heads("BUD_3")).toBe(1);
+    expect(heads("BLOOM_4")).toBe(1);
+    expect(q('[data-stage-name="BLOOM_4"] .sf-head')?.querySelectorAll(".sf-petal-outer, .sf-petal-inner")).toHaveLength(12);
+    expect(q('[data-stage-name="BLOOM_4"] .sf-head .sf-center')).not.toBeNull();
+    expect(q('[data-stage-name="BLOOM_4"] > .sf-stem')).not.toBeNull();
+  });
+
+  it("re-renderizar con las mismas capas conserva los nodos (la animacion no se reinicia)", () => {
+    mounted = render(<SunflowerStageWidget percentage={70} breathing />);
+    const plant = q(".sf-plant");
+    const head = q('[data-stage-name="BUD_3"] .sf-head');
+    const root = q(".sunflower");
+    mounted.rerender(<SunflowerStageWidget percentage={72} breathing breathingPaused />);
+    mounted.rerender(<SunflowerStageWidget percentage={72} breathing />);
+    expect(q(".sf-plant")).toBe(plant);
+    expect(q('[data-stage-name="BUD_3"] .sf-head')).toBe(head);
+    expect(q(".sunflower")).toBe(root);
+    expect(root?.className).not.toContain("breathing-paused");
+  });
+
+  it("sin breathing (Dashboard, miniaturas) no hay clase que active el movimiento", () => {
+    mounted = render(<SunflowerStageWidget percentage={70} />);
+    expect(q(".sunflower--breathing")).toBeNull();
+    mounted.rerender(<SunflowerStageWidget percentage={70} mini breathing />);
+    expect(q(".sunflower--breathing")).toBeNull();
   });
 });

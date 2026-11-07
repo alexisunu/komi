@@ -158,27 +158,64 @@
   opacity: 0.4;
 }
 
-/* Respiracion durante la sesion (CU-03): solo transform y opacity, lenta y sin saltos. */
-@keyframes sunflower-breathe {
+/* Balanceo y respiracion durante la sesion (CU-03). Solo transform, por capas como el prototipo
+   (docs/reference_prototype.tsx): la planta se mece desde la base del tallo; la cabeza respira
+   con otro ciclo y un desfase para que se sienta organico. Los pivotes estan en unidades del
+   viewBox: `transform-box: view-box` fija el origen igual en Safari y en Firefox. El suelo, el
+   halo y el aura no se mueven; el Dashboard y las miniaturas no usan `.sunflower--breathing`. */
+@keyframes sunflower-sway {
+  0%,
+  100% {
+    transform: rotate(-1.5deg);
+  }
+  50% {
+    transform: rotate(1.5deg);
+  }
+}
+
+@keyframes sunflower-head-breathe {
   0%,
   100% {
     transform: scale(1);
-    opacity: 1;
   }
   50% {
-    transform: scale(1.035);
-    opacity: 0.92;
+    transform: scale(1.02);
   }
 }
 
-.sunflower--breathing .sunflower__svg {
-  animation: sunflower-breathe 5s ease-in-out infinite;
-  transform-origin: 50% 80%;
+@keyframes sunflower-seed-breathe {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.02) translateY(-1.5px);
+  }
 }
 
-/* En segundo plano la respiracion se detiene donde esta. */
-.sunflower--breathing-paused .sunflower__svg {
-  animation-play-state: paused;
+.sunflower--breathing .sf-plant[data-motion="sway"] {
+  transform-box: view-box;
+  transform-origin: 110px 178px;
+  animation: sunflower-sway 5.5s ease-in-out infinite;
+}
+
+.sunflower--breathing .sf-plant[data-motion="seed"] {
+  transform-box: view-box;
+  transform-origin: 110px 176px;
+  animation: sunflower-seed-breathe 4s ease-in-out infinite;
+}
+
+/* Solo respira la cabeza de la etapa visible. */
+.sunflower--breathing .sunflower__stage[data-active="true"] .sf-head {
+  transform-box: view-box;
+  transform-origin: 110px 78px;
+  animation: sunflower-head-breathe 4.5s ease-in-out -1.2s infinite;
+}
+
+/* En segundo plano el movimiento se detiene donde esta. */
+.sunflower--breathing-paused .sf-plant,
+.sunflower--breathing-paused .sf-head {
+  animation-play-state: paused !important;
 }
 
 /* Sin movimiento: el cambio de etapa es inmediato. */

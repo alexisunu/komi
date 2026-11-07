@@ -3,9 +3,11 @@
 // (sin umbrales propios) y los colores salen solo de las variables CSS del tema (SunflowerStage
 // Widget.css), por eso el SVG no lleva colores en sus atributos.
 //
-// Sin animacion continua salvo la "respiracion" del girasol durante la sesion (prop `breathing`,
-// CU-03 paso 4): solo transform y opacity, en pausa con `breathingPaused` y anulada con
-// prefers-reduced-motion. Aparte hay un fundido de 350 ms entre etapas.
+// Sin animacion continua salvo el balanceo y la respiracion del girasol durante la sesion (prop
+// `breathing`, CU-03 paso 4): solo transform, por capas como en el prototipo (la planta se mece
+// desde la base del tallo; la cabeza respira con otro ciclo y desfase). Se pausa con
+// `breathingPaused` y se anula con prefers-reduced-motion. Aparte hay un fundido de 350 ms entre
+// etapas.
 
 import type { ReactElement } from "react";
 import {
@@ -55,7 +57,7 @@ export interface SunflowerStageWidgetProps {
   size?: number;
   /** Miniatura de tarjeta: sin halo, aura ni particulas. */
   mini?: boolean;
-  /** Respiracion suave durante la sesion (CU-03): solo `transform` y `opacity`. */
+  /** Balanceo y respiracion suaves durante la sesion (CU-03): solo `transform`. */
   breathing?: boolean;
   /** Pausa la respiracion (la pagina esta en segundo plano). */
   breathingPaused?: boolean;
@@ -102,8 +104,10 @@ function BudStage() {
       <Leaf d="M 109 154 C 78 150, 72 128, 94 128 C 103 128, 108 144, 109 154 Z" />
       <Leaf d="M 110 144 C 140 140, 146 118, 124 118 C 115 118, 111 134, 110 144 Z" />
       <Leaf d="M 109 120 C 84 114, 82 98, 98 100 C 105 101, 108 112, 109 120 Z" />
-      <path className="sf-petal-outer" d="M 102 74 L 105 60 L 110 70 L 115 58 L 118 74 Z" />
-      <path className="sf-leaf" d="M 96 84 C 96 68, 124 68, 124 84 C 124 92, 96 92, 96 84 Z" />
+      <g className="sf-head">
+        <path className="sf-petal-outer" d="M 102 74 L 105 60 L 110 70 L 115 58 L 118 74 Z" />
+        <path className="sf-leaf" d="M 96 84 C 96 68, 124 68, 124 84 C 124 92, 96 92, 96 84 Z" />
+      </g>
     </>
   );
 }
@@ -114,21 +118,23 @@ function BloomStage() {
       <Stem d="M 110 176 Q 107 128 110 82" width={4.2} />
       <Leaf d="M 109 154 C 74 148, 68 124, 92 124 C 102 124, 108 142, 109 154 Z" />
       <Leaf d="M 110 142 C 144 136, 150 112, 126 112 C 116 112, 111 130, 110 142 Z" />
-      {PETAL_ANGLES.map((angle, i) => (
-        <path
-          key={angle}
-          className={i % 2 === 0 ? "sf-petal-outer" : "sf-petal-inner"}
-          d={PETAL_PATH}
-          transform={`rotate(${angle} 110 78)`}
-        />
-      ))}
-      <circle className="sf-center" cx="110" cy="78" r="17" />
-      <circle className="sf-ring" cx="110" cy="78" r="12" fill="none" strokeDasharray="2 3" />
-      <circle className="sf-dot" cx="106" cy="74" r="1.3" />
-      <circle className="sf-dot" cx="114" cy="74" r="1.3" />
-      <circle className="sf-dot" cx="110" cy="78" r="1.3" />
-      <circle className="sf-dot" cx="105" cy="82" r="1.3" />
-      <circle className="sf-dot" cx="115" cy="82" r="1.3" />
+      <g className="sf-head">
+        {PETAL_ANGLES.map((angle, i) => (
+          <path
+            key={angle}
+            className={i % 2 === 0 ? "sf-petal-outer" : "sf-petal-inner"}
+            d={PETAL_PATH}
+            transform={`rotate(${angle} 110 78)`}
+          />
+        ))}
+        <circle className="sf-center" cx="110" cy="78" r="17" />
+        <circle className="sf-ring" cx="110" cy="78" r="12" fill="none" strokeDasharray="2 3" />
+        <circle className="sf-dot" cx="106" cy="74" r="1.3" />
+        <circle className="sf-dot" cx="114" cy="74" r="1.3" />
+        <circle className="sf-dot" cx="110" cy="78" r="1.3" />
+        <circle className="sf-dot" cx="105" cy="82" r="1.3" />
+        <circle className="sf-dot" cx="115" cy="82" r="1.3" />
+      </g>
     </>
   );
 }
@@ -190,19 +196,22 @@ export function SunflowerStageWidget({
           </g>
         )}
 
-        {STAGES.map((name) => {
-          const Drawing = STAGE_DRAWINGS[name];
-          return (
-            <g
-              key={name}
-              className="sunflower__stage"
-              data-stage-name={name}
-              data-active={name === stage ? "true" : "false"}
-            >
-              <Drawing />
-            </g>
-          );
-        })}
+        {/* La planta (sin el suelo) es lo que se mece; la semilla solo respira. */}
+        <g className="sf-plant" data-motion={stage === "SEED_1" ? "seed" : "sway"}>
+          {STAGES.map((name) => {
+            const Drawing = STAGE_DRAWINGS[name];
+            return (
+              <g
+                key={name}
+                className="sunflower__stage"
+                data-stage-name={name}
+                data-active={name === stage ? "true" : "false"}
+              >
+                <Drawing />
+              </g>
+            );
+          })}
+        </g>
 
         <path className="sf-soil" d="M 72 182 Q 110 166 148 182 Z" />
         <path className="sf-soil-line" d="M 64 182 L 156 182" />
