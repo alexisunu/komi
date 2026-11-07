@@ -170,6 +170,48 @@ describe("apertura", () => {
     hold.resolve();
   });
 
+  it("al enviar con el servidor dormido, 'Despertando a Komi' sustituye a 'Komi esta escribiendo'", async () => {
+    const hold = deferred();
+    let wakeNow = false;
+    const api = createApiClient({
+      baseUrl: "https://api.komi.test",
+      fetchFn: server.fetchFn,
+      getProfileId: () => PROFILE,
+    });
+    const service = createCompanionService({
+      client: createCompanionClient(api),
+      sync: { sessionGate: async (): Promise<SessionGate> => gateState, flush },
+      wake: { ensureAwake: async () => (wakeNow ? (await hold.promise, true) : true) },
+      reflections: createLocalReflectionRepository(db, fakeClock()),
+      wait: async () => {},
+    });
+    const view = (waking: boolean) => (
+      <CompanionChatScreen
+        service={service}
+        gate={gate}
+        waking={waking}
+        sessionId={SESSION}
+        book={BOOK}
+        onLeave={onLeave}
+      />
+    );
+    mounted = render(view(false));
+    await settle(60);
+    wakeNow = true;
+    server.reply({ kind: "ok", chunks: ["Hola"] });
+    await type("Me gusto");
+    await tap(button("Enviar"));
+    expect(document.querySelector('[data-testid="typing"]')?.textContent).toContain("Komi está escribiendo");
+    mounted.rerender(view(true));
+    await settle();
+    expect(document.querySelector('[data-testid="typing"]')?.textContent).toContain("Despertando a Komi");
+    expect(document.querySelector('[data-testid="typing"]')?.textContent).not.toContain("escribiendo");
+    expect(server.messageCalls()).toHaveLength(0);
+    hold.resolve();
+    await settle(100);
+    expect(server.messageCalls()).toHaveLength(1);
+  });
+
   it("sin la sesion en el servidor: mensaje de FA-5.2 con salida al jardin", async () => {
     gateState = { state: "offline" };
     await mountChat();

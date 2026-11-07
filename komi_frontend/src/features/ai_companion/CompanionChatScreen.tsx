@@ -132,7 +132,7 @@ export function CompanionChatScreen({
             )}
             {chat.typing && (
               <p className="companion__typing" role="status" data-testid="typing">
-                Komi está escribiendo
+                {waking ? "Despertando a Komi" : "Komi está escribiendo"}
                 <span className="companion__dots" aria-hidden="true">
                   <span />
                   <span />

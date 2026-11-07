@@ -3,6 +3,7 @@
 //   - `start/` es idempotente: retoma la charla de la sesion con sus mensajes;
 //   - 404: se sube lo pendiente (flush) y se reintenta una vez antes de rendirse;
 //   - `turn_mismatch` y `chat_closed`: se resincroniza con `start/` (el servidor manda);
+//   - antes de cada envio se espera a que el servidor este despierto (plan gratuito que duerme);
 //   - `reply_in_progress`: se espera y se reintenta una vez;
 //   - tras cada respuesta, `turn_count`, `is_closed` y la semilla se guardan en `reflections`
 //     (los mensajes viven solo en memoria y se recuperan con `start/`).
@@ -52,8 +53,9 @@ export interface CompanionServiceDeps {
   client: Pick<CompanionClient, "start" | "send">;
   sync: { sessionGate(sessionId: string): Promise<SessionGate>; flush(): Promise<unknown> };
   /**
-   * Despertar del servidor (arranque en frio del plan gratuito): antes de la puerta se espera a que
-   * responda, hasta unos 90 s. Si no responde, la puerta decide con su propio resultado.
+   * Despertar del servidor (arranque en frio del plan gratuito): antes de la puerta y de cada envio
+   * se espera a que responda, hasta unos 90 s. Si no responde, sigue el flujo normal y su propio
+   * error lo dira.
    */
   wake?: { ensureAwake(maxMs?: number): Promise<boolean> };
   reflections: Pick<LocalReflectionRepository, "upsert">;
@@ -162,6 +164,12 @@ export function createCompanionService(deps: CompanionServiceDeps) {
     if (chat.is_closed || chat.turn_count >= MAX_TURNS) {
       return { kind: "resynced", chat, delivered: false };
     }
+
+    // "Despierto" caduca a los 10 min: tras una pausa larga el servidor pudo dormirse y el envio
+    // se quedaria esperando o fallaria. Con el estado vigente esto responde de inmediato. Nunca
+    // lanza; si no despierta, el envio sigue y su propio error lo dira.
+    await wake?.ensureAwake().catch(() => false);
+    if (options.signal?.aborted) return { kind: "failed", failure: "aborted", retryAfterSec: null };
 
     const turn = chat.turn_count;
     let waited = false;

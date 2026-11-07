@@ -129,6 +129,102 @@ describe("despertar del servidor antes de la puerta", () => {
   });
 });
 
+describe("el envio espera al despertar", () => {
+  function withWake(ensureAwake: () => Promise<boolean>, order: string[] = []) {
+    const api = createApiClient({
+      baseUrl: "https://api.komi.test",
+      fetchFn: async (input, init) => {
+        if (String(input).endsWith("/message/")) order.push("envio");
+        return server.fetchFn(input, init);
+      },
+      getProfileId: () => PROFILE,
+    });
+    return createCompanionService({
+      client: createCompanionClient(api),
+      sync: { sessionGate: async () => READY, flush },
+      wake: {
+        ensureAwake: async () => {
+          order.push("despertar");
+          return ensureAwake();
+        },
+      },
+      reflections: createLocalReflectionRepository(db, fakeClock()),
+      wait: async () => {},
+    });
+  }
+  const sendWith = (svc: CompanionService, chat: CompanionChat, signal?: AbortSignal) =>
+    svc.send(TARGET, chat, "Me quedo con la escena del rio.", { onChunk: () => {}, ...(signal ? { signal } : {}) });
+
+  it("no envia el mensaje hasta que el servidor despierta", async () => {
+    const chat = await openChat();
+    server.reply({ kind: "ok", chunks: ["Hola"] });
+    let release!: () => void;
+    const held = new Promise<boolean>((resolve) => {
+      release = () => resolve(true);
+    });
+    const order: string[] = [];
+    const pending = sendWith(withWake(() => held, order), chat);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(server.messageCalls()).toHaveLength(0);
+    expect(order).toEqual(["despertar"]);
+    release();
+    const result = await pending;
+    expect(result.kind).toBe("done");
+    expect(order).toEqual(["despertar", "envio"]);
+  });
+
+  it("si no despierta, envia igual y el error propio lo dira", async () => {
+    const chat = await openChat();
+    server.reply({ kind: "network" });
+    const result = await sendWith(withWake(async () => false), chat);
+    expect(result).toMatchObject({ kind: "failed", failure: "offline" });
+  });
+
+  it("un fallo inesperado del despertar nunca impide el envio", async () => {
+    const chat = await openChat();
+    server.reply({ kind: "ok", chunks: ["Hola"] });
+    const result = await sendWith(
+      withWake(async () => {
+        throw new Error("raro");
+      }),
+      chat,
+    );
+    expect(result.kind).toBe("done");
+  });
+
+  it("si el lector se va mientras espera, no se envia nada", async () => {
+    const chat = await openChat();
+    server.reply({ kind: "ok", chunks: ["Hola"] });
+    const controller = new AbortController();
+    let release!: () => void;
+    const held = new Promise<boolean>((resolve) => {
+      release = () => resolve(true);
+    });
+    const pending = sendWith(withWake(() => held), chat, controller.signal);
+    controller.abort();
+    release();
+    expect(await pending).toEqual({ kind: "failed", failure: "aborted", retryAfterSec: null });
+    expect(server.messageCalls()).toHaveLength(0);
+  });
+
+  it("un mensaje invalido o una charla cerrada no esperan al servidor", async () => {
+    const chat = await openChat();
+    const order: string[] = [];
+    const svc = withWake(async () => true, order);
+    expect((await svc.send(TARGET, chat, "   ", { onChunk: () => {} })).kind).toBe("failed");
+    expect((await svc.send(TARGET, { ...chat, is_closed: true }, "hola", { onChunk: () => {} })).kind).toBe(
+      "resynced",
+    );
+    expect(order).toEqual([]);
+  });
+
+  it("sin despertar configurado el envio funciona igual", async () => {
+    const chat = await openChat();
+    server.reply({ kind: "ok", chunks: ["Hola"] });
+    expect((await sendWith(service, chat)).kind).toBe("done");
+  });
+});
+
 describe("open", () => {
   it("abre la charla con la apertura de Komi y la guarda en reflections", async () => {
     const chat = await openChat();
