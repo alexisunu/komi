@@ -1,0 +1,3 @@
+# Cloudflare Pages (SRS 19.23): cualquier ruta que no sea un archivo devuelve el shell de la app
+# (no hay react-router, pero un enlace o una recarga en cualquier ruta debe abrir la PWA).
+/*  /index.html  200
