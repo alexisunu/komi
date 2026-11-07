@@ -58,8 +58,12 @@ class FakeModels:
             if isinstance(item, Exception):
                 raise item
             if isinstance(item, dict):
-                candidate = SimpleNamespace(finish_reason=item["finish"])
-                yield SimpleNamespace(text=item.get("text"), candidates=[candidate])
+                candidate = SimpleNamespace(finish_reason=item.get("finish"))
+                yield SimpleNamespace(
+                    text=item.get("text"),
+                    candidates=[candidate],
+                    prompt_feedback=item.get("prompt_feedback"),
+                )
             else:
                 yield SimpleNamespace(text=item)
 
@@ -167,9 +171,10 @@ class TruncationTests(SimpleTestCase):
         self.assertEqual([e for e in events if isinstance(e, TextChunk)], [TextChunk("texto")])
 
     async def test_empty_response_is_an_error(self):
-        client, _ = make_client({PRIMARY: {"items": [None, ""]}})
+        client, models = make_client({PRIMARY: {"items": [None, ""]}, FALLBACK: {"items": [None]}})
         with self.assertRaises(GeminiUnavailableError):
             await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(len(models.calls), 2)
 
 
 class ContentsTests(SimpleTestCase):
@@ -255,8 +260,11 @@ class FallbackTests(SimpleTestCase):
             await collect(client.stream_reply("s", HISTORY))
         self.assertEqual(len(models.calls), 1)
 
-    async def test_other_api_errors_do_not_switch_model(self):
-        for error in (server_error(), errors.ClientError(400, {"error": {"message": "mala"}})):
+    async def test_client_errors_do_not_switch_model(self):
+        for error in (
+            errors.ClientError(400, {"error": {"message": "mala"}}),
+            errors.ClientError(403, {"error": {"message": "sin permiso"}}),
+        ):
             with self.subTest(code=error.code):
                 client, models = make_client(
                     {PRIMARY: {"on_call": error}, FALLBACK: {"items": ["no"]}}
@@ -314,9 +322,177 @@ class FallbackTests(SimpleTestCase):
         self.assertEqual(len(models.calls), 1)
 
     async def test_network_failures_are_wrapped(self):
-        client, _ = make_client({PRIMARY: {"on_call": ConnectionError("sin red")}})
+        client, models = make_client(
+            {
+                PRIMARY: {"on_call": ConnectionError("sin red")},
+                FALLBACK: {"on_call": ConnectionError("sin red")},
+            }
+        )
         with self.assertRaises(GeminiUnavailableError):
             await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(len(models.calls), 2)
+
+
+STOP = types.FinishReason.STOP
+SAFETY = types.FinishReason.SAFETY
+PROHIBITED = types.FinishReason.PROHIBITED_CONTENT
+
+
+class EarlyFailureFallbackTests(SimpleTestCase):
+    """El respaldo cubre los fallos tempranos del principal, una sola vez y sin texto emitido."""
+
+    async def run_ok(self, primary):
+        client, models = make_client({PRIMARY: primary, FALLBACK: {"items": ["de ", "respaldo"]}})
+        events = await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(events[-1], Finished("de respaldo", None, FALLBACK))
+        self.assertEqual([c["model"] for c in models.calls], [PRIMARY, FALLBACK])
+
+    async def test_empty_response_with_stop_switches_to_fallback(self):
+        await self.run_ok({"items": [{"text": None, "finish": STOP}]})
+
+    async def test_empty_response_without_finish_reason_switches_to_fallback(self):
+        await self.run_ok({"items": [None, ""]})
+
+    async def test_500_and_504_when_opening_the_stream_switch_to_fallback(self):
+        for code in (500, 504):
+            with self.subTest(code=code):
+                await self.run_ok({"on_call": server_error(code)})
+
+    async def test_500_and_504_on_the_first_chunk_switch_to_fallback(self):
+        for code in (500, 504):
+            with self.subTest(code=code):
+                await self.run_ok({"items": [server_error(code)]})
+
+    async def test_network_error_when_opening_the_stream_switches_to_fallback(self):
+        await self.run_ok({"on_call": RuntimeError("Event loop is closed")})
+
+    async def test_network_error_on_the_first_chunk_switches_to_fallback(self):
+        await self.run_ok({"items": [ConnectionError("cortada")]})
+
+    async def test_safety_empty_response_does_not_switch_and_reports_an_error(self):
+        for reason in (SAFETY, PROHIBITED):
+            with self.subTest(reason=reason.name):
+                client, models = make_client(
+                    {
+                        PRIMARY: {"items": [{"text": None, "finish": reason}]},
+                        FALLBACK: {"items": ["no debe usarse"]},
+                    }
+                )
+                with self.assertRaises(GeminiUnavailableError):
+                    await collect(client.stream_reply("s", HISTORY))
+                self.assertEqual([c["model"] for c in models.calls], [PRIMARY])
+
+    async def test_prompt_blocked_for_safety_does_not_switch(self):
+        feedback = SimpleNamespace(block_reason=types.BlockedReason.SAFETY)
+        client, models = make_client(
+            {
+                PRIMARY: {"items": [{"text": None, "prompt_feedback": feedback}]},
+                FALLBACK: {"items": ["no"]},
+            }
+        )
+        with self.assertRaises(GeminiUnavailableError):
+            await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(len(models.calls), 1)
+
+    async def test_safety_seen_before_an_empty_end_still_blocks_the_switch(self):
+        client, models = make_client(
+            {
+                PRIMARY: {"items": [{"text": None, "finish": SAFETY}, {"text": None}]},
+                FALLBACK: {"items": ["no"]},
+            }
+        )
+        with self.assertRaises(GeminiUnavailableError):
+            await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(len(models.calls), 1)
+
+    async def test_an_error_after_text_was_emitted_does_not_switch(self):
+        for failure in (server_error(500), server_error(504), RuntimeError("corte")):
+            with self.subTest(failure=type(failure).__name__):
+                client, models = make_client(
+                    {PRIMARY: {"items": ["parcial", failure]}, FALLBACK: {"items": ["otro"]}}
+                )
+                received = []
+                with self.assertRaises(GeminiUnavailableError):
+                    async for event in client.stream_reply("s", HISTORY):
+                        received.append(event)
+                self.assertEqual(received, [TextChunk("parcial")])
+                self.assertEqual([c["model"] for c in models.calls], [PRIMARY])
+
+    async def test_both_models_failing_gives_a_single_error_after_two_calls(self):
+        cases = {
+            "vacio": ({"items": [None]}, {"items": [None]}),
+            "500": ({"on_call": server_error(500)}, {"on_call": server_error(504)}),
+            "red": ({"on_call": RuntimeError("a")}, {"on_call": RuntimeError("b")}),
+            "mixto": ({"items": [None]}, {"on_call": ConnectionError("c")}),
+        }
+        for name, (primary, fallback) in cases.items():
+            with self.subTest(case=name):
+                client, models = make_client({PRIMARY: primary, FALLBACK: fallback})
+                with self.assertRaises(GeminiUnavailableError):
+                    await collect(client.stream_reply("s", HISTORY))
+                self.assertEqual([c["model"] for c in models.calls], [PRIMARY, FALLBACK])
+
+    async def test_empty_response_with_the_same_model_as_fallback_is_not_retried(self):
+        client, models = make_client({PRIMARY: {"items": [None]}}, fallback=PRIMARY)
+        with self.assertRaises(GeminiUnavailableError):
+            await collect(client.stream_reply("s", HISTORY))
+        self.assertEqual(len(models.calls), 1)
+
+
+class FailureLoggingTests(SimpleTestCase):
+    """Cada fallo deja modelo, codigo, finish_reason y excepcion; nunca texto ni la clave."""
+
+    LOGGER = "apps.ai_companion.gemini_client"
+
+    async def run_and_log(self, primary, fallback=None):
+        behaviors = {PRIMARY: primary, FALLBACK: fallback or {"items": ["ok"]}}
+        client, _ = make_client(behaviors)
+        with self.assertLogs(self.LOGGER, level="DEBUG") as logs:
+            try:
+                await collect(client.stream_reply("s", HISTORY))
+            except GeminiUnavailableError:
+                pass
+        return "\n".join(logs.output)
+
+    async def test_the_switch_logs_model_status_and_exception(self):
+        text = await self.run_and_log({"on_call": server_error(504)})
+        self.assertIn("usando el de respaldo", text)
+        self.assertIn(f"modelo={PRIMARY}", text)
+        self.assertIn("estado=504", text)
+        self.assertIn("excepcion=ServerError", text)
+
+    async def test_the_switch_on_an_empty_response_logs_the_finish_reason(self):
+        text = await self.run_and_log({"items": [{"text": None, "finish": STOP}]})
+        self.assertIn("usando el de respaldo", text)
+        self.assertIn("finish_reason=STOP", text)
+        self.assertIn("excepcion=RespuestaVacia", text)
+
+    async def test_a_network_failure_logs_the_exception_type_but_not_its_message(self):
+        text = await self.run_and_log({"on_call": RuntimeError("detalle sensible")})
+        self.assertIn("excepcion=RuntimeError", text)
+        self.assertNotIn("detalle sensible", text)
+
+    async def test_a_safety_block_logs_the_reason_without_switching(self):
+        text = await self.run_and_log({"items": [{"text": None, "finish": SAFETY}]})
+        self.assertIn("finish_reason=SAFETY", text)
+        self.assertNotIn("usando el de respaldo", text)
+
+    async def test_the_final_failure_is_logged_with_the_fallback_model(self):
+        text = await self.run_and_log({"items": [None]}, {"on_call": server_error(500)})
+        self.assertIn(f"modelo={FALLBACK}", text)
+        self.assertIn("estado=500", text)
+
+    async def test_the_log_never_includes_the_readers_text_or_the_answer(self):
+        history = [(KOMI, "Hola."), (USER, "secreto del lector")]
+        client, _ = make_client(
+            {PRIMARY: {"items": ["Texto parcial", RuntimeError("x")]}, FALLBACK: {"items": ["ok"]}}
+        )
+        with self.assertLogs(self.LOGGER, level="DEBUG") as logs:
+            with self.assertRaises(GeminiUnavailableError):
+                await collect(client.stream_reply("s", history))
+        joined = "\n".join(logs.output)
+        self.assertNotIn("secreto del lector", joined)
+        self.assertNotIn("Texto parcial", joined)
 
 
 class SeedExtractionTests(SimpleTestCase):

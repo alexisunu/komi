@@ -325,6 +325,60 @@ class FailureTests(CompanionTestCase):
         self.assertEqual(events[-1][1]["code"], "timeout")
         self.assert_nothing_saved(chat)
 
+    def real_client(self, behavior):
+        from types import SimpleNamespace
+
+        from apps.ai_companion.gemini_client import GeminiClient
+
+        class Models:
+            def __init__(self):
+                self.calls = []
+
+            async def generate_content_stream(self, *, model, contents, config=None):
+                self.calls.append(model)
+                return await behavior(model)
+
+        models = Models()
+        client = GeminiClient(
+            client=SimpleNamespace(aio=SimpleNamespace(models=models)),
+            primary_model="principal",
+            fallback_model="respaldo",
+        )
+        return client, models
+
+    def test_both_models_failing_gives_one_error_releases_the_lock_and_keeps_the_turn(self):
+        async def behavior(model):
+            raise RuntimeError("Event loop is closed")
+
+        client, models = self.real_client(behavior)
+        chat = self.new_chat()
+        events = parse_sse(self.converse(chat, client))
+        self.assertEqual(models.calls, ["principal", "respaldo"])
+        self.assertEqual([name for name, _ in events if name == "error"], ["error"])
+        self.assertEqual(events[-1], ("error", {"code": "unavailable", "retry_after": None}))
+        self.assertNotIn("done", [name for name, _ in events])
+        self.assert_nothing_saved(chat)
+
+    def test_an_early_failure_of_the_primary_is_answered_by_the_fallback_in_one_request(self):
+        from types import SimpleNamespace
+
+        async def behavior(model):
+            if model == "principal":
+                raise RuntimeError("Event loop is closed")
+
+            async def items():
+                yield SimpleNamespace(text="Respuesta del respaldo.")
+
+            return items()
+
+        client, models = self.real_client(behavior)
+        chat = self.new_chat()
+        events = parse_sse(self.converse(chat, client))
+        self.assertEqual(models.calls, ["principal", "respaldo"])
+        self.assertEqual(events[-1][0], "done")
+        chat.refresh_from_db()
+        self.assertEqual((chat.turn_count, chat.pending_since), (2, None))
+
     def test_the_reader_can_retry_the_same_message_after_a_failure(self):
         chat = self.new_chat()
         self.converse(chat, FakeGemini(GeminiUnavailableError("sin red")))

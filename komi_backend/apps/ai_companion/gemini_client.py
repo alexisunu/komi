@@ -1,8 +1,12 @@
-"""Cliente de Gemini con streaming y cambio de modelo ante cuota agotada (SRS 14.3 y 14.4).
+"""Cliente de Gemini con streaming y cambio de modelo ante fallos tempranos (SRS 14.3 y 14.4).
 
 - Los nombres de modelo y la clave vienen solo de la configuracion (.env), nunca del codigo.
-- Ante un HTTP 429 del modelo principal, antes de emitir texto, se reintenta con el de respaldo
-  en la misma peticion. Un 429 a mitad de respuesta no cambia de modelo para no duplicar texto.
+- Si el modelo principal falla antes de emitir texto (HTTP 429, 500, 503 o 504, error de red o
+  respuesta vacia), se reintenta una sola vez con el de respaldo en la misma peticion. Un fallo
+  a mitad de respuesta no cambia de modelo para no duplicar texto, y una respuesta vacia por
+  SAFETY o PROHIBITED_CONTENT tampoco: el respaldo recibiria el mismo contenido.
+- Cada fallo y cada cambio al respaldo se registran con modelo, codigo, finish_reason y tipo de
+  excepcion, nunca con la clave ni con texto del lector.
 - El marcador `[SEMILLA_DEL_DIA]:` del Turno 5 se separa en el servidor con un bufer que lo
   detecta aunque llegue partido entre fragmentos (SRS 17, punto 9).
 - No se registra el contenido de prompts ni de respuestas, ni la clave.
@@ -39,7 +43,14 @@ _ROLE_BY_SENDER = {
 
 
 # Codigos HTTP que activan el modelo de respaldo si aun no se emitio texto.
-FALLBACK_STATUS_CODES = frozenset({429, 503})
+FALLBACK_STATUS_CODES = frozenset({429, 500, 503, 504})
+# Una respuesta vacia por estos motivos no pasa al respaldo: el contenido seria el mismo.
+SAFETY_FINISH_REASONS = frozenset(
+    {types.FinishReason.SAFETY, types.FinishReason.PROHIBITED_CONTENT}
+)
+SAFETY_BLOCK_REASONS = frozenset(
+    {types.BlockedReason.SAFETY, types.BlockedReason.PROHIBITED_CONTENT}
+)
 
 
 class GeminiError(Exception):
@@ -148,6 +159,32 @@ def _hit_max_tokens(chunk) -> bool:
     )
 
 
+def _finish_reason(chunk):
+    for candidate in getattr(chunk, "candidates", None) or []:
+        reason = getattr(candidate, "finish_reason", None)
+        if reason is not None:
+            return reason
+    return None
+
+
+def _blocked_by_safety(chunk, finish_reason) -> bool:
+    block_reason = getattr(getattr(chunk, "prompt_feedback", None), "block_reason", None)
+    return finish_reason in SAFETY_FINISH_REASONS or block_reason in SAFETY_BLOCK_REASONS
+
+
+def _name(value) -> str:
+    return "ninguno" if value is None else str(getattr(value, "name", value))
+
+
+def _describe(model, status=None, finish_reason=None, exception=None) -> str:
+    return "modelo=%s estado=%s finish_reason=%s excepcion=%s" % (
+        model,
+        "ninguno" if status is None else status,
+        _name(finish_reason),
+        exception or "ninguna",
+    )
+
+
 def _retry_after_seconds(exc: errors.APIError) -> float | None:
     headers = getattr(getattr(exc, "response", None), "headers", None)
     if headers:
@@ -205,39 +242,63 @@ class GeminiClient:
         models = self._models_in_order()
         for position, model in enumerate(models):
             emitted = False
+            finish_reason = None
+            blocked = False
+            has_next = position + 1 < len(models)
             try:
                 stream = await self._client.aio.models.generate_content_stream(
                     model=model, contents=contents, config=config
                 )
                 async for chunk in stream:
+                    reason = _finish_reason(chunk)
+                    if reason is not None:
+                        finish_reason = reason
+                    blocked = blocked or _blocked_by_safety(chunk, reason)
                     text = chunk.text
                     if text:
                         emitted = True
                         yield model, text
                     if _hit_max_tokens(chunk):
-                        logger.error("Respuesta de Gemini cortada por MAX_TOKENS.")
+                        logger.error(
+                            "Respuesta de Gemini cortada por MAX_TOKENS (%s).",
+                            _describe(model, None, finish_reason),
+                        )
                         raise GeminiTruncatedError("Respuesta cortada por max_output_tokens.")
                 if not emitted:
-                    raise GeminiUnavailableError("Gemini devolvio una respuesta vacia.")
+                    detail = _describe(model, None, finish_reason, "RespuestaVacia")
+                    if blocked or not has_next:
+                        logger.error("Gemini devolvio una respuesta vacia (%s).", detail)
+                        raise GeminiUnavailableError("Gemini devolvio una respuesta vacia.")
+                    logger.warning(
+                        "Respuesta vacia del modelo principal (%s); usando el de respaldo.", detail
+                    )
+                    continue
                 return
             except GeminiError:
                 raise
             except errors.APIError as exc:
-                # 429 (cuota) y 503 (modelo saturado o no disponible) pasan al respaldo, pero
-                # solo si todavia no se emitio texto: despues el lector ya vio parte de la
-                # respuesta y no se puede cambiar de modelo a mitad.
-                if exc.code in FALLBACK_STATUS_CODES and not emitted and position + 1 < len(models):
+                # 429 (cuota), 500, 503 y 504 pasan al respaldo, pero solo si todavia no se
+                # emitio texto: despues el lector ya vio parte de la respuesta y no se puede
+                # cambiar de modelo a mitad.
+                detail = _describe(model, exc.code, finish_reason, type(exc).__name__)
+                if exc.code in FALLBACK_STATUS_CODES and not emitted and has_next:
                     logger.warning(
-                        "Modelo principal no disponible (codigo %s); usando el de respaldo.",
-                        exc.code,
+                        "Fallo del modelo principal (%s); usando el de respaldo.", detail
                     )
                     continue
                 if exc.code == 429:
                     raise GeminiQuotaError(_retry_after_seconds(exc)) from exc
-                logger.error("Error de la API de Gemini (codigo %s).", exc.code)
+                logger.error("Error de la API de Gemini (%s).", detail)
                 raise GeminiUnavailableError(f"Error de Gemini ({exc.code}).") from exc
             except Exception as exc:
-                logger.error("Fallo al contactar con Gemini (%s).", type(exc).__name__)
+                # Red u otro fallo al contactar: tambien pasa al respaldo antes del primer chunk.
+                detail = _describe(model, None, finish_reason, type(exc).__name__)
+                if not emitted and has_next:
+                    logger.warning(
+                        "Fallo del modelo principal (%s); usando el de respaldo.", detail
+                    )
+                    continue
+                logger.error("Fallo al contactar con Gemini (%s).", detail)
                 raise GeminiUnavailableError("No se pudo contactar con Gemini.") from exc
 
     async def stream_reply(
