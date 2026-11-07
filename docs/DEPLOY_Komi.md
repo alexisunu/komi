@@ -135,7 +135,10 @@ uso real.
 - [x] Una ruta inexistente de Pages devuelve el shell de la app.
 - [x] El primer arranque en frío se midió (35,4 s, petición retenida, 200).
 - [ ] La app, abierta con el servicio dormido, muestra "Despertando a Komi".
-- [ ] El SSE en vivo funciona a través de Render y Cloudflare (la charla real).
+- [x] El SSE en vivo funciona a través de Render y Cloudflare: una charla real completa, respuestas
+  por partes, primer fragmento de 1 s o menos a ojo (sin medición con `curl -N`).
+- [x] El perfil de la charla de prueba se borró con el apartado 10 y la comprobación salió vacía.
+- [ ] Revisar en los registros de Render que no hubo respaldo de modelo (buscar `respaldo`, `Fallo`).
 - [ ] Ningún secreto está en el repositorio, en el chat ni en los registros.
 
 ## 8. Límites conocidos del plan gratuito
