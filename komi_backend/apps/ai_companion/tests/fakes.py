@@ -27,6 +27,10 @@ class FakeGemini:
         self.seed = seed
         self.calls = []
         self.cancelled = False
+        self.closed = 0
+
+    async def aclose(self):
+        self.closed += 1
 
     async def stream_reply(self, system_prompt, history, *, extract_seed=False):
         self.calls.append(

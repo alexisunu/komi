@@ -294,28 +294,74 @@ class FailureTests(CompanionTestCase):
     def test_a_missing_model_variable_is_named_in_the_log_but_not_sent_to_the_client(self):
         from django.test import override_settings
 
-        from apps.ai_companion.gemini_client import get_gemini_client
-
         chat = self.new_chat()
-        get_gemini_client.cache_clear()
-        try:
-            with (
-                override_settings(
-                    GEMINI_API_KEY="clave-secreta",
-                    GEMINI_PRIMARY_MODEL="",
-                    GEMINI_FALLBACK_MODEL="respaldo",
-                ),
-                self.assertLogs("apps.ai_companion.streaming", level="ERROR") as logs,
-            ):
-                events = parse_sse(self.send(chat.id))
-        finally:
-            get_gemini_client.cache_clear()
+        with (
+            override_settings(
+                GEMINI_API_KEY="clave-secreta",
+                GEMINI_PRIMARY_MODEL="",
+                GEMINI_FALLBACK_MODEL="respaldo",
+            ),
+            self.assertLogs("apps.ai_companion.streaming", level="ERROR") as logs,
+        ):
+            events = parse_sse(self.send(chat.id))
         self.assertEqual(events[-1], ("error", {"code": "unavailable", "retry_after": None}))
         log_text = " | ".join(logs.output)
         self.assertIn("GEMINI_PRIMARY_MODEL", log_text)
         self.assertNotIn("GEMINI_FALLBACK_MODEL", log_text)
         self.assertNotIn("clave-secreta", log_text + json.dumps(events))
         self.assertNotIn("GEMINI_PRIMARY_MODEL", json.dumps(events))
+        self.assert_nothing_saved(chat)
+
+    def test_the_request_client_is_closed_after_a_failure_a_success_and_a_timeout(self):
+        cases = {
+            "exito": FakeGemini("Todo bien."),
+            "fallo": FakeGemini(GeminiUnavailableError("sin red")),
+            "cuota": FakeGemini(GeminiQuotaError()),
+            "truncada": FakeGemini(GeminiTruncatedError("cortada")),
+            "inesperado": FakeGemini(RuntimeError("x")),
+        }
+        for name, fake in cases.items():
+            with self.subTest(case=name):
+                self.converse(self.new_chat_for_each(), fake)
+                self.assertEqual(fake.closed, 1)
+        hanging = FakeGemini("hang")
+        with mock.patch.object(streaming, "STREAM_TIMEOUT_SEC", 0.05):
+            self.converse(self.new_chat_for_each(), hanging)
+        self.assertEqual(hanging.closed, 1)
+
+    def new_chat_for_each(self):
+        # Una charla nueva por caso: cada una necesita su propia sesion terminada.
+        from apps.ai_companion.tests.fakes import make_session
+
+        session = make_session(self.profile)
+        response = self.client.post(
+            START,
+            {"session_id": str(session.id)},
+            content_type="application/json",
+            **self.headers(),
+        )
+        return ReflectionChat.objects.get(pk=response.json()["chat_id"])
+
+    def test_a_failure_while_closing_the_client_does_not_change_the_outcome(self):
+        class BrokenClose(FakeGemini):
+            async def aclose(self):
+                raise RuntimeError("no cierra")
+
+        chat = self.new_chat()
+        with self.assertLogs("apps.ai_companion.streaming", level="WARNING") as logs:
+            events = parse_sse(self.converse(chat, BrokenClose("Todo bien.")))
+        self.assertEqual(events[-1][0], "done")
+        self.assertIn("no se pudo cerrar el cliente (RuntimeError)", " ".join(logs.output))
+        chat.refresh_from_db()
+        self.assertEqual((chat.turn_count, chat.pending_since), (2, None))
+
+    def test_the_lock_is_released_even_if_closing_the_client_fails(self):
+        class BrokenClose(FakeGemini):
+            async def aclose(self):
+                raise RuntimeError("no cierra")
+
+        chat = self.new_chat()
+        self.converse(chat, BrokenClose(GeminiUnavailableError("sin red")))
         self.assert_nothing_saved(chat)
 
     def test_a_stream_that_hangs_times_out_without_saving(self):

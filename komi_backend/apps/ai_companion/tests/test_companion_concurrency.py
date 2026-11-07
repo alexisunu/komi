@@ -78,6 +78,7 @@ class DisconnectTests(CompanionTransactionTestCase):
         await self.run_until_disconnect(fake)
 
         self.assertTrue(fake.cancelled, "el generador de Gemini debe cancelarse")
+        self.assertEqual(fake.closed, 1, "el cliente de la peticion debe cerrarse")
         chat = await ReflectionChat.objects.aget(pk=self.chat.pk)
         self.assertEqual((chat.turn_count, chat.is_closed), (1, False))
         self.assertIsNone(chat.pending_since)

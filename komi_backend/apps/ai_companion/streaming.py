@@ -42,6 +42,7 @@ def _error(code: str, retry_after=None) -> str:
 async def stream_reply_events(claim):
     """Generador asincrono del SSE. Su `finally` siempre libera la reserva de la charla."""
     finished = None
+    client = None
     try:
         client = get_gemini_client()
         async with asyncio.timeout(STREAM_TIMEOUT_SEC):
@@ -84,4 +85,13 @@ async def stream_reply_events(claim):
         yield _error("internal")
     finally:
         # shield: la liberacion termina aunque el cliente se desconecte (cancelacion).
-        await asyncio.shield(sync_to_async(services.release_claim)(claim.chat_id, claim.token))
+        try:
+            await asyncio.shield(sync_to_async(services.release_claim)(claim.chat_id, claim.token))
+        finally:
+            # El cliente es de esta peticion (y de este bucle de eventos): se cierra siempre.
+            close = getattr(client, "aclose", None)
+            if close is not None:
+                try:
+                    await asyncio.shield(close())
+                except Exception as exc:
+                    logger.warning("Charla: no se pudo cerrar el cliente (%s).", type(exc).__name__)

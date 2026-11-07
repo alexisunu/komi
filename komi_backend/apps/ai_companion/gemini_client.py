@@ -15,7 +15,6 @@
 import logging
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from functools import lru_cache
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -232,6 +231,12 @@ class GeminiClient:
             client = genai.Client(api_key=key)
         self._client = client
 
+    async def aclose(self) -> None:
+        """Cierra las conexiones del cliente asincrono. Seguro de llamar mas de una vez."""
+        close = getattr(getattr(self._client, "aio", None), "aclose", None)
+        if close is not None:
+            await close()
+
     def _models_in_order(self) -> list[str]:
         models = [self.primary_model]
         if self.fallback_model and self.fallback_model != self.primary_model:
@@ -341,7 +346,12 @@ class GeminiClient:
         yield Finished(text="".join(parts), key_takeaway=key_takeaway, model=model_used)
 
 
-@lru_cache(maxsize=1)
 def get_gemini_client() -> GeminiClient:
-    """Cliente compartido, construido con la configuracion del entorno."""
+    """Cliente nuevo, construido con la configuracion del entorno, para UNA peticion.
+
+    No se comparte entre peticiones: el cliente asincrono de google-genai guarda conexiones
+    ligadas al bucle de eventos que las abrio, y con `runserver` cada peticion usa un bucle
+    nuevo, asi que un cliente compartido falla en la segunda con "Event loop is closed". Quien
+    lo pide debe cerrarlo con `aclose()` al terminar.
+    """
     return GeminiClient()
