@@ -1,5 +1,5 @@
 // Archivos de Cloudflare Pages en public/ (SRS 19.23): se copian tal cual a dist/.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -67,11 +67,27 @@ describe("_headers", () => {
   });
 });
 
-describe("_redirects", () => {
-  it("cualquier ruta devuelve index.html con 200 (reescritura, no redireccion)", () => {
-    const lines = read("_redirects")
-      .split(/\r?\n/)
-      .filter((line) => line.trim() !== "" && !line.trim().startsWith("#"));
-    expect(lines.map((line) => line.trim().split(/\s+/))).toEqual([["/*", "/index.html", "200"]]);
+// Cualquier ruta interna abierta directamente (recarga, enlace) debe cargar la app. Cloudflare Pages
+// lo hace solo (modo SPA) si no hay 404.html en la raiz; la regla "/*  /index.html  200" la descarta
+// por bucle infinito, asi que no debe volver, y nada debe desactivar el modo SPA.
+describe("respaldo a index.html (modo SPA de Pages)", () => {
+  const rulesOf = (text: string) =>
+    text.split(/\r?\n/).filter((line) => line.trim() !== "" && !line.trim().startsWith("#"));
+
+  it("_redirects no tiene reglas (la de /* a /index.html la ignora Pages y no hace falta)", () => {
+    expect(rulesOf(read("_redirects"))).toEqual([]);
+  });
+
+  it("no hay 404.html en public/: con uno, Pages deja de servir el shell en rutas desconocidas", () => {
+    expect(existsSync(resolve(__dirname, "../../public/404.html"))).toBe(false);
+  });
+
+  it("index.html existe en la raiz del proyecto: es el shell que Pages sirve en esas rutas", () => {
+    expect(existsSync(resolve(__dirname, "../../index.html"))).toBe(true);
+  });
+
+  it("sin la regla, sw.js sigue siendo un archivo con su propia cabecera no-cache", () => {
+    expect(cacheFor("/sw.js")).toBe("no-cache");
+    expect(rulesOf(read("_redirects")).some((line) => line.includes("sw.js"))).toBe(false);
   });
 });

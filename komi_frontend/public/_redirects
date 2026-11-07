@@ -1,3 +1,5 @@
-# Cloudflare Pages (SRS 19.23): cualquier ruta que no sea un archivo devuelve el shell de la app
-# (no hay react-router, pero un enlace o una recarga en cualquier ruta debe abrir la PWA).
-/*  /index.html  200
+# Cloudflare Pages (SRS 19.23, 19.24): sin reglas a proposito.
+# No hay react-router, pero una recarga o un enlace en cualquier ruta debe abrir la PWA. Pages ya
+# lo hace solo: si el proyecto NO tiene un 404.html en la raiz, cualquier ruta que no sea un archivo
+# devuelve index.html con 200 (modo SPA). La regla "/*  /index.html  200" no hace falta y Pages la
+# descarta ("Infinite loop detected"). No anadas un 404.html: desactivaria este comportamiento.
