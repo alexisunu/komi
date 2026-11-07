@@ -2,10 +2,11 @@
 
 import os
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 from corsheaders.defaults import default_headers as default_cors_headers
 from dotenv import load_dotenv
+
+from config.dburl import DEFAULT_CONN_MAX_AGE, database_from_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -15,16 +16,9 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return os.environ.get(name, str(default)).strip().lower() in {"1", "true", "yes"}
 
 
-def _database_from_url(url: str) -> dict:
-    parsed = urlparse(url)
-    return {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": parsed.path.lstrip("/"),
-        "USER": unquote(parsed.username or ""),
-        "PASSWORD": unquote(parsed.password or ""),
-        "HOST": parsed.hostname or "localhost",
-        "PORT": str(parsed.port or 5432),
-    }
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    return int(raw) if raw else default
 
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
@@ -64,7 +58,13 @@ ASGI_APPLICATION = "config.asgi.application"
 
 if not os.environ.get("DATABASE_URL"):
     raise RuntimeError("Falta DATABASE_URL (PostgreSQL) en el entorno.")
-DATABASES = {"default": _database_from_url(os.environ["DATABASE_URL"])}
+# Con el pooler de Supabase en modo sesion cada conexion persistente ocupa un hueco del pooler:
+# por defecto se cierra al terminar cada peticion (DB_CONN_MAX_AGE=0).
+DATABASES = {
+    "default": database_from_url(
+        os.environ["DATABASE_URL"], conn_max_age=_env_int("DB_CONN_MAX_AGE", DEFAULT_CONN_MAX_AGE)
+    )
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
