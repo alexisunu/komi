@@ -77,3 +77,10 @@ Frontend (Vitest): calculo de plan de habito (seccion 5.1), `botanicCalculator`,
 
 ## 11. Prohibido sin aprobacion previa
 Cambiar el stack, agregar dependencias, alterar tokens de color, saltarse un sprint, borrar archivos, reescribir el SRS, o hacer commit de secretos.
+
+## 12. Estado actual (para retomar)
+- **Fase 5 (iPhone real y despliegue gratuito).** Plan aprobado en cinco bloques con un punto de revisión cada uno: 5.1 preparar el despliegue (**terminado y aprobado**), 5.2 despliegue real, 5.3 recuperación de datos (código de recuperación en Ajustes y `restore` aditivo en el cliente), 5.4 iPhone real, 5.5 cierre. Detalle en `docs/DEPLOY_Komi.md` y SRS §19, puntos 22 y 23. **Siguiente: 5.2.**
+- **Primera tarea de la próxima sesión (decisión 6):** el envío de mensajes de la charla debe esperar al despertar cuando el estado "despierto" haya caducado (10 min). Hoy solo la apertura de la charla lo hace (`companionService.checkGate`). Con pruebas y mutaciones, en su propio commit.
+- **Requisitos del autor para el 5.2:** cuentas de Cloudflare, Render y Supabase; nombre estable del proyecto en Pages (`NOMBRE.pages.dev`, no se cambia después: borraría IndexedDB y el Service Worker del iPhone). Las acciones en las cuentas las hace el autor, guiado paso a paso; nunca se pegan secretos en el chat.
+- **Gemini:** una sola charla real contra el backend desplegado, después del reinicio de la cuota, con una base de pruebas aparte (nunca la de uso real). No se hacen llamadas reales antes.
+- **Reglas vigentes de la sesión:** sin `push` (lo hace el autor); un commit por unidad lógica; el chat se corre con `uvicorn`, nunca con `runserver`; cero dependencias nuevas.
