@@ -267,3 +267,20 @@ END $$;
 ```
 
 **Paso 3: comprobar.** Volver a ejecutar la consulta del paso 1: no debe devolver ninguna fila.
+
+## 11. Recuperar los datos de un dispositivo (bloque 5.3)
+
+Si Safari borra los datos locales del iPhone (o se cambia de teléfono), los libros, sesiones y semillas
+siguen en Supabase y se traen de vuelta con el **código de recuperación**:
+
+1. **Antes de que pase nada:** en Ajustes, copiar el código y guardarlo en un gestor de contraseñas.
+   Es el `profile_id`: **quien lo tenga puede ver tus lecturas y charlas**, y no se puede revocar.
+2. **En el dispositivo vacío:** abrir la app, pulsar "Ya tengo un código de recuperación", pegar el
+   código y "Recuperar". Si el servidor dormía, dirá "Despertando a Komi" (hasta ~35 s).
+3. **Lo que vuelve:** perfil, libros con su avance, sesiones, racha y las semillas de las charlas
+   cerradas. **No vuelven** los archivos `.epub` (nunca salen del dispositivo): cada libro EPUB aparece
+   en Mi Jardín como "Reimportar archivo .epub" y se vuelve a elegir el archivo.
+4. **Con datos ya en el dispositivo:** Ajustes, "Volver a traer mis datos" completa lo que falte sin
+   tocar nada local. Un código distinto del del dispositivo se rechaza: nunca se mezclan dos perfiles.
+5. **Si dice "No encontramos ese código"** puede ser un error al escribirlo o un código que no existe;
+   el aviso es el mismo a propósito. No hay más pistas.
