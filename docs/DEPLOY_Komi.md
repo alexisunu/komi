@@ -138,7 +138,8 @@ uso real.
 - [x] El SSE en vivo funciona a través de Render y Cloudflare: una charla real completa, respuestas
   por partes, primer fragmento de 1 s o menos a ojo (sin medición con `curl -N`).
 - [x] El perfil de la charla de prueba se borró con el apartado 10 y la comprobación salió vacía.
-- [ ] Revisar en los registros de Render que no hubo respaldo de modelo (buscar `respaldo`, `Fallo`).
+- [x] Pages tras quitar la regla de `_redirects`: ruta interna 200 con revalidación y `sw.js` como JavaScript con `no-cache`.
+- [ ] Revisar en los registros de Render que no hubo respaldo de modelo (buscar `respaldo`, `Fallo`). Pasa a la 5.5.
 - [ ] Ningún secreto está en el repositorio, en el chat ni en los registros.
 
 ## 8. Límites conocidos del plan gratuito
