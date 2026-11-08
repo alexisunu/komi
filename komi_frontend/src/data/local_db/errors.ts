@@ -10,7 +10,8 @@ export type LocalErrorCode =
   | "invalid_session"
   | "below_50_percent"
   | "book_fallow"
-  | "book_bloomed";
+  | "book_bloomed"
+  | "restore_other_profile";
 
 export class KomiLocalError extends Error {
   readonly code: LocalErrorCode;
@@ -75,6 +76,14 @@ export class InvalidSessionError extends KomiLocalError {
   constructor(field: string, message: string, code: "invalid_session" | "below_50_percent" = "invalid_session") {
     super(code, message, field);
     this.name = "InvalidSessionError";
+  }
+}
+
+/** El dispositivo ya tiene OTRO perfil: la recuperacion nunca mezcla ni reemplaza perfiles. */
+export class RestoreProfileMismatchError extends KomiLocalError {
+  constructor() {
+    super("restore_other_profile", "Este dispositivo ya tiene otro perfil.", "profile_id");
+    this.name = "RestoreProfileMismatchError";
   }
 }
 

@@ -42,6 +42,8 @@ export function App({ options }: AppProps) {
     [options],
   );
   const [initial, setInitial] = useState<InitialState | null>(null);
+  // Cambia al recuperar los datos: la sesion se vuelve a montar con el perfil recuperado.
+  const [epoch, setEpoch] = useState(0);
 
   // Pide almacenamiento persistente al arrancar y deja el resultado registrado.
   useEffect(() => {
@@ -58,6 +60,14 @@ export function App({ options }: AppProps) {
     };
   }, [deps]);
 
+  // Tras recuperar datos con un codigo: se relee el estado y la sesion arranca con el perfil nuevo.
+  const onRecovered = useCallback(() => {
+    void loadInitialState(deps).then((state) => {
+      setInitial(state);
+      setEpoch((value) => value + 1);
+    });
+  }, [deps]);
+
   if (!initial) {
     return (
       <div className="app-loading" role="status">
@@ -65,20 +75,23 @@ export function App({ options }: AppProps) {
       </div>
     );
   }
-  return <Session deps={deps} initial={initial} />;
+  return <Session key={epoch} deps={deps} initial={initial} onRecovered={onRecovered} />;
 }
 
 interface SessionProps {
   deps: AppDeps;
   initial: InitialState;
+  onRecovered: () => void;
 }
 
-function Session({ deps, initial }: SessionProps) {
+function Session({ deps, initial, onRecovered }: SessionProps) {
   const [profile, setProfile] = useState<LocalProfile | null>(
     initial.status === "ready" ? initial.profile : null,
   );
   const [view, setView] = useState<"onboarding" | "main">(initial.status === "ready" ? "main" : "onboarding");
   const [nav, setNav] = useState<NavId>("lectura");
+  // El servidor (plan gratuito) puede estar arrancando: recuperar datos avisa en vez de fallar.
+  const waking = useWakeState(deps.wake) === "waking";
 
   const refreshProfile = useCallback(() => {
     deps.profiles
@@ -150,6 +163,9 @@ function Session({ deps, initial }: SessionProps) {
             service={deps.onboarding}
             onProfileCreated={onProfileCreated}
             onFinish={() => setView("main")}
+            onRecover={deps.restore.restore}
+            onRecovered={onRecovered}
+            waking={waking}
           />
         </>
       ) : (
@@ -256,6 +272,24 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
     },
     [deps, reload],
   );
+
+  // Ajustes: el codigo de este dispositivo y "volver a traer mis datos" (mezcla aditiva, Fase 5.3).
+  const recovery = profile
+    ? {
+        code: profile.profile_id,
+        onRestore: async () => {
+          const outcome = await deps.restore.restore(profile.profile_id);
+          if (outcome.kind === "restored") {
+            await reload();
+            deps.meta
+              .getStreakCurrent()
+              .then((days) => setStreakDays((previous) => Math.max(previous, days)))
+              .catch(() => {});
+          }
+          return outcome;
+        },
+      }
+    : undefined;
 
   const onRead = useCallback(
     async (book: LocalBook) => {
@@ -442,6 +476,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             dailyGoalMinutes={profile?.daily_goal_minutes ?? 15}
             canStart={canStart}
             onStart={(minutes) => void startReading(minutes)}
+            recovery={recovery}
           />
         )}
         {nav === "jardin" && (

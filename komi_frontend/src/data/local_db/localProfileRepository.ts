@@ -25,7 +25,7 @@ export interface ProfilePatch {
 }
 
 /** Copia del profile_id en localStorage (SRS 18, punto 8). Es un respaldo: si falla, se ignora. */
-function mirrorProfileId(profileId: string, storage: Pick<Storage, "setItem"> | undefined): void {
+export function mirrorProfileId(profileId: string, storage: Pick<Storage, "setItem"> | undefined): void {
   try {
     storage?.setItem(PROFILE_ID_STORAGE_KEY, profileId);
   } catch {
@@ -33,7 +33,7 @@ function mirrorProfileId(profileId: string, storage: Pick<Storage, "setItem"> | 
   }
 }
 
-function defaultStorage(): Storage | undefined {
+export function defaultStorage(): Storage | undefined {
   try {
     return typeof localStorage === "undefined" ? undefined : localStorage;
   } catch {

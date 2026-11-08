@@ -11,6 +11,10 @@
 
 .settings-panel {
   width: 100%;
+  /* Con el codigo de recuperacion la hoja puede crecer: en pantallas bajas se desplaza. */
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
   padding: var(--space-3) var(--screen-margin) calc(var(--space-3) + env(safe-area-inset-bottom));
   border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
   background: var(--color-bg-elevated);
@@ -103,6 +107,35 @@
 
 .settings-switch[data-on="true"] .settings-switch__thumb {
   transform: translateX(20px);
+}
+
+/* Codigo de recuperacion (Fase 5.3). */
+.settings-panel__recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.settings-panel__code {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-input);
+  background: var(--color-bg-surface);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.settings-panel__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .settings-panel__close:focus-visible,

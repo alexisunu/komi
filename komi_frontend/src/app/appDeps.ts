@@ -12,6 +12,7 @@ import { createLocalSessionRepository } from "../data/local_db/localSessionRepos
 import { getApiClient, type ApiClient } from "../data/network/apiClient";
 import { createCompanionClient } from "../data/network/companionClient";
 import { createOnboardingSync } from "../data/network/onboardingSync";
+import { createRestoreService } from "../data/network/restoreService";
 import { createSyncService } from "../data/network/syncService";
 import { createWakeService, type WakeService } from "../data/network/wakeService";
 import { createEpubReaderService, type EpubReaderService } from "../services/epubReaderService";
@@ -138,6 +139,8 @@ export function createAppDeps(options: AppOptions = {}) {
     }),
     /** Despertar del servidor al abrir (arranque en frio del plan gratuito). */
     wake,
+    /** Recuperacion de datos con el codigo de recuperacion (Fase 5.3): mezcla aditiva y atomica. */
+    restore: createRestoreService({ db, api, wake }),
     /** Pantalla encendida durante la sesion (SRS 19.12). */
     wakeLock: options.wakeLock ?? createWakeLockService(navigator, document),
     /** Puerta de recarga del Service Worker: se bloquea mientras dura la sesion. */

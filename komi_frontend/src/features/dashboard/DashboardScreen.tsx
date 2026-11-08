@@ -12,7 +12,7 @@ import type { LocalBook } from "../../data/local_db/types";
 import { wholePercent } from "../../services/botanicCalculator";
 import { progressLabel } from "./activeBook";
 import "./DashboardScreen.css";
-import { SettingsPanel } from "./SettingsPanel";
+import { SettingsPanel, type SettingsRecovery } from "./SettingsPanel";
 import { SunflowerStageWidget } from "./SunflowerStageWidget";
 import {
   formatTimer,
@@ -30,6 +30,8 @@ export interface DashboardScreenProps {
   canStart?: boolean;
   /** Inicia la sesion con los minutos del selector. */
   onStart?: (minutes: number) => void;
+  /** Codigo de recuperacion del dispositivo y "volver a traer mis datos" (Ajustes, Fase 5.3). */
+  recovery?: SettingsRecovery | undefined;
 }
 
 const ICON_SIZE = 22;
@@ -41,6 +43,7 @@ export function DashboardScreen({
   dailyGoalMinutes,
   canStart = false,
   onStart,
+  recovery,
 }: DashboardScreenProps) {
   const [minutes, setMinutes] = useState(() => initialMinutes(dailyGoalMinutes));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -111,7 +114,7 @@ export function DashboardScreen({
         </ZenPrimaryButton>
       </section>
 
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} recovery={recovery} />}
     </div>
   );
 }

@@ -184,6 +184,47 @@
   outline-offset: var(--focus-offset);
 }
 
+.onboarding__link--center {
+  align-self: center;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-2);
+}
+
+/* Recuperar datos (Fase 5.3). */
+.onboarding__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.onboarding__label {
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+  font-weight: 700;
+}
+
+.onboarding__input {
+  min-height: var(--touch-target);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-input);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  /* 16 px como minimo: con menos, Safari de iPhone acerca la pagina al enfocar. */
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.onboarding__input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+.onboarding__form .onboarding__note {
+  margin: 0;
+}
+
 /* Pantallas bajas (iPhone SE): el plan cabe sin scroll si se omite el texto de apoyo. */
 @media (max-height: 700px) {
   .onboarding[data-screen="plan"] .onboarding__lead {

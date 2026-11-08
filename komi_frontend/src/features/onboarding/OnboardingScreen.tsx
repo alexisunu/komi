@@ -12,6 +12,7 @@ import {
   downloadReminderIcs,
   REMINDER_FILENAME,
 } from "../../services/calendarReminderService";
+import type { RestoreOutcome } from "../../data/network/restoreService";
 import { isCompleteAnswers, type OnboardingAnswers } from "../../services/habitPlan";
 import {
   createOnboardingService,
@@ -19,6 +20,7 @@ import {
   type OnboardingService,
 } from "../../services/onboardingService";
 import { SunflowerStageWidget } from "../dashboard/SunflowerStageWidget";
+import { EPUB_NOTE, FAILED_MESSAGE, restoreFailureMessage } from "../recovery/recoveryMessages";
 import {
   QUESTION_COUNT,
   QUESTIONS,
@@ -28,13 +30,21 @@ import { QuizOptionCard } from "./QuizOptionCard";
 import { formatReminderTime, ReminderBanner, type ReminderState } from "./ReminderBanner";
 import "./OnboardingScreen.css";
 
-type Phase = "welcome" | "quiz" | "plan";
+type Phase = "welcome" | "quiz" | "plan" | "recover";
 
 export interface OnboardingScreenProps {
   /** El perfil ya esta en Dexie. La app actualiza el tema y empieza a sincronizar. */
   onProfileCreated: (result: CompleteOnboardingResult) => void;
   /** "Ir al Dashboard". */
   onFinish: () => void;
+  /**
+   * Recuperar los datos con un codigo (Fase 5.3). Sin esta funcion no se ofrece la opcion
+   * "Ya tengo un código". Con exito la app recarga su estado y entra directo al Dashboard.
+   */
+  onRecover?: (code: string) => Promise<RestoreOutcome>;
+  onRecovered?: () => void;
+  /** El servidor esta arrancando (plan gratuito): se avisa mientras se recupera. */
+  waking?: boolean;
   service?: Pick<OnboardingService, "completeOnboarding">;
   newId?: () => string;
   now?: () => Date;
@@ -47,6 +57,9 @@ const ICS_ERROR = "No pudimos preparar el recordatorio. Inténtalo de nuevo.";
 export function OnboardingScreen({
   onProfileCreated,
   onFinish,
+  onRecover,
+  onRecovered,
+  waking = false,
   service,
   newId = newProfileId,
   now = () => new Date(),
@@ -64,6 +77,9 @@ export function OnboardingScreen({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [reminder, setReminder] = useState<ReminderState>("offer");
   const [reminderError, setReminderError] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [recovering, setRecovering] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
 
   // El UUID se genera una sola vez: un reintento o un doble toque no crea otro perfil.
   const profileId = useRef<string | null>(null);
@@ -98,6 +114,29 @@ export function OnboardingScreen({
     } finally {
       setSaving(false);
     }
+  }
+
+  async function recover() {
+    if (!onRecover || recovering || code.trim() === "") return;
+    setRecovering(true);
+    setRecoverError(null);
+    try {
+      const outcome = await onRecover(code);
+      if (outcome.kind === "restored") {
+        onRecovered?.();
+        return;
+      }
+      setRecoverError(restoreFailureMessage(outcome));
+    } catch {
+      setRecoverError(FAILED_MESSAGE);
+    } finally {
+      setRecovering(false);
+    }
+  }
+
+  function leaveRecover() {
+    setRecoverError(null);
+    setPhase("welcome");
   }
 
   function next() {
@@ -138,6 +177,71 @@ export function OnboardingScreen({
         </div>
         <div className="onboarding__actions" data-block="actions">
           <ZenPrimaryButton onClick={() => setPhase("quiz")}>Comenzar</ZenPrimaryButton>
+          {onRecover && (
+            <button type="button" className="onboarding__link onboarding__link--center" onClick={() => setPhase("recover")}>
+              Ya tengo un código de recuperación
+            </button>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  if (phase === "recover" && onRecover) {
+    return (
+      <main className="onboarding" data-screen="recover">
+        <div className="onboarding__center" data-block="hero">
+          <h1 className="onboarding__title" ref={heading} tabIndex={-1}>
+            Recupera tus datos
+          </h1>
+          <p className="onboarding__lead">
+            Escribe el código de recuperación que guardaste en Ajustes. Traeremos tus libros, sesiones y semillas a
+            este dispositivo.
+          </p>
+        </div>
+
+        <form
+          className="onboarding__form"
+          data-block="form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void recover();
+          }}
+        >
+          <label className="onboarding__label" htmlFor="recovery-code">
+            Código de recuperación
+          </label>
+          <input
+            id="recovery-code"
+            className="onboarding__input"
+            type="text"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            disabled={recovering}
+            aria-invalid={recoverError !== null}
+            aria-describedby="recovery-note"
+          />
+          <p className="onboarding__note" id="recovery-note">
+            {EPUB_NOTE}
+          </p>
+          {recoverError && (
+            <p className="onboarding__error" role="alert">
+              {recoverError}
+            </p>
+          )}
+        </form>
+
+        <div className="onboarding__actions" data-block="actions">
+          <ZenPrimaryButton onClick={() => void recover()} disabled={recovering || code.trim() === ""}>
+            {recovering ? (waking ? "Despertando a Komi" : "Recuperando tus datos") : "Recuperar"}
+          </ZenPrimaryButton>
+          <ZenPrimaryButton variant="secondary" onClick={leaveRecover} disabled={recovering}>
+            Volver
+          </ZenPrimaryButton>
         </div>
       </main>
     );
