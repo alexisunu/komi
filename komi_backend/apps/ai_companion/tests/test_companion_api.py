@@ -444,6 +444,34 @@ class FailureTests(CompanionTestCase):
         self.assertNotIn("Texto parcial", "\n".join(logs.output))
 
 
+class ModelLogTests(CompanionTestCase):
+    """Cada respuesta deja UNA linea INFO con el turno y el modelo (SRS 19.24, bloque 5.5)."""
+
+    def test_a_reply_logs_the_turn_and_the_model_once(self):
+        chat = self.new_chat()
+        with self.assertLogs("apps.ai_companion.streaming", level="INFO") as logs:
+            self.converse(chat, FakeGemini("Una respuesta serena."), content="secreto del lector")
+        lines = [r.getMessage() for r in logs.records if "modelo" in r.getMessage()]
+        self.assertEqual(
+            lines, ["Charla: respuesta del turno 2 generada con el modelo fake-model."]
+        )
+        self.assertEqual(logs.records[0].levelname, "INFO")
+
+    def test_the_line_has_no_text_of_the_reader_nor_ids(self):
+        chat = self.new_chat()
+        with self.assertLogs("apps.ai_companion.streaming", level="INFO") as logs:
+            self.converse(chat, FakeGemini("Respuesta privada de Komi."), content="mi secreto")
+        output = "\n".join(r.getMessage() for r in logs.records)
+        for forbidden in ("mi secreto", "Respuesta privada", str(chat.id), str(self.profile.id)):
+            self.assertNotIn(forbidden, output)
+
+    def test_a_failed_reply_does_not_claim_a_model(self):
+        chat = self.new_chat()
+        with self.assertLogs("apps.ai_companion.streaming", level="INFO") as logs:
+            self.converse(chat, FakeGemini(GeminiUnavailableError("sin red")))
+        self.assertFalse([r for r in logs.records if "generada con el modelo" in r.getMessage()])
+
+
 class LimitTests(CompanionTestCase):
     def full_conversation(self, fake):
         chat = self.new_chat()

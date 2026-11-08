@@ -100,12 +100,20 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "config.exception_handler.exception_handler",
 }
 
+# Registro a stderr (lo que Render muestra). Sin handler propio solo salian WARNING y ERROR
+# (el "handler de ultimo recurso" de Python), asi que la linea INFO de la charla con el modelo
+# que respondio se perdia (SRS 19.24, bloque 5.5). Solo el paquete `apps` baja a INFO.
 # El SQL registrado por django.db.backends incluye los parametros (entre ellos el UUID del
-# perfil, que funciona como credencial). Se fija en INFO para que nunca llegue a los logs.
+# perfil, que funciona como credencial): se fija en INFO para que nunca llegue a los logs.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "loggers": {"django.db.backends": {"level": "INFO"}},
+    "formatters": {"plain": {"format": "%(levelname)s %(name)s: %(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "plain"}},
+    "loggers": {
+        "apps": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "django.db.backends": {"level": "INFO"},
+    },
 }
 
 # Cuerpo maximo de una peticion JSON: 2,5 MB (valor por defecto de Django, fijado de forma
