@@ -140,7 +140,7 @@ uso real.
 - [x] El perfil de la charla de prueba se borró con el apartado 10 y la comprobación salió vacía.
 - [x] Pages tras quitar la regla de `_redirects`: ruta interna 200 con revalidación y `sw.js` como JavaScript con `no-cache`.
 - [~] Revisar en los registros de Render que no hubo respaldo de modelo (buscar `respaldo`, `Fallo`): el autor buscó y no encontró líneas. Los cambios de modelo son WARNING y sí salían a stderr, así que es evidencia razonable de que no hubo respaldo, no una prueba (no se sabe cuánto historial retiene Render).
-- [ ] Tras redesplegar el backend con el registro de la 5.5, en Render buscar `generada con el modelo` (nivel INFO, una línea por turno de charla: `Charla: respuesta del turno N generada con el modelo X.`) y comprobar que X es `GEMINI_PRIMARY_MODEL`. Una línea con `respaldo` indica cambio de modelo.
+- [x] (hecho el 11 de noviembre de 2026: turnos 2, 3 y 4 con `gemini-3.6-flash`, sin `respaldo` ni `Fallo`) Tras redesplegar el backend con el registro de la 5.5, en Render buscar `generada con el modelo` (nivel INFO, una línea por turno de charla: `Charla: respuesta del turno N generada con el modelo X.`) y comprobar que X es `GEMINI_PRIMARY_MODEL`. Una línea con `respaldo` indica cambio de modelo.
 - [ ] Ningún secreto está en el repositorio, en el chat ni en los registros.
 
 ## 8. Límites conocidos del plan gratuito
