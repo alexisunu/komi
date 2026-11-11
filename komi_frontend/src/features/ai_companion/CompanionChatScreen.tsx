@@ -11,6 +11,7 @@ import type { LocalBook } from "../../data/local_db/types";
 import type { ReloadGate } from "../../pwa/reloadGate";
 import { MAX_TURNS, type CompanionService } from "../../services/companionService";
 import { GATE_MESSAGES } from "./chatGateMessages";
+import { GEMINI_PRIVACY_NOTICE } from "./privacyNotice";
 import { useCompanionChat } from "./useCompanionChat";
 import "./CompanionChatScreen.css";
 
@@ -52,6 +53,7 @@ export function CompanionChatScreen({
   const [confirming, setConfirming] = useState(false);
   const fieldId = useId();
   const counterId = useId();
+  const privacyId = useId();
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -157,9 +159,12 @@ export function CompanionChatScreen({
               rows={3}
               value={chat.draft}
               disabled={chat.sending}
-              aria-describedby={chat.charCount >= COUNTER_FROM ? counterId : undefined}
+              aria-describedby={chat.charCount >= COUNTER_FROM ? `${privacyId} ${counterId}` : privacyId}
               onChange={(event) => chat.setDraft(event.target.value)}
             />
+            <p className="companion__privacy" id={privacyId} data-testid="gemini-notice">
+              {GEMINI_PRIVACY_NOTICE}
+            </p>
             {chat.charCount >= COUNTER_FROM && (
               <p
                 className={chat.tooLong ? "companion__counter companion__counter--over tabular" : "companion__counter tabular"}

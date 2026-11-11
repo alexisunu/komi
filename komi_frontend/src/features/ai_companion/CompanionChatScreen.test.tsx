@@ -114,6 +114,92 @@ async function say(message: string, ...replies: Parameters<FakeServer["reply"]>)
   await settle(80);
 }
 
+const NOTICE =
+  "Komi usa Gemini, de Google. Tu texto se envía a Google y personas pueden leerlo. Evita datos sensibles.";
+const notice = () => document.querySelector('[data-testid="gemini-notice"]');
+
+describe("aviso de Gemini (SRS 19.24, bloque 5.5)", () => {
+  it("con la charla abierta se ve el texto exacto bajo el campo y antes del boton Enviar", async () => {
+    await mountChat();
+    expect(notice()?.textContent).toBe(NOTICE);
+    const position = field().compareDocumentPosition(notice() as Node);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const afterNotice = (notice() as Node).compareDocumentPosition(button("Enviar") as Node);
+    expect(afterNotice & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("el campo lo referencia con aria-describedby", async () => {
+    await mountChat();
+    const id = notice()?.id;
+    expect(id).toBeTruthy();
+    expect(field().getAttribute("aria-describedby")?.split(" ")).toContain(id);
+  });
+
+  it("al aparecer el contador, el campo sigue referenciando el aviso y suma el contador", async () => {
+    await mountChat();
+    await type("a".repeat(1800));
+    const ids = field().getAttribute("aria-describedby")?.split(" ") ?? [];
+    expect(ids).toContain(notice()?.id);
+    expect(ids).toHaveLength(2);
+    expect(document.getElementById(ids.find((id) => id !== notice()?.id) ?? "")?.textContent).toContain(
+      "1800 de",
+    );
+  });
+
+  it("sigue visible mientras se envia y se responde, y despues", async () => {
+    await mountChat();
+    const hold = deferred();
+    server.reply({ kind: "ok", chunks: ["Hola, ", "te leo."], seed: null, hold });
+    await type("Hola");
+    await tap(button("Enviar"));
+    await settle(40);
+    expect(field().disabled).toBe(true); // se esta enviando
+    expect((notice() as HTMLElement).hidden).toBe(false);
+    expect(notice()?.textContent).toBe(NOTICE);
+    hold.resolve();
+    await settle(80);
+    expect(field().disabled).toBe(false);
+    expect((notice() as HTMLElement).hidden).toBe(false);
+  });
+
+  it("no se ve sin conexion, sin sincronizar ni con la sesion rechazada", async () => {
+    for (const state of [{ state: "offline" }, { state: "unsynced" }, { state: "rejected", code: "x" }] as const) {
+      gateState = state;
+      await mountChat();
+      expect(notice()).toBeNull();
+      mounted?.unmount();
+      mounted = null;
+    }
+  });
+
+  it("no se ve con la charla cerrada", async () => {
+    await mountChat();
+    for (let i = 1; i <= 4; i += 1) await say(`m${i}`, { kind: "ok", chunks: ["Ok"], seed: "Semilla" });
+    expect(notice()).toBeNull();
+  });
+
+  it("no se ve mientras se abre la charla", async () => {
+    const hold = deferred();
+    server.fetchFn.mockImplementationOnce(async () => {
+      await hold.promise;
+      return new Response("{}", { status: 500 });
+    });
+    await mountChat();
+    expect(text()).toContain("Conectando con Komi");
+    expect(notice()).toBeNull();
+    hold.resolve();
+  });
+
+  it("no agrega bloques funcionales", async () => {
+    await mountChat();
+    expect(root().querySelectorAll("[data-block]")).toHaveLength(3);
+  });
+
+  it("el texto no menciona entrenamiento de modelos", () => {
+    expect(NOTICE.toLowerCase()).not.toContain("entren");
+  });
+});
+
 describe("apertura", () => {
   it("muestra el libro, el contador y la apertura de Komi", async () => {
     await mountChat();
