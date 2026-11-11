@@ -12,6 +12,24 @@ export const READER_LINE_HEIGHT = 1.6;
 /** Margen lateral del texto, en px. Lo pone el contenedor del lector, fuera del iframe. */
 export const READER_MARGIN_PX = 24;
 
+/** Idioma de reserva del lector: sin el, `hyphens:auto` no sabe donde cortar las palabras. */
+export const DEFAULT_READER_LANGUAGE = "es";
+
+/**
+ * Idioma para la separacion silabica: el que declara el capitulo, si no el del libro
+ * (`dc:language`), y solo si faltan los dos, el de reserva.
+ */
+export function resolveReaderLanguage(
+  chapterLang: string | null | undefined,
+  bookLang: string | null | undefined,
+): string {
+  for (const candidate of [chapterLang, bookLang]) {
+    const value = candidate?.trim();
+    if (value) return value;
+  }
+  return DEFAULT_READER_LANGUAGE;
+}
+
 export function isFontSize(value: unknown): value is ReaderFontSize {
   return FONT_SIZES.includes(value as ReaderFontSize);
 }
@@ -55,11 +73,17 @@ export function buildReaderCss(input: ReaderThemeInput): string {
       `font-family:"Lora",Georgia,serif${important};`,
       `font-size:${input.fontPx}px${important};`,
       `line-height:${READER_LINE_HEIGHT}${important};`,
-      "text-align:left;",
+      `text-align:justify${important};`,
+      `hyphens:auto${important};`,
+      `-webkit-hyphens:auto${important};`,
+      `overflow-wrap:break-word${important};`,
       "-webkit-text-size-adjust:100%;",
       "}",
     ].join(""),
     `p,li,blockquote,div,span{line-height:${READER_LINE_HEIGHT}${important};}`,
+    // Texto corrido justificado (SRS 10.8); encabezados y pies de parrafo suelto quedan a la izquierda.
+    `p,li,blockquote{text-align:justify${important};hyphens:auto${important};-webkit-hyphens:auto${important};}`,
+    `h1,h2,h3,h4,h5,h6{text-align:left${important};hyphens:manual${important};}`,
     `h1,h2,h3,h4,h5,h6{color:${tokens["text-primary"]}${important};font-family:"Lora",Georgia,serif${important};}`,
     `a,a:link,a:visited{color:${tokens["accent-secondary"]}${important};}`,
     `::selection{background-color:${tokens["accent-primary"]};color:${tokens["bg-primary"]};}`,

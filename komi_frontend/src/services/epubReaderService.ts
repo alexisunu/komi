@@ -10,7 +10,7 @@ import type Book from "epubjs/types/book";
 import type { Location } from "epubjs/types/rendition";
 import type Rendition from "epubjs/types/rendition";
 import { keyAction, swipeAction, tapAction, toHostX, type TurnAction } from "./readerGestures";
-import { buildReaderCss, type ReaderThemeInput } from "./readerTheme";
+import { buildReaderCss, resolveReaderLanguage, type ReaderThemeInput } from "./readerTheme";
 import { toPercentage } from "./readingTracker";
 import type { EpubService } from "./epubService";
 
@@ -75,6 +75,10 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         }
       }
 
+      // `dc:language` del libro; algunos EPUB mal formados no traen metadatos.
+      const bookLanguage = (book as { packaging?: { metadata?: { language?: string } } }).packaging?.metadata
+        ?.language;
+
       const rendition = book.renderTo(input.host, {
         width: Math.max(input.host.clientWidth, 1),
         height: Math.max(input.host.clientHeight, 1),
@@ -90,6 +94,10 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
 
       rendition.hooks.content.register((contents: { document: Document; window: Window }) => {
         const doc = contents.document;
+        // Sin `lang` el navegador no separa en silabas (`hyphens:auto`). Se respeta el del capitulo.
+        const root = doc.documentElement;
+        const language = resolveReaderLanguage(root.getAttribute("lang") ?? root.getAttribute("xml:lang"), bookLanguage);
+        root.setAttribute("lang", language);
         let touch: { x: number; y: number } | null = null;
         doc.addEventListener("touchstart", (event: TouchEvent) => {
           const point = event.changedTouches[0];

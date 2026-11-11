@@ -161,6 +161,26 @@ describe("epubReaderService.open", () => {
   });
 });
 
+describe("idioma del capitulo (separacion silabica)", () => {
+  async function chapter(bookLanguage: string | undefined, chapterLang?: string) {
+    const fake = fakeBook({ locations: true });
+    (fake.book as Record<string, unknown>)["packaging"] = { metadata: { language: bookLanguage } };
+    await open(fake);
+    const doc = document.implementation.createHTMLDocument("capitulo");
+    if (chapterLang) doc.documentElement.setAttribute("lang", chapterLang);
+    fake.contentHooks.forEach((hook) =>
+      hook({ document: doc, window: { frameElement: { getBoundingClientRect: () => ({ left: 0 }) } } }),
+    );
+    return doc.documentElement.getAttribute("lang");
+  }
+
+  it("usa dc:language del libro, respeta el del capitulo y cae en es", async () => {
+    expect(await chapter("en")).toBe("en");
+    expect(await chapter("en", "fr")).toBe("fr");
+    expect(await chapter(undefined)).toBe("es");
+  });
+});
+
 describe("gestos dentro del iframe", () => {
   async function withContents(frameLeft: number) {
     const fake = fakeBook({ locations: true });
