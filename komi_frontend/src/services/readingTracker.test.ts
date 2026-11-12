@@ -168,16 +168,16 @@ describe("parseReadingProgress", () => {
   });
 });
 
-describe("createProgressWriter (una escritura cada ~10 s)", () => {
+describe("createProgressWriter (posicion al instante, extracto cada ~10 s)", () => {
   function setup() {
     let clock = 100_000;
     const save = vi.fn<(progress: ReadingProgress) => Promise<void>>(async () => {});
     const writer = createProgressWriter({ now: () => clock, save });
-    const progress = (n: number): ReadingProgress => ({
+    const progress = (n: number, excerpt = ""): ReadingProgress => ({
       sessionId: "s",
       cfi: `c${n}`,
       percentage: n,
-      excerpt: "",
+      excerpt,
       updatedAt: n,
     });
     return { writer, save, progress, advance: (ms: number) => (clock += ms) };
@@ -189,27 +189,48 @@ describe("createProgressWriter (una escritura cada ~10 s)", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  it("antes de 10 s no vuelve a escribir y guarda solo lo ultimo", async () => {
+  it("cada cambio de pagina (CFI o porcentaje) se escribe al instante, sin esperar el intervalo", async () => {
+    const { writer, save, progress } = setup();
+    await writer.update(progress(1));
+    await writer.update(progress(2));
+    await writer.update(progress(3));
+    expect(save.mock.calls.map((call) => call[0].cfi)).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("un cambio que no mueve la posicion (solo el extracto) espera 10 s y guarda lo ultimo", async () => {
     const { writer, save, progress, advance } = setup();
     await writer.update(progress(1));
     advance(PROGRESS_WRITE_MS - 1);
-    await writer.update(progress(2));
-    await writer.update(progress(3));
+    await writer.update(progress(1, "uno"));
+    await writer.update(progress(1, "uno dos"));
     expect(save).toHaveBeenCalledTimes(1);
     advance(1);
     await writer.flushIfDue();
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save.mock.calls[1]?.[0].cfi).toBe("c3");
+    expect(save.mock.calls[1]?.[0].excerpt).toBe("uno dos");
   });
 
-  it("flush escribe ya, sin esperar el intervalo (pagehide)", async () => {
+  it("flush escribe ya lo pendiente, sin esperar el intervalo (pagehide, pestana oculta)", async () => {
     const { writer, save, progress } = setup();
     await writer.update(progress(1));
-    await writer.update(progress(2));
+    await writer.update(progress(1, "texto nuevo"));
     expect(save).toHaveBeenCalledTimes(1);
     await writer.flush();
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save.mock.calls[1]?.[0].cfi).toBe("c2");
+    expect(save.mock.calls[1]?.[0].excerpt).toBe("texto nuevo");
+  });
+
+  it("las escrituras salen en orden aunque la primera tarde", async () => {
+    const { writer, save, progress } = setup();
+    let release: () => void = () => {};
+    save.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)));
+    const first = writer.update(progress(1));
+    const second = writer.update(progress(2));
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls.map((call) => call[0].cfi)).toEqual(["c1"]); // la segunda espera a la primera
+    release();
+    await Promise.all([first, second]);
+    expect(save.mock.calls.map((call) => call[0].cfi)).toEqual(["c1", "c2"]);
   });
 
   it("sin nada pendiente no escribe", async () => {

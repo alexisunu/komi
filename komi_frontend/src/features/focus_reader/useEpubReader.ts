@@ -1,6 +1,7 @@
 // Une el lector EPUB (epubjs), el registro de lectura y su escritura limitada. Abre el libro del
 // dispositivo, reanuda la posicion, y mientras dura la sesion guarda CFI, porcentaje y extracto en
-// `active_session_progress` (una vez cada ~10 s y en pagehide). Nunca guarda un porcentaje si el
+// `active_session_progress` (la posicion en cada cambio de pagina; el extracto, cada ~10 s) y
+// vacia lo pendiente en pagehide y al ocultar la pestana. Nunca guarda un porcentaje si el
 // libro no tiene `locations`.
 
 import { useEffect, useRef, useState, type RefObject } from "react";
@@ -79,7 +80,13 @@ export function useEpubReader(args: {
     latestPercentage.current = null;
 
     const flushNow = () => void writer.flush();
+    // Android puede matar la app sin `pagehide`; al pasar a segundo plano siempre hay
+    // `visibilitychange`.
+    const flushIfHidden = () => {
+      if (document.visibilityState === "hidden") flushNow();
+    };
     window.addEventListener("pagehide", flushNow);
+    document.addEventListener("visibilitychange", flushIfHidden);
     const check = window.setInterval(() => void writer.flushIfDue(), WRITE_CHECK_MS);
 
     void (async () => {
@@ -122,6 +129,7 @@ export function useEpubReader(args: {
     return () => {
       alive = false;
       window.removeEventListener("pagehide", flushNow);
+      document.removeEventListener("visibilitychange", flushIfHidden);
       window.clearInterval(check);
       opened?.destroy();
       handle.current = null;

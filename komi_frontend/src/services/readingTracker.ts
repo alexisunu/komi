@@ -6,7 +6,8 @@
 //     `locations` (llega como `null` si no): nunca se inventa uno provisional.
 //   - El extracto acumula los textos visibles, sin duplicados, y se recorta por el INICIO al pasar
 //     de 20 000 caracteres (el servidor lo limita igual; lo mas reciente es lo que se conversa).
-//   - La escritura a disco la limita `createProgressWriter` (una vez cada ~10 s y en pagehide).
+//   - `createProgressWriter` guarda la posicion en cada cambio de pagina; el extracto, cada ~10 s;
+//     y todo lo pendiente en pagehide y al ocultar la pestana.
 
 export const MAX_EXCERPT_CHARS = 20_000;
 export const PROGRESS_WRITE_MS = 10_000;
@@ -124,32 +125,47 @@ export interface ProgressWriterDeps {
 }
 
 /**
- * Limita la frecuencia de escritura: una vez cada `intervalMs` como maximo. `flushIfDue` se llama
- * a menudo (un temporizador del lector); `flush` escribe ya (pagehide y fin de sesion).
+ * Escribe el avance de la sesion. La POSICION (CFI y porcentaje) se guarda en cada cambio de
+ * pagina: si la app se cierra de golpe, Android no avisa y lo que esperaba al intervalo se
+ * perdia (se reabria una o dos paginas antes). Solo los cambios que no mueven la posicion (el
+ * extracto) esperan `intervalMs`. `flushIfDue` se llama a menudo (un temporizador del lector);
+ * `flush` escribe ya (pagehide, ocultar la pestana, fin de sesion).
  */
 export function createProgressWriter(deps: ProgressWriterDeps) {
   const interval = deps.intervalMs ?? PROGRESS_WRITE_MS;
   let pending: ReadingProgress | null = null;
   let lastWrite = Number.NEGATIVE_INFINITY;
+  /** Ultima posicion que llego a disco; `null` hasta la primera escritura o tras un fallo. */
+  let written: { cfi: string | null; percentage: number | null } | null = null;
+  /** Las escrituras salen en el orden en que se piden: una vieja no pisa a una nueva. */
+  let queue: Promise<void> = Promise.resolve();
 
-  async function write(): Promise<void> {
-    if (!pending) return;
+  function write(): Promise<void> {
+    if (!pending) return queue;
     const progress = pending;
     pending = null;
     lastWrite = deps.now();
-    try {
-      await deps.save(progress);
-    } catch {
-      // Se reintenta con el siguiente cambio; el registro es de mejor esfuerzo.
-      pending ??= progress;
-    }
+    queue = queue.then(async () => {
+      try {
+        await deps.save(progress);
+        written = { cfi: progress.cfi, percentage: progress.percentage };
+      } catch {
+        // Se reintenta con el siguiente cambio; el registro es de mejor esfuerzo.
+        written = null;
+        pending ??= progress;
+      }
+    });
+    return queue;
   }
 
+  const moved = (progress: ReadingProgress): boolean =>
+    written === null || written.cfi !== progress.cfi || written.percentage !== progress.percentage;
+
   return {
-    /** Anota el ultimo estado. Escribe de inmediato si ya paso el intervalo. */
+    /** Anota el ultimo estado. Escribe ya si la posicion cambio o si paso el intervalo. */
     update(progress: ReadingProgress): Promise<void> {
       pending = progress;
-      return deps.now() - lastWrite >= interval ? write() : Promise.resolve();
+      return moved(progress) || deps.now() - lastWrite >= interval ? write() : Promise.resolve();
     },
     /** Escribe si hay algo pendiente y ya toca. */
     flushIfDue(): Promise<void> {

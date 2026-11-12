@@ -237,7 +237,7 @@ describe("sesion EPUB", () => {
     expect(gate.isBlocked()).toBe(false);
   });
 
-  it("el avance se guarda al instante la primera vez y despues cada 10 s", async () => {
+  it("la posicion se guarda en cada cambio de pagina y el extracto cada 10 s", async () => {
     const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
@@ -248,31 +248,58 @@ describe("sesion EPUB", () => {
     env.advance(3_000);
     await act(async () => fake.see({ cfi: "cfi-2", percentage: 11, text: "Segunda pagina del libro leida con calma." }));
     await settle();
-    expect((await storedProgress())?.cfi).toBe("cfi-1"); // aun no pasaron 10 s
+    // Sin esperar los 10 s ni un pagehide: si Android mata la app aqui, no se pierde la pagina.
+    expect(await storedProgress()).toMatchObject({ cfi: "cfi-2", percentage: 11 });
 
+    // Mismo lugar, texto nuevo: solo cambia el extracto, que espera su intervalo.
+    env.advance(1_000);
+    await act(async () => fake.see({ cfi: "cfi-2", percentage: 11, text: "Un parrafo que aparece sin pasar de pagina." }));
+    await settle();
+    expect((await storedProgress())?.excerpt).not.toContain("sin pasar de pagina");
     env.advance(PROGRESS_WRITE_MS);
     await settle(2_200); // el revisor de escritura corre cada 2 s
-    expect(await storedProgress()).toMatchObject({ cfi: "cfi-2", percentage: 11 });
     expect((await storedProgress())?.excerpt).toBe(
-      "Primera pagina del libro leida con calma. Segunda pagina del libro leida con calma.",
+      "Primera pagina del libro leida con calma. Segunda pagina del libro leida con calma. Un parrafo que aparece sin pasar de pagina.",
     );
   }, 15_000);
 
-  it("pagehide escribe lo pendiente sin esperar los 10 s", async () => {
+  it("pagehide escribe el extracto pendiente sin esperar los 10 s", async () => {
     const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
     await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "" }));
     await settle();
     env.advance(1_000);
-    await act(async () => fake.see({ cfi: "cfi-9", percentage: 19.5, text: "" }));
+    await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "Texto nuevo en la misma pagina de la lectura." }));
     await settle();
-    expect((await storedProgress())?.cfi).toBe("cfi-1");
+    expect((await storedProgress())?.excerpt).toBe("");
     await act(async () => {
       window.dispatchEvent(new Event("pagehide"));
     });
     await settle();
-    expect(await storedProgress()).toMatchObject({ cfi: "cfi-9", percentage: 19.5 });
+    expect((await storedProgress())?.excerpt).toContain("Texto nuevo");
+  });
+
+  it("al ocultar la pestana (visibilitychange) tambien escribe lo pendiente", async () => {
+    const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "" }));
+    await settle();
+    env.advance(1_000);
+    await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "Texto nuevo en la misma pagina de la lectura." }));
+    await settle();
+    expect((await storedProgress())?.excerpt).toBe("");
+    const hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await settle();
+    } finally {
+      hidden.mockRestore();
+    }
+    expect((await storedProgress())?.excerpt).toContain("Texto nuevo");
   });
 
   it("nunca guarda un porcentaje si el lector no lo tiene (sin locations)", async () => {
