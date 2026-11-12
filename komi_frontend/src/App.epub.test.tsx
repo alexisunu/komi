@@ -387,7 +387,7 @@ describe("sesion EPUB", () => {
   });
 });
 
-describe("Terminé antes de tiempo en el lector", () => {
+describe("Terminar sesión en el lector", () => {
   async function startAndRead(percentage: number | null) {
     const ctx = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(ctx.root));
@@ -399,7 +399,7 @@ describe("Terminé antes de tiempo en el lector", () => {
 
   it("con el 100 % exacto del libro vale aunque falte tiempo: se guarda y el girasol florece", async () => {
     const { root } = await startAndRead(100);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle(200);
     expect(sheetTitle()).toBe("Tu girasol floreció");
     expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
@@ -408,20 +408,20 @@ describe("Terminé antes de tiempo en el lector", () => {
 
   it("con 99,99 % no cuenta como terminado: pide confirmacion", async () => {
     const { root } = await startAndRead(99.99);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("no se guarda ningún avance");
     expect(sheetTitle()).toBe("¿Terminar sin guardar?");
   });
 
   it("sin locations (porcentaje nulo) nunca se considera terminado", async () => {
     const { root } = await startAndRead(null);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   });
 
   it("confirmar la cancelacion no guarda nada y vuelve al Dashboard", async () => {
     const { root } = await startAndRead(40);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     await tap(byText(document.body, "button", "Cancelar sesión"));
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(await db.sessions.count()).toBe(0);
@@ -431,7 +431,7 @@ describe("Terminé antes de tiempo en el lector", () => {
   it("con el 50 % del tiempo vale sin importar el porcentaje del libro", async () => {
     const { root, env } = await startAndRead(5);
     env.advance(250_000); // 450 s de 900
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle(200);
     expect(sheetTitle()).toBe("Lectura guardada");
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12 });
@@ -460,7 +460,7 @@ describe("posicion de lectura aparte del avance validado", () => {
     await settle();
     await act(async () => fake.see({ cfi: "cfi-9", percentage: 40, text: "" }));
     env.advance(200_000); // bajo el 50 %: se cancela
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     await tap(byText(document.body, "button", "Cancelar sesión"));
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12, last_epub_cfi: null });

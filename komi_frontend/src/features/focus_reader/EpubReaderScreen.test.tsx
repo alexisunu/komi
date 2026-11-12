@@ -438,10 +438,28 @@ describe("EpubReaderScreen", () => {
     expect(root.querySelector('[role="alert"]')?.textContent).toContain("No pudimos abrir este libro");
   });
 
-  it("Terminé antes de tiempo con el 50 % acepta sin preguntar", async () => {
+  it("Terminar sesion del pie con el 50 % acepta sin preguntar", async () => {
     const { root, onAcceptEarly } = await mount({ early: { actualSec: 450, belowHalf: false } });
-    click(button(root, "Terminé antes de tiempo"));
+    click(button(root, "Terminar sesión"));
     expect(onAcceptEarly).toHaveBeenCalledTimes(1);
+  });
+
+  it("el pie tiene solo tres controles, en orden: pagina anterior, Terminar sesion, pagina siguiente", async () => {
+    const { root } = await mount();
+    const labels = [...root.querySelectorAll(".epub-reader__footer button")].map(
+      (b) => b.getAttribute("aria-label") ?? b.textContent?.trim(),
+    );
+    expect(labels).toEqual(["Página anterior", "Terminar sesión", "Página siguiente"]);
+    expect(button(root, "Terminé antes de tiempo")).toBeUndefined();
+  });
+
+  it("con menos del 50 % pide confirmacion y no acepta", async () => {
+    const { root, onAcceptEarly } = await mount({ early: { actualSec: 100, belowHalf: true } });
+    click(button(root, "Terminar sesión"));
+    expect(onAcceptEarly).not.toHaveBeenCalled();
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("¿Terminar sin guardar?");
+    expect(dialog?.textContent).toContain("Aún no llevas la mitad del tiempo");
   });
 
   it("solo usa tokens de color y no anima nada", () => {

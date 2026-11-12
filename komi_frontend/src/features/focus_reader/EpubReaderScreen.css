@@ -65,6 +65,18 @@
   transition: color var(--transition-ui);
 }
 
+/* Circulo con borde (pie, mockup 02). */
+.epub-reader__icon--outlined {
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+}
+
+/* Terminar sesion: contorno, ocupa el espacio entre las flechas. */
+.epub-reader__finish {
+  flex: 1;
+  color: var(--color-text-primary);
+}
+
 /* Circulo con fondo (encabezado, mockup 02). */
 .epub-reader__icon--filled {
   background: var(--color-bg-surface);

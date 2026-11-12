@@ -1,5 +1,5 @@
 // Lector ePub Zen (CU-03, paso 4). Tres bloques: encabezado (reloj, avance, boton de tamano de
-// letra y de ocultar), la pagina del libro y el pie (pagina anterior, "Terminé antes de tiempo", pagina
+// letra y de ocultar), la pagina del libro y el pie (pagina anterior, "Terminar sesion", pagina
 // siguiente). Sin navegacion inferior. La interfaz se puede ocultar (SRS 10.8): queda el texto,
 // una linea de progreso de 2 px y un boton flotante que abre el menu (tambien el tercio central);
 // cada sesion empieza con la interfaz visible.
@@ -169,19 +169,19 @@ export function EpubReaderScreen({
         <footer className="epub-reader__footer" data-block="actions">
           <button
             type="button"
-            className="epub-reader__icon"
+            className="epub-reader__icon epub-reader__icon--outlined"
             aria-label="Página anterior"
             disabled={view.status !== "ready"}
             onClick={view.prev}
           >
             <ChevronLeft size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
           </button>
-          <ZenPrimaryButton variant="secondary" onClick={finishEarly}>
-            Terminé antes de tiempo
+          <ZenPrimaryButton variant="secondary" className="epub-reader__finish" onClick={finishEarly}>
+            Terminar sesión
           </ZenPrimaryButton>
           <button
             type="button"
-            className="epub-reader__icon"
+            className="epub-reader__icon epub-reader__icon--outlined"
             aria-label="Página siguiente"
             disabled={view.status !== "ready"}
             onClick={view.next}
@@ -238,7 +238,7 @@ export function EpubReaderScreen({
       {confirming && (
         <ZenSheet title="¿Terminar sin guardar?" onClose={() => setConfirming(false)}>
           <p className="epub-reader__confirm-text">
-            Llevas menos de la mitad del tiempo que programaste. Si terminas ahora, la sesión se
+            Aún no llevas la mitad del tiempo que programaste. Si terminas ahora, la sesión se
             cancela y no se guarda ningún avance.
           </p>
           <div className="epub-reader__confirm-actions">
