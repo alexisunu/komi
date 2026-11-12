@@ -74,13 +74,46 @@ function makeService() {
   });
 }
 
-const settle = (ms = 30) => act(async () => new Promise((r) => setTimeout(r, ms)));
+// Espera por turnos de tarea, no por milisegundos de reloj: Dexie (fake-indexeddb) y el servidor SSE
+// falso avanzan un paso por turno, asi que cuantos turnos hacen falta no depende de la velocidad de la
+// maquina. Se consideran asentados cuando la pantalla y el numero de peticiones llevan TURNS_STABLE
+// turnos seguidos sin cambiar. No usa setTimeout: sigue valiendo con relojes simulados.
+const TURNS_STABLE = 25;
+const MAX_TURNS = 4000;
+const nextTurn = () => new Promise<void>((resolve) => setImmediate(resolve));
+const fingerprint = () =>
+  `${document.body.innerHTML}|${server.messageCalls().length}|${server.startCalls().length}|${server.pendingReplies()}`;
+
+async function drain(minTurns = TURNS_STABLE) {
+  await act(async () => {
+    let last = fingerprint();
+    let stable = 0;
+    for (let turn = 0; turn < MAX_TURNS && stable < minTurns; turn += 1) {
+      await nextTurn();
+      const now = fingerprint();
+      stable = now === last ? stable + 1 : 0;
+      last = now;
+    }
+  });
+}
+
+/** Mismo papel que antes ("dejar que pase lo pendiente"), sin depender de milisegundos. */
+const settle = () => drain();
+
+/** Espera, por turnos, a que se cumpla una condicion (para saber que algo ya ocurrio antes de seguir). */
+async function until(condition: () => boolean) {
+  await act(async () => {
+    for (let turn = 0; turn < MAX_TURNS && !condition(); turn += 1) await nextTurn();
+  });
+  expect(condition()).toBe(true);
+}
+
 async function tap(el: Element | null | undefined) {
   if (!el) throw new Error("Elemento no encontrado");
   await act(async () => {
     (el as HTMLElement).click();
-    await new Promise((r) => setTimeout(r, 20));
   });
+  await drain();
 }
 const root = () => mounted?.container as HTMLElement;
 const button = (text: string) =>
@@ -104,14 +137,14 @@ async function mountChat() {
   mounted = render(
     <CompanionChatScreen service={makeService()} gate={gate} sessionId={SESSION} book={BOOK} onLeave={onLeave} />,
   );
-  await settle(60);
+  await settle();
 }
 
 async function say(message: string, ...replies: Parameters<FakeServer["reply"]>) {
   server.reply(...replies);
   await type(message);
   await tap(button("Enviar") ?? button("Reintentar"));
-  await settle(80);
+  await settle();
 }
 
 const NOTICE =
@@ -152,12 +185,12 @@ describe("aviso de Gemini (SRS 19.24, bloque 5.5)", () => {
     server.reply({ kind: "ok", chunks: ["Hola, ", "te leo."], seed: null, hold });
     await type("Hola");
     await tap(button("Enviar"));
-    await settle(40);
+    await settle();
     expect(field().disabled).toBe(true); // se esta enviando
     expect((notice() as HTMLElement).hidden).toBe(false);
     expect(notice()?.textContent).toBe(NOTICE);
     hold.resolve();
-    await settle(80);
+    await settle();
     expect(field().disabled).toBe(false);
     expect((notice() as HTMLElement).hidden).toBe(false);
   });
@@ -282,7 +315,7 @@ describe("apertura", () => {
       />
     );
     mounted = render(view(false));
-    await settle(60);
+    await settle();
     wakeNow = true;
     server.reply({ kind: "ok", chunks: ["Hola"] });
     await type("Me gusto");
@@ -294,7 +327,7 @@ describe("apertura", () => {
     expect(document.querySelector('[data-testid="typing"]')?.textContent).not.toContain("escribiendo");
     expect(server.messageCalls()).toHaveLength(0);
     hold.resolve();
-    await settle(100);
+    await settle();
     expect(server.messageCalls()).toHaveLength(1);
   });
 
@@ -319,7 +352,7 @@ describe("apertura", () => {
     expect(server.startCalls()).toHaveLength(0);
     gateState = { state: "ready" };
     await tap(button("Reintentar"));
-    await settle(60);
+    await settle();
     expect(field()).not.toBeNull();
   });
 
@@ -340,7 +373,7 @@ describe("apertura", () => {
     await mountChat();
     gateState = { state: "ready" };
     await tap(button("Reintentar"));
-    await settle(60);
+    await settle();
     expect(root().querySelector('[data-testid="zen-cycle"]')?.textContent).toBe("Ciclo Zen: Turno 1 de 5");
     expect(field()).not.toBeNull();
   });
@@ -356,7 +389,7 @@ describe("apertura", () => {
         onLeave={onLeave}
       />,
     );
-    await settle(60);
+    await settle();
     expect(text()).toContain("todavía no llegó al servidor");
     expect(button("Reintentar")).toBeUndefined();
     expect(flush).toHaveBeenCalledTimes(1);
@@ -376,7 +409,7 @@ describe("apertura", () => {
     await mountChat();
     expect(text()).toContain("No pudimos abrir la charla");
     await tap(button("Reintentar"));
-    await settle(60);
+    await settle();
     expect(field()).not.toBeNull();
   });
 });
@@ -388,13 +421,13 @@ describe("conversar", () => {
     server.reply({ kind: "ok", chunks: ["Qué bonito. ", "¿Qué sentiste?"], hold });
     await type("Me gustó el final");
     await tap(button("Enviar"));
-    await settle(30);
+    await settle();
     // Primer fragmento recibido: el indicador ya no esta y el texto va apareciendo.
     expect(root().querySelector('[data-testid="typing"]')).toBeNull();
     expect(root().querySelector('[data-testid="streaming-bubble"]')?.textContent).toBe("Qué bonito. ");
     expect(bubbles()).toContain("Me gustó el final");
     hold.resolve();
-    await settle(60);
+    await settle();
     expect(root().querySelector('[data-testid="streaming-bubble"]')).toBeNull();
     expect(bubbles().at(-1)).toBe("Qué bonito. ¿Qué sentiste?");
     expect(root().querySelector('[data-testid="zen-cycle"]')?.textContent).toBe("Ciclo Zen: Turno 2 de 5");
@@ -406,7 +439,7 @@ describe("conversar", () => {
     server.reply({ kind: "hang" });
     await type("Hola");
     await tap(button("Enviar"));
-    await settle(30);
+    await settle();
     const typing = root().querySelector('[data-testid="typing"]');
     expect(typing?.textContent).toContain("Komi está escribiendo");
     expect(typing?.getAttribute("role")).toBe("status");
@@ -422,8 +455,8 @@ describe("conversar", () => {
       send.click();
       send.click();
       send.click();
-      await new Promise((r) => setTimeout(r, 80));
     });
+    await drain();
     expect(server.messageCalls()).toHaveLength(1);
     expect(server.pendingReplies()).toBe(1);
   });
@@ -433,7 +466,7 @@ describe("conversar", () => {
     server.reply({ kind: "hang" });
     await type("Hola");
     await tap(button("Enviar"));
-    await settle(30);
+    await settle();
     expect(field().disabled).toBe(true);
     expect(button("Enviar")?.disabled).toBe(true);
   });
@@ -445,10 +478,10 @@ describe("conversar", () => {
     server.reply({ kind: "ok", chunks: ["a", "b"], hold });
     await type("Hola");
     await tap(button("Enviar"));
-    await settle(30);
+    await settle();
     expect(gate.isBlocked()).toBe(true);
     hold.resolve();
-    await settle(80);
+    await settle();
     expect(gate.isBlocked()).toBe(false);
   });
 
@@ -458,11 +491,11 @@ describe("conversar", () => {
     server.reply({ kind: "ok", chunks: ["a", "b"], hold });
     await type("Hola");
     await tap(button("Enviar"));
-    await settle(30);
+    await settle();
     gate.request();
     expect(reload).not.toHaveBeenCalled();
     hold.resolve();
-    await settle(80);
+    await settle();
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
@@ -522,7 +555,7 @@ describe("errores del envio", () => {
     expect(button("Reintentar")?.disabled).toBe(false);
     server.reply({ kind: "ok", chunks: ["Ahora sí"] });
     await tap(button("Reintentar"));
-    await settle(80);
+    await settle();
     expect(bubbles().at(-1)).toBe("Ahora sí");
     expect(server.messageCalls().map((c) => c.body)).toEqual([
       { content: "Mi respuesta", turn: 1 },
@@ -546,8 +579,14 @@ describe("errores del envio", () => {
     await type("Hola");
     await act(async () => {
       button("Enviar")?.click();
+    });
+    // El temporizador de 60 s se arma al salir la peticion: se espera a eso antes de mover el reloj.
+    await until(() => server.messageCalls().length === 1);
+    await drain();
+    await act(async () => {
       await vi.advanceTimersByTimeAsync(60_001);
     });
+    await drain();
     expect(text()).toContain("Komi tardó demasiado en responder");
     expect(text()).not.toContain("parcial");
     expect(field().value).toBe("Hola");
@@ -581,7 +620,7 @@ describe("errores del envio", () => {
     server.reply({ kind: "ok", chunks: ["Gracias por esperar"] });
     vi.useRealTimers();
     await tap(button("Reintentar"));
-    await settle(80);
+    await settle();
     expect(bubbles().at(-1)).toBe("Gracias por esperar");
   });
 
@@ -625,7 +664,7 @@ describe("errores del envio", () => {
     await say("Hola", { kind: "saved_but_lost", chunks: ["Respuesta guardada"] });
     expect(text()).toContain("Komi no pudo responder ahora mismo");
     await tap(button("Reintentar"));
-    await settle(80);
+    await settle();
     expect(bubbles().filter((b) => b === "Hola")).toHaveLength(1);
     expect(bubbles().at(-1)).toBe("Respuesta guardada");
     expect(root().querySelector('[data-testid="zen-cycle"]')?.textContent).toBe("Ciclo Zen: Turno 2 de 5");
@@ -716,13 +755,13 @@ describe("salir", () => {
     server.reply({ kind: "hang", before: ["Empiezo a responder"] });
     await type("Hola");
     await tap(button("Enviar"));
-    await settle(40);
+    await settle();
     expect(gate.isBlocked()).toBe(true);
     const signal = server.messageCalls()[0]?.signal;
     expect(signal?.aborted).toBe(false);
     mounted?.unmount();
     mounted = null;
-    await settle(40);
+    await settle();
     expect(signal?.aborted).toBe(true);
     expect(server.state.cancelled).toBeGreaterThan(0);
     expect(gate.isBlocked()).toBe(false);
