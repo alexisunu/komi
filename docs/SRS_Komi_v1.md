@@ -286,7 +286,7 @@ Para preservar la calma visual durante las lecturas nocturnas ("Antes de dormir"
 
 ## **10.8 Lector ePub Zen (ePub Reader View)**
 
-* **Lienzo de Lectura:** Fondo inmersivo en Papel Arroz (`#F7F5F0`) con tipografía *Lora* personalizable (tamaño de 16px a 22px, interlineado 1.6), libre de distracciones y con márgenes laterales cómodos de 24px.  
+* **Lienzo de Lectura:** Fondo inmersivo en Papel Arroz (`#F7F5F0`) con tipografía *Lora* personalizable (tamaño de 16px a 22px, interlineado 1.6), texto corrido justificado (`text-align: justify` con `hyphens: auto`; los títulos van alineados a la izquierda y sin separación silábica), libre de distracciones y con márgenes laterales cómodos de 24px. El atributo `lang` de cada capítulo se toma del propio capítulo; si falta, del `dc:language` del libro, y solo si faltan ambos se usa `es`. Así la separación silábica sigue el idioma real del libro.  
 * **Header Superior Minimalista:** Barra sutil que muestra el tiempo restante de la sesión de lectura, indicador de progreso porcentual discreto y acceso rápido a ajustes tipográficos.  
 * **Cálculo Dinámico de Progreso:** Actualización automática de la posición CFI/XHTML al avanzar de página, registrando el fragmento textual para alimentar el contexto de Gemini al concluir la sesión.
 
