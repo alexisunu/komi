@@ -39,7 +39,7 @@
 }
 
 .epub-reader__percent {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }

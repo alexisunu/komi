@@ -602,6 +602,12 @@ describe("EpubReaderScreen", () => {
     });
   });
 
+  it("el subtitulo del modo usa text-primary (contraste del texto pequeno del lector)", () => {
+    const rule = /\.epub-reader__percent \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toContain("color: var(--color-text-primary)");
+    expect(rule).not.toContain("text-secondary");
+  });
+
   it("solo usa tokens de color y no anima nada", () => {
     expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(css).not.toMatch(/\brgba?\(|\bhsla?\(/);

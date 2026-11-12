@@ -120,8 +120,8 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
   return { root: mounted.container, env, fake, gate, reload, fetchFn };
 }
 
-const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lectura") as HTMLButtonElement;
-const openButton = (root: HTMLElement) => byText(root, "button", "Abrir lector") as HTMLButtonElement;
+const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
+const openButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
 
 /** Lee `advanceMs` y termina la sesion; deja la hoja abierta en el Paso 1. */
 async function finishPhysical(ctx: Awaited<ReturnType<typeof mountApp>>, advanceMs: number) {

@@ -30,6 +30,7 @@ import { StatsScreen } from "./features/stats/StatsScreen";
 import type { TimerType } from "./services/focusSessionMachine";
 import type { CompleteOnboardingResult } from "./services/onboardingService";
 import { DEFAULT_FONT_SIZE, isFontSize, type ReaderFontSize } from "./services/readerTheme";
+import { isTimerType } from "./features/dashboard/timerSelection";
 import "./App.css";
 
 export interface AppProps {
@@ -204,6 +205,9 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   // Avance (0 a 1) de "Preparando tu libro" antes de abrir un EPUB sin `locations`; null = no aplica.
   const [preparing, setPreparing] = useState<number | null>(null);
   const [fontPx, setFontPx] = useState<ReaderFontSize>(DEFAULT_FONT_SIZE);
+  // Ultima eleccion del selector Temporizador | Libre: local, no se sincroniza. Un valor guardado
+  // que no sea uno de los dos modos cae a Temporizador.
+  const [timerType, setTimerType] = useState<TimerType>("TIMER");
   const { theme, toggleTheme } = useTheme();
   // Racha del Dashboard: parte de lo guardado y sube al cerrar una sesion, sin esperar a la red.
   const [streakDays, setStreakDays] = useState(initial?.streakDays ?? 0);
@@ -238,6 +242,24 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
       alive = false;
     };
   }, [deps]);
+
+  useEffect(() => {
+    let alive = true;
+    deps.meta
+      .get(META_KEYS.timerMode)
+      .then((value) => alive && setTimerType(isTimerType(value) ? value : "TIMER"))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [deps]);
+
+  const changeTimerType = (next: TimerType) => {
+    setTimerType(next);
+    deps.meta.set(META_KEYS.timerMode, next).catch(() => {
+      // El modo ya cambio en pantalla; solo no quedo guardado para la proxima vez.
+    });
+  };
 
   const changeFontPx = (size: ReaderFontSize) => {
     setFontPx(size);
@@ -483,7 +505,9 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             book={activeBook}
             dailyGoalMinutes={profile?.daily_goal_minutes ?? 15}
             canStart={canStart}
-            onStart={(minutes) => void startReading(minutes)}
+            timerType={timerType}
+            onTimerTypeChange={changeTimerType}
+            onStart={(selection) => void startReading(selection.minutes, selection.timerType)}
             recovery={recovery}
           />
         )}

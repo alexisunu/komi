@@ -71,7 +71,7 @@ const byText = (root: ParentNode, selector: string, text: string) =>
   [...root.querySelectorAll(selector)].find((el) => el.textContent?.trim().startsWith(text)) ?? null;
 const sheet = () => document.querySelector('[role="dialog"]');
 const sheetTitle = () => sheet()?.querySelector("h2")?.textContent;
-const openButton = (root: HTMLElement) => byText(root, "button", "Abrir lector") as HTMLButtonElement;
+const openButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
 
 async function putFile(bookId: string, locations: string | null = LOCATIONS) {
   await db.epub_files.put({
@@ -130,10 +130,10 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
   return { root: mounted.container, env, fake, gate, wakeLock };
 }
 
-describe("Abrir lector: precondiciones", () => {
-  it("con un EPUB y su archivo, el boton dice Abrir lector y esta activo", async () => {
+describe("Comenzar lectura con un EPUB: precondiciones", () => {
+  it("con un EPUB y su archivo, el boton dice Comenzar lectura (como con un libro fisico) y esta activo", async () => {
     const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
-    expect(byText(root, "button", "Comenzar Lectura")).toBeNull();
+    expect(byText(root, "button", "Abrir lector")).toBeNull();
     expect(openButton(root).disabled).toBe(false);
   });
 

@@ -22,6 +22,8 @@ export const META_KEYS = {
   activeSessionProgress: "active_session_progress",
   /** Tamano de letra del lector EPUB (16, 18, 20 o 22). */
   readerFontSize: "reader_font_size",
+  /** Ultima eleccion del selector del Dashboard: "TIMER" o "FREE". Solo local, no se sincroniza. */
+  timerMode: "timer_mode",
 } as const;
 
 /**

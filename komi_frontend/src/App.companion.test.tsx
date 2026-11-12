@@ -126,7 +126,7 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
   return { root: mounted.container, env, fake, gate, reload, fetchFn };
 }
 
-const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lectura") as HTMLButtonElement;
+const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
 
 /** Lee `minutes` y termina antes de tiempo; deja la hoja abierta en el Paso 1. */
 async function finishPhysical(ctx: Awaited<ReturnType<typeof mountApp>>, advanceMs: number) {
@@ -358,7 +358,7 @@ describe("Hablar con Komi desde el lector EPUB", () => {
 
   async function readEpub(percentage: number, advanceMs: number) {
     const ctx = await mountApp([epub()], { fetchFn: server.fetchFn, files: [uuid(1)] });
-    await tap(byText(ctx.root, "button", "Abrir lector"));
+    await tap(byText(ctx.root, "button", "Comenzar lectura"));
     await settle();
     await act(async () => ctx.fake.see({ cfi: "cfi-1", percentage, text: "" }));
     ctx.env.advance(advanceMs);
@@ -390,7 +390,7 @@ describe("Hablar con Komi desde el lector EPUB", () => {
     await settle(200);
     await tap(sheetButton("Por hoy no, volver al jardín"));
     expect(ctx.root.querySelector(".dashboard")).not.toBeNull();
-    await tap(byText(ctx.root, "button", "Abrir lector"));
+    await tap(byText(ctx.root, "button", "Comenzar lectura"));
     await settle();
     await act(async () => ctx.fake.see({ cfi: "cfi-2", percentage: 45, text: "" }));
     ctx.env.advance(500_000);

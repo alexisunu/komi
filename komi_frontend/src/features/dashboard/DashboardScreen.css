@@ -109,6 +109,24 @@
   gap: var(--space-3);
 }
 
+/* Modo Libre (mockup 07): el texto ocupa el lugar del selector de minutos, con su misma altura. */
+.dashboard__free {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 342px;
+  height: var(--button-height);
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}
+
+.dashboard__free svg {
+  flex: none;
+}
+
 .dashboard__time {
   min-width: 4ch;
   font-size: var(--font-display-timer-size);

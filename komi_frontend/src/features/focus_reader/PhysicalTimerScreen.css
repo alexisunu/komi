@@ -48,7 +48,7 @@
 /* Modo y avance del libro bajo el reloj (como el subtitulo del lector EPUB). */
 .focus-timer__mode {
   margin: 0;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
   text-align: center;

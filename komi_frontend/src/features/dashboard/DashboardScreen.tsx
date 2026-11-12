@@ -1,8 +1,9 @@
 // Dashboard Zen (SRS 6): zonas 1 a 3. La zona 4 (navegacion) la pone el AppShell.
-// El boton principal se activa con un libro que se pueda leer (CU-03): "Comenzar Lectura" para un
-// libro fisico y "Abrir lector" para un EPUB (que ademas exige su archivo en el dispositivo).
+// El boton principal, "Comenzar lectura" para un libro fisico y para un EPUB, se activa con un libro
+// que se pueda leer (CU-03; un EPUB ademas exige su archivo en el dispositivo). Bajo el libro, el
+// selector Temporizador | Libre (mockup 07): con Temporizador, los minutos; con Libre, un texto.
 
-import { Settings } from "lucide-react";
+import { Infinity as InfinityIcon, Settings } from "lucide-react";
 import { useState } from "react";
 import { FEATURES } from "../../core/featureFlags";
 import { StreakBadge } from "../../core/components/StreakBadge";
@@ -11,10 +12,12 @@ import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
 import { wholePercent } from "../../services/botanicCalculator";
+import type { TimerType } from "../../services/focusSessionMachine";
 import { progressLabel } from "./activeBook";
 import "./DashboardScreen.css";
 import { SettingsPanel, type SettingsRecovery } from "./SettingsPanel";
 import { SunflowerStageWidget } from "./SunflowerStageWidget";
+import { TimerModeSelector } from "./TimerModeSelector";
 import {
   formatTimer,
   initialMinutes,
@@ -22,6 +25,12 @@ import {
   TIMER_MAX_MINUTES,
   TIMER_MIN_MINUTES,
 } from "./timerSelection";
+
+/** Lo que pide el lector al empezar: el modo y los minutos del selector (solo cuentan en TIMER). */
+export interface StartSelection {
+  timerType: TimerType;
+  minutes: number;
+}
 
 export interface DashboardScreenProps {
   streakDays: number;
@@ -31,8 +40,12 @@ export interface DashboardScreenProps {
   dailyGoalMinutes: number;
   /** Hay libro, se puede leer y no hay otra sesion. Sin esto el boton queda deshabilitado. */
   canStart?: boolean;
-  /** Inicia la sesion con los minutos del selector. */
-  onStart?: (minutes: number) => void;
+  /** Modo elegido. Sin esta prop el selector lleva su propio estado (empieza en Temporizador). */
+  timerType?: TimerType;
+  /** Se llama al cambiar de modo, para recordar la ultima eleccion. */
+  onTimerTypeChange?: (timerType: TimerType) => void;
+  /** Inicia la sesion con el modo y los minutos del selector. */
+  onStart?: (selection: StartSelection) => void;
   /** Codigo de recuperacion del dispositivo y "volver a traer mis datos" (Ajustes, Fase 5.3). */
   recovery?: SettingsRecovery | undefined;
 }
@@ -46,10 +59,18 @@ export function DashboardScreen({
   book,
   dailyGoalMinutes,
   canStart = false,
+  timerType: chosenType,
+  onTimerTypeChange,
   onStart,
   recovery,
 }: DashboardScreenProps) {
   const [minutes, setMinutes] = useState(() => initialMinutes(dailyGoalMinutes));
+  const [ownType, setOwnType] = useState<TimerType>("TIMER");
+  const timerType = chosenType ?? ownType;
+  const changeType = (next: TimerType) => {
+    setOwnType(next);
+    onTimerTypeChange?.(next);
+  };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const percent = book ? wholePercent(book.progress_percentage) : 0;
 
@@ -96,25 +117,33 @@ export function DashboardScreen({
       </section>
 
       <section className="dashboard__controls" data-block="controls" aria-label="Sesión de lectura">
-        <div className="dashboard__timer">
-          <TimerStepperButton
-            direction="decrement"
-            aria-label="Restar 5 minutos"
-            disabled={minutes <= TIMER_MIN_MINUTES}
-            onClick={() => setMinutes((value) => stepMinutes(value, "decrement"))}
-          />
-          <output className="dashboard__time tabular" aria-label="Duración de la sesión">
-            {formatTimer(minutes)}
-          </output>
-          <TimerStepperButton
-            direction="increment"
-            aria-label="Sumar 5 minutos"
-            disabled={minutes >= TIMER_MAX_MINUTES}
-            onClick={() => setMinutes((value) => stepMinutes(value, "increment"))}
-          />
-        </div>
-        <ZenPrimaryButton disabled={!canStart || !onStart} onClick={() => onStart?.(minutes)}>
-          {book?.format_type === "EPUB" ? "Abrir lector" : "Comenzar Lectura"}
+        <TimerModeSelector value={timerType} onChange={changeType} />
+        {timerType === "FREE" ? (
+          <p className="dashboard__free">
+            <InfinityIcon size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+            <span>Sin límite de tiempo. El cronómetro empieza al abrir el lector.</span>
+          </p>
+        ) : (
+          <div className="dashboard__timer">
+            <TimerStepperButton
+              direction="decrement"
+              aria-label="Restar 5 minutos"
+              disabled={minutes <= TIMER_MIN_MINUTES}
+              onClick={() => setMinutes((value) => stepMinutes(value, "decrement"))}
+            />
+            <output className="dashboard__time tabular" aria-label="Duración de la sesión">
+              {formatTimer(minutes)}
+            </output>
+            <TimerStepperButton
+              direction="increment"
+              aria-label="Sumar 5 minutos"
+              disabled={minutes >= TIMER_MAX_MINUTES}
+              onClick={() => setMinutes((value) => stepMinutes(value, "increment"))}
+            />
+          </div>
+        )}
+        <ZenPrimaryButton disabled={!canStart || !onStart} onClick={() => onStart?.({ timerType, minutes })}>
+          Comenzar lectura
         </ZenPrimaryButton>
       </section>
 

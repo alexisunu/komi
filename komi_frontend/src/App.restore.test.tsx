@@ -112,7 +112,7 @@ describe("dispositivo vacio", () => {
     expect(root.querySelector('[data-screen="recover"]')).toBeNull();
     expect(root.querySelector('[data-screen="welcome"]')).toBeNull();
     expect(root.querySelector(".dashboard")).not.toBeNull();
-    expect(byText(root, "button", "Comenzar Lectura")).not.toBeNull();
+    expect(byText(root, "button", "Comenzar lectura")).not.toBeNull();
   });
 
   it("guarda el perfil, los libros, las sesiones y la charla en Dexie", async () => {
@@ -188,7 +188,7 @@ describe("dispositivo vacio", () => {
     const root = await mountApp(newServer(body));
     await recoverWith(root, RESTORE_PROFILE_ID);
     expect(root.textContent).toContain("Falta el archivo .epub de «Libro EPUB»");
-    expect((byText(root, "button", "Abrir lector") as HTMLButtonElement).disabled).toBe(true);
+    expect((byText(root, "button", "Comenzar lectura") as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

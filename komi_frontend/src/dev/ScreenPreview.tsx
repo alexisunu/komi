@@ -28,6 +28,7 @@ export type PreviewScreen =
   | "dashboard"
   | "timer"
   | "timer-grace"
+  | "timer-free"
   | "timer-confirm";
 
 function book(over: Partial<LocalBook> & Pick<LocalBook, "id" | "title" | "author">): LocalBook {
@@ -113,13 +114,14 @@ async function drive(screen: PreviewScreen) {
 
 const FAKE_WAKE_LOCK = { acquire: async () => {}, release: async () => {} } as unknown as WakeLockService;
 
-function snapshot(phase: "running" | "grace"): FocusSnapshot {
+function snapshot(phase: "running" | "grace", timerType: "TIMER" | "FREE" = "TIMER"): FocusSnapshot {
+  const free = timerType === "FREE";
   return {
     phase,
-    remainingMs: 754_200,
+    remainingMs: free ? 7_054_200 : 754_200,
     elapsedMs: 145_800,
-    plannedSec: 900,
-    timerType: "TIMER",
+    plannedSec: free ? 7200 : 900,
+    timerType,
     graceRemainingMs: phase === "grace" ? 9_100 : 0,
     actualSec: null,
     sessionId: "s",
@@ -132,11 +134,11 @@ function PreviewBody({ screen }: { screen: PreviewScreen }) {
   if (screen === "dashboard") {
     return <DashboardScreen streakDays={4} book={kokoro} dailyGoalMinutes={15} canStart onStart={() => {}} />;
   }
-  if (screen === "timer" || screen === "timer-grace" || screen === "timer-confirm") {
+  if (screen === "timer" || screen === "timer-grace" || screen === "timer-confirm" || screen === "timer-free") {
     return (
       <PhysicalTimerScreen
         book={kokoro}
-        snapshot={snapshot(screen === "timer-grace" ? "grace" : "running")}
+        snapshot={snapshot(screen === "timer-grace" ? "grace" : "running", screen === "timer-free" ? "FREE" : "TIMER")}
         wakeLock={FAKE_WAKE_LOCK}
         peekFinish={() => ({ actualSec: 145, enough: false })}
         onFinish={() => {}}
@@ -156,7 +158,7 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
     <ThemeProvider storedMode={theme}>
       <div className="app-shell" data-preview={SCREEN_PREVIEW_MARKER}>
         <div className="app-shell__screen">
-          {["dashboard", "timer", "timer-grace", "timer-confirm"].includes(screen) ? (
+          {["dashboard", "timer", "timer-grace", "timer-confirm", "timer-free"].includes(screen) ? (
             <PreviewBody screen={screen} />
           ) : (
           <MyGardenScreen

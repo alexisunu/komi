@@ -88,6 +88,7 @@ describe("geometryTokens", () => {
     expect(GEOMETRY["radius-card"]).toBe("20px");
     expect(GEOMETRY["radius-input"]).toBe("12px");
     expect(GEOMETRY["nav-height"]).toBe("64px");
+    expect(GEOMETRY["segment-height"]).toBe("36px");
   });
 
   it("ningun token de geometria depende de un color (se resolveria en :root y romperia temas anidados)", () => {

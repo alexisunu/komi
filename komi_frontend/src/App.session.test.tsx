@@ -77,7 +77,8 @@ async function submitPage(page: string) {
   await tap(byText(sheet() as HTMLElement, "button", "Actualizar Girasol"));
   await settle();
 }
-const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lectura") as HTMLButtonElement;
+const byLabel = (root: ParentNode, label: string) => root.querySelector(`[aria-label="${label}"]`);
+const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
 
 interface Setup {
   env: FocusEnv;
@@ -660,5 +661,91 @@ describe("modo libre (la sesion se siembra: el selector del Dashboard llega desp
     expect(root.querySelector("[role=timer]")?.textContent).toBe("14:52");
     expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo restante");
     expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Temporizador · 10 %");
+  });
+});
+
+describe("selector Temporizador | Libre en la app", () => {
+  const radios = (root: HTMLElement) => [...root.querySelectorAll('[role="radio"]')] as HTMLButtonElement[];
+  const checked = (root: HTMLElement) => radios(root).map((r) => r.getAttribute("aria-checked"));
+  const timerMode = async () => (await db.meta.get(META_KEYS.timerMode))?.value;
+
+  it("la clave de meta es timer_mode", () => {
+    expect(META_KEYS.timerMode).toBe("timer_mode");
+  });
+
+  it("sin nada guardado empieza en Temporizador", async () => {
+    const { root } = await mountApp([book(1)]);
+    expect(checked(root)).toEqual(["true", "false"]);
+    expect(root.querySelector(".dashboard__free")).toBeNull();
+  });
+
+  it("recuerda la ultima eleccion: con FREE guardado abre en Libre", async () => {
+    await db.meta.put({ key: META_KEYS.timerMode, value: "FREE" });
+    const { root } = await mountApp([book(1)]);
+    await settle();
+    expect(checked(root)).toEqual(["false", "true"]);
+    expect(root.querySelector(".dashboard__free")?.textContent).toContain("Sin límite de tiempo");
+    expect(root.querySelector("output")).toBeNull();
+  });
+
+  it.each([["OTRO"], [""], [7], [null], [{ mode: "FREE" }]])(
+    "un valor guardado invalido (%j) cae a Temporizador",
+    async (stored) => {
+      await db.meta.put({ key: META_KEYS.timerMode, value: stored as never });
+      const { root } = await mountApp([book(1)]);
+      await settle();
+      expect(checked(root)).toEqual(["true", "false"]);
+      expect(root.querySelector("output")?.textContent).toBe("15:00");
+    },
+  );
+
+  it("elegir un modo lo guarda en local y sobrevive a reabrir la app", async () => {
+    const first = await mountApp([book(1)]);
+    await tap(radios(first.root)[1]);
+    expect(await timerMode()).toBe("FREE");
+    mounted?.unmount();
+    const again = await mountApp([], first.env);
+    await settle();
+    expect(checked(again.root)).toEqual(["false", "true"]);
+    await tap(radios(again.root)[0]);
+    expect(await timerMode()).toBe("TIMER");
+  });
+
+  it("el modo no se sincroniza: solo vive en meta, no toca perfil ni libros", async () => {
+    const { root } = await mountApp([book(1)]);
+    await tap(radios(root)[1]);
+    expect((await db.books.get(uuid(1)))?.pending_sync).toBe(0);
+    expect(await db.sessions.count()).toBe(0);
+  });
+
+  it("empezar en Libre inicia una sesion FREE: cronometro en 00:00, sin tiempo programado y con el tope", async () => {
+    const { root } = await mountApp([book(1)]);
+    await tap(radios(root)[1]);
+    await tap(startButton(root));
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("00:00");
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Modo libre · 10 %");
+    expect(await storedSession()).toMatchObject({ timerType: "FREE", plannedSec: 7200 });
+  });
+
+  it("empezar en Temporizador sigue enviando TIMER con los minutos del selector", async () => {
+    const { root } = await mountApp([book(1)]);
+    await tap(byLabel(root, "Sumar 5 minutos"));
+    await tap(startButton(root));
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("20:00");
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Temporizador · 10 %");
+    expect(await storedSession()).toMatchObject({ timerType: "TIMER", plannedSec: 1200 });
+  });
+
+  it("al terminar una sesion libre y volver, el selector sigue en Libre", async () => {
+    const { root, env } = await mountApp([book(1)]);
+    await tap(radios(root)[1]);
+    await tap(startButton(root));
+    env.advance(600_000);
+    await tap(byText(root, "button", "Terminar sesión"));
+    await settle();
+    await submitPage("60");
+    await tap(byText(sheet() as HTMLElement, "button", "Por hoy no, volver al jardín"));
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(checked(root)).toEqual(["false", "true"]);
   });
 });

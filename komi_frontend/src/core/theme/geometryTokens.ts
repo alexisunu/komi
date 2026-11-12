@@ -24,6 +24,8 @@ export const GEOMETRY = {
   "focus-ring-width": "2px",
   "focus-offset": "3px",
   "touch-target": "44px",
+  // Segmento del selector Temporizador | Libre (SRS 10.7, mockup 07): 36 px dentro de una pastilla de 44.
+  "segment-height": "36px",
   // Botones (SRS 10.1).
   "button-height": "56px",
   "button-secondary-height": "48px",
