@@ -38,6 +38,11 @@ export interface EpubReaderScreenProps {
   onFontPx: (size: ReaderFontSize) => void;
   peekEarlyFinish: FocusVisibilityService["peekEarlyFinish"];
   onAcceptEarly: () => void;
+  /**
+   * "Hablar con Komi": se avisa justo antes de aceptar el cierre para que, al guardarse la lectura,
+   * la charla se abra sola. Con menos del 50 % no se llama: la sesion se cancela y no hay charla.
+   */
+  onTalkRequested?: () => void;
   onCancel: () => void | Promise<void>;
 }
 
@@ -58,6 +63,7 @@ export function EpubReaderScreen({
   onFontPx,
   peekEarlyFinish,
   onAcceptEarly,
+  onTalkRequested,
   onCancel,
 }: EpubReaderScreenProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -85,6 +91,15 @@ export function EpubReaderScreen({
   const finishEarly = () => {
     if (earlyFinishAllowed(peekEarlyFinish(), view.currentPercentage())) onAcceptEarly();
     else setConfirming(true);
+  };
+
+  // Misma regla del 50 % que Terminar sesion, sin confirmacion extra: con el tiempo cumplido guarda y
+  // abre la charla; con menos, aparece la misma hoja de siempre (cancelar o seguir leyendo).
+  const talkToKomi = () => {
+    if (earlyFinishAllowed(peekEarlyFinish(), view.currentPercentage())) {
+      onTalkRequested?.();
+      onAcceptEarly();
+    } else setConfirming(true);
   };
 
   // El tiempo siguio corriendo con la hoja abierta: puede que ya se pase del 50 %.
@@ -222,8 +237,7 @@ export function EpubReaderScreen({
             <ReaderMenu
               theme={theme}
               onClose={() => setMenuOpen(false)}
-              // Provisional (unidad 6): igual que Terminar sesion; la charla se ofrece al guardar.
-              onTalk={fromMenu(finishEarly)}
+              onTalk={fromMenu(talkToKomi)}
               onFinish={fromMenu(finishEarly)}
               onFontSize={fromMenu(() => setFontSheet(true))}
               onToggleTheme={fromMenu(onToggleTheme)}

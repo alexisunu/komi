@@ -208,7 +208,11 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   const [streakDays, setStreakDays] = useState(initial?.streakDays ?? 0);
   // Sesion que se esta cerrando. Se fija al terminar y sobrevive a `focus.leave()`: la hoja sigue
   // en pantalla (Paso 2) aunque el registro de la sesion ya se haya borrado.
-  const [closing, setClosing] = useState<{ sessionId: string; actualSec: number | null } | null>(null);
+  const [closing, setClosing] = useState<{ sessionId: string; actualSec: number | null; autoChat: boolean } | null>(
+    null,
+  );
+  // "Hablar con Komi" del lector: la proxima hoja de cierre abre la charla sola al guardar.
+  const [talkNext, setTalkNext] = useState(false);
   // Charla con Komi (CU-05) de la sesion recien guardada; sustituye a la hoja mientras dura.
   const [chat, setChat] = useState<{ sessionId: string; book: LocalBook } | null>(null);
 
@@ -301,7 +305,8 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
 
   const snapshot = focus.snapshot;
   if (closing === null && snapshot && (snapshot.phase === "completed" || snapshot.phase === "early")) {
-    setClosing({ sessionId: snapshot.sessionId, actualSec: snapshot.actualSec });
+    setClosing({ sessionId: snapshot.sessionId, actualSec: snapshot.actualSec, autoChat: talkNext });
+    if (talkNext) setTalkNext(false);
   }
 
   // Guardado terminado (CU-04): ya se pueden borrar los registros y soltar la recarga.
@@ -384,6 +389,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
               onFontPx={changeFontPx}
               peekEarlyFinish={focus.peekEarlyFinish}
               onAcceptEarly={focus.acceptEarlyFinish}
+              onTalkRequested={() => setTalkNext(true)}
               onCancel={focus.leave}
             />
           ) : (
@@ -432,6 +438,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             key={closing.sessionId}
             sessionId={closing.sessionId}
             actualSec={closing.actualSec}
+            autoChat={closing.autoChat}
             service={deps.postReading}
             onSaved={onReadingSaved}
             onDiscard={focus.leave}

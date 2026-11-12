@@ -30,6 +30,11 @@ export interface PostReadingSheetProps {
   sessionId: string;
   /** Segundos finales que vio la pantalla: respaldo si el registro aun no los trae. */
   actualSec?: number | null;
+  /**
+   * "Hablar con Komi": al guardarse la lectura y aceptarla el servidor, abre la charla sin pedir otra
+   * vez. Si el servidor no la acepta, la hoja muestra el motivo de siempre.
+   */
+  autoChat?: boolean;
   service: PostReadingService;
   /** El guardado termino bien: borrar los registros de la sesion y soltar la recarga. */
   onSaved: (result: SavedReading) => void | Promise<void>;
@@ -69,6 +74,7 @@ function errorText(error: unknown): string {
 export function PostReadingSheet({
   sessionId,
   actualSec = null,
+  autoChat = false,
   service,
   onSaved,
   onDiscard,
@@ -85,6 +91,7 @@ export function PostReadingSheet({
   const [gateAttempt, setGateAttempt] = useState(0);
   const mounted = useRef(false);
   const started = useRef(false);
+  const autoOpened = useRef(false);
   const pageId = useId();
   const noticeId = useId();
 
@@ -197,6 +204,13 @@ export function PostReadingSheet({
       alive = false;
     };
   }, [saved, sessionId, checkChat, gateAttempt]);
+
+  // Con "Hablar con Komi", la charla se abre en cuanto el servidor acepta la sesion (una sola vez).
+  useEffect(() => {
+    if (!autoChat || autoOpened.current || saved === null || chatGate.kind !== "ready") return;
+    autoOpened.current = true;
+    onChat(saved);
+  }, [autoChat, saved, chatGate, onChat]);
 
   const retryGate = () => {
     setChatGate({ kind: "checking" });
@@ -311,7 +325,9 @@ export function PostReadingSheet({
             </p>
           )}
 
-          {saved && <p className="post-reading__question">¿Quieres charlar un poco sobre lo que acabas de leer?</p>}
+          {saved && !(autoChat && chatGate.kind !== "blocked") && (
+            <p className="post-reading__question">¿Quieres charlar un poco sobre lo que acabas de leer?</p>
+          )}
           {saved && chatGate.kind === "checking" && (
             <p className="post-reading__text" role="status">
               {waking ? "Despertando a Komi" : "Sincronizando tu sesión"}

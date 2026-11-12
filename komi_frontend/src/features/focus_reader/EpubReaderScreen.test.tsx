@@ -94,6 +94,7 @@ async function mount(
   };
   const onFontPx = vi.fn();
   const onToggleTheme = vi.fn();
+  const onTalkRequested = vi.fn();
   const onAcceptEarly = vi.fn();
   const onCancel = vi.fn();
   const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, belowHalf: false } : over.early));
@@ -105,6 +106,7 @@ async function mount(
       wakeLock={lock as unknown as WakeLockService}
       theme={theme}
       onToggleTheme={onToggleTheme}
+      onTalkRequested={onTalkRequested}
       fontPx={fontPx}
       onFontPx={onFontPx}
       peekEarlyFinish={peek}
@@ -120,6 +122,7 @@ async function mount(
     lock,
     onFontPx,
     onToggleTheme,
+    onTalkRequested,
     onAcceptEarly,
     onCancel,
     rerender: (theme: ThemeId, snapshot = over.snapshot ?? snap(), fontPx: ReaderFontSize = over.fontPx ?? 18) =>
@@ -384,6 +387,34 @@ describe("EpubReaderScreen", () => {
       expect(root.querySelector(".reader-menu")).toBeNull();
       expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
       expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+    });
+
+    it("Hablar con Komi con el tiempo cumplido avisa y acepta el cierre, en ese orden", async () => {
+      const ctx = await hidden({ early: { actualSec: 600, belowHalf: false } });
+      const order: string[] = [];
+      ctx.onTalkRequested.mockImplementation(() => order.push("talk"));
+      ctx.onAcceptEarly.mockImplementation(() => order.push("accept"));
+      click(button(ctx.root, "Abrir menú"));
+      click(button(ctx.root, "Hablar con Komi"));
+      expect(order).toEqual(["talk", "accept"]);
+      expect(ctx.root.querySelector(".reader-menu")).toBeNull();
+    });
+
+    it("Hablar con Komi con menos del 50 % pide la confirmacion y no avisa de la charla", async () => {
+      const ctx = await hidden({ early: { actualSec: 100, belowHalf: true } });
+      click(button(ctx.root, "Abrir menú"));
+      click(button(ctx.root, "Hablar con Komi"));
+      expect(ctx.onTalkRequested).not.toHaveBeenCalled();
+      expect(ctx.onAcceptEarly).not.toHaveBeenCalled();
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("¿Terminar sin guardar?");
+    });
+
+    it("Terminar sesion no avisa de la charla", async () => {
+      const ctx = await hidden({ early: { actualSec: 600, belowHalf: false } });
+      click(button(ctx.root, "Abrir menú"));
+      click(button(ctx.root, "Terminar sesión"));
+      expect(ctx.onAcceptEarly).toHaveBeenCalledTimes(1);
+      expect(ctx.onTalkRequested).not.toHaveBeenCalled();
     });
 
     it("Mostrar interfaz cierra el menu y devuelve la cabecera y el pie", async () => {
