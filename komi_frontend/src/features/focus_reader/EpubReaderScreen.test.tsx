@@ -175,18 +175,41 @@ describe("EpubReaderScreen", () => {
     expect(fake.handle.setTheme).toHaveBeenLastCalledWith(expect.objectContaining({ fontPx: 22 }));
   });
 
-  it("los botones de letra suben y bajan de 2 en 2 y se detienen en 16 y 22", async () => {
+  it("el boton T abre el selector con las cuatro medidas y marca la actual", async () => {
+    const { root } = await mount({ fontPx: 20 });
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+    click(button(root, "Tamaño de letra"));
+    const options = [...document.querySelectorAll('[role="radio"]')];
+    expect(options.map((o) => o.getAttribute("aria-label"))).toEqual([
+      "16 píxeles",
+      "18 píxeles",
+      "20 píxeles",
+      "22 píxeles",
+    ]);
+    expect(options.map((o) => o.getAttribute("aria-checked"))).toEqual(["false", "false", "true", "false"]);
+  });
+
+  it("elegir una medida la aplica y deja el selector abierto", async () => {
     const { root, onFontPx } = await mount({ fontPx: 18 });
-    click(button(root, "Letra más grande"));
-    expect(onFontPx).toHaveBeenLastCalledWith(20);
-    click(button(root, "Letra más pequeña"));
-    expect(onFontPx).toHaveBeenLastCalledWith(16);
-    unmountNow();
-    const small = await mount({ fontPx: 16 });
-    expect(button(small.root, "Letra más pequeña")?.disabled).toBe(true);
-    unmountNow();
-    const big = await mount({ fontPx: 22 });
-    expect(button(big.root, "Letra más grande")?.disabled).toBe(true);
+    click(button(root, "Tamaño de letra"));
+    click(document.querySelector('[aria-label="22 píxeles"]'));
+    expect(onFontPx).toHaveBeenCalledWith(22);
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
+  });
+
+  it("el selector se cierra con Escape", async () => {
+    const { root } = await mount();
+    click(button(root, "Tamaño de letra"));
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull();
+  });
+
+  it("ya no hay botones de letra mas grande o mas pequena en el encabezado", async () => {
+    const { root } = await mount();
+    expect(button(root, "Letra más grande")).toBeUndefined();
+    expect(button(root, "Letra más pequeña")).toBeUndefined();
   });
 
   it("los botones de pagina llaman al lector", async () => {
@@ -351,6 +374,15 @@ describe("EpubReaderScreen", () => {
       click(button(root, "Modo noche"));
       expect(onToggleTheme).toHaveBeenCalledTimes(1);
       expect(root.querySelector(".reader-menu")).toBeNull();
+      expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+    });
+
+    it("Tamaño de letra del menu cierra el menu y abre el selector sin mostrar la interfaz", async () => {
+      const { root } = await hidden();
+      click(button(root, "Abrir menú"));
+      click(button(root, "Tamaño de letra"));
+      expect(root.querySelector(".reader-menu")).toBeNull();
+      expect(document.querySelector('[role="radiogroup"]')).not.toBeNull();
       expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
     });
 

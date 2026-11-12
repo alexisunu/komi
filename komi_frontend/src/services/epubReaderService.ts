@@ -49,6 +49,16 @@ export interface EpubReaderService {
   open(input: OpenReaderInput): Promise<ReaderHandle>;
 }
 
+/** CFI de inicio de la pagina visible, o `null` si epubjs aun no tiene posicion. */
+function currentStartCfi(rendition: Rendition): string | null {
+  try {
+    const location = rendition.currentLocation() as unknown as { start?: { cfi?: string } } | undefined;
+    return location?.start?.cfi ? location.start.cfi : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Texto entre el inicio y el fin de la pagina. Vacio si epubjs no puede construir el rango. */
 function visibleText(rendition: Rendition, location: Location): string {
   try {
@@ -64,6 +74,9 @@ function visibleText(rendition: Rendition, location: Location): string {
 }
 
 const THEME_KEY = "komi";
+
+/** Espera a que termine el reflujo tras cambiar el tamano de letra antes de volver al CFI. */
+export const SETTLE_MS = 250;
 
 /** Tope de espera a las fuentes al reabrir: pasado el, se lee con lo que haya. */
 export const FONT_WAIT_MS = 2_000;
@@ -174,10 +187,24 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         });
       });
 
+      let currentFontPx = input.theme.fontPx;
       const applyTheme = (theme: ReaderThemeInput) => {
+        // Con otro tamano de letra cambia la paginacion y la pagina vigente se desplaza: se anota
+        // el CFI de inicio y se vuelve a el al reacomodar el texto (medido: sin esto, agrandar la
+        // letra perdia la pagina). Cambiar solo el color no mueve nada.
+        const resumeAt = theme.fontPx !== currentFontPx ? currentStartCfi(rendition) : null;
+        currentFontPx = theme.fontPx;
         themeCss = buildReaderCss(theme);
         rendition.themes.registerCss(THEME_KEY, themeCss);
         rendition.themes.select(THEME_KEY);
+        if (resumeAt) {
+          // Un ajuste de posicion nunca debe romper la lectura.
+          // El texto se reacomoda despues de cambiar la hoja de estilos: se vuelve al CFI al
+          // instante y otra vez cuando el reflujo ya termino.
+          const back = () => Promise.resolve(rendition.display(resumeAt)).catch(() => {});
+          void back();
+          setTimeout(() => void back(), SETTLE_MS);
+        }
       };
       applyTheme(input.theme);
 

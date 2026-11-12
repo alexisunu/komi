@@ -28,26 +28,25 @@
 
 .epub-reader__time {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
+  flex-direction: column;
 }
 
 .epub-reader__clock {
-  color: var(--color-text-secondary);
-  font-size: var(--font-body-size);
-  line-height: var(--font-body-line);
+  color: var(--color-text-primary);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
   font-weight: 600;
 }
 
 .epub-reader__percent {
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }
 
-.epub-reader__fonts {
+.epub-reader__actions {
   display: flex;
-  gap: 0;
+  gap: var(--space-1);
 }
 
 .epub-reader__icon {
@@ -64,6 +63,12 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: color var(--transition-ui);
+}
+
+/* Circulo con fondo (encabezado, mockup 02). */
+.epub-reader__icon--filled {
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
 }
 
 .epub-reader__icon:disabled {

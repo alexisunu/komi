@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEpubReaderService, FONT_WAIT_MS, type ReaderPosition } from "./epubReaderService";
+import { createEpubReaderService, FONT_WAIT_MS, SETTLE_MS, type ReaderPosition } from "./epubReaderService";
 
 // epubjs no dibuja paginas en jsdom: aqui se prueba la traduccion hacia y desde epubjs con un
 // libro falso. El motor real se verifica a mano con libros reales (SRS 19.16).
@@ -20,6 +20,7 @@ function fakeBook(options: { locations: boolean; displayFails?: boolean; fonts?:
       if (options.displayFails && target) throw new Error("cfi invalido");
     }),
     getContents: vi.fn(() => (options.fonts ?? []).map((fonts) => ({ document: { fonts } }))),
+    currentLocation: vi.fn(() => ({ start: { cfi: "pagina-actual" } })),
     next: vi.fn(async () => {}),
     prev: vi.fn(async () => {}),
     resize: vi.fn(),
@@ -95,6 +96,55 @@ describe("epubReaderService.open", () => {
     await open(fake);
     expect(fake.rendition.themes.registerCss).toHaveBeenCalledWith("komi", expect.stringContaining("Lora"));
     expect(fake.rendition.themes.select).toHaveBeenCalledWith("komi");
+  });
+
+  describe("cambio de tamano de letra", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("vuelve al CFI de la pagina vigente al instante y otra vez cuando el reflujo termino", async () => {
+      vi.useFakeTimers();
+      const fake = fakeBook({ locations: true });
+      const { handle } = await open(fake);
+      fake.rendition.display.mockClear();
+      handle.setTheme({ theme: "light", fontPx: 22, fontBaseUrl: "https://komi.test/" });
+      expect(fake.rendition.display).toHaveBeenCalledTimes(1);
+      expect(fake.rendition.display).toHaveBeenLastCalledWith("pagina-actual");
+      await vi.advanceTimersByTimeAsync(SETTLE_MS - 1);
+      expect(fake.rendition.display).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fake.rendition.display).toHaveBeenCalledTimes(2);
+      expect(fake.rendition.display).toHaveBeenLastCalledWith("pagina-actual");
+    });
+
+    it("cambiar solo el tema (mismo tamano) no mueve la pagina", async () => {
+      vi.useFakeTimers();
+      const fake = fakeBook({ locations: true });
+      const { handle } = await open(fake);
+      fake.rendition.display.mockClear();
+      handle.setTheme({ theme: "dark", fontPx: 18, fontBaseUrl: "https://komi.test/" });
+      await vi.advanceTimersByTimeAsync(SETTLE_MS * 2);
+      expect(fake.rendition.display).not.toHaveBeenCalled();
+    });
+
+    it("sin posicion todavia (epubjs aun no la tiene) cambia el tamano sin intentar volver", async () => {
+      vi.useFakeTimers();
+      const fake = fakeBook({ locations: true });
+      fake.rendition.currentLocation.mockReturnValue(undefined as never);
+      const { handle } = await open(fake);
+      fake.rendition.display.mockClear();
+      handle.setTheme({ theme: "light", fontPx: 20, fontBaseUrl: "https://komi.test/" });
+      await vi.advanceTimersByTimeAsync(SETTLE_MS * 2);
+      expect(fake.rendition.display).not.toHaveBeenCalled();
+    });
+
+    it("si volver al CFI falla, la lectura sigue sin error", async () => {
+      vi.useFakeTimers();
+      const fake = fakeBook({ locations: true });
+      const { handle } = await open(fake);
+      fake.rendition.display.mockRejectedValue(new Error("fallo"));
+      expect(() => handle.setTheme({ theme: "light", fontPx: 16, fontBaseUrl: "https://komi.test/" })).not.toThrow();
+      await vi.advanceTimersByTimeAsync(SETTLE_MS * 2);
+    });
   });
 
   it("setTheme reaplica el CSS con el tema y tamano nuevos", async () => {

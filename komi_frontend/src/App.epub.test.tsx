@@ -566,7 +566,8 @@ describe("gracia y tamano de letra en el lector", () => {
     const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
-    await tap(root.querySelector('[aria-label="Letra más grande"]'));
+    await tap(root.querySelector('[aria-label="Tamaño de letra"]'));
+    await tap(document.querySelector('[aria-label="20 píxeles"]'));
     expect((await db.meta.get(META_KEYS.readerFontSize))?.value).toBe(20);
     expect(fake.handle.setTheme).toHaveBeenLastCalledWith(expect.objectContaining({ fontPx: 20, theme: "light" }));
     expect(fake.open).toHaveBeenCalledTimes(1); // no se reabre el libro
@@ -578,7 +579,8 @@ describe("gracia y tamano de letra en el lector", () => {
     await tap(openButton(root));
     await settle();
     expect(fake.inputs[0]?.theme.fontPx).toBe(22);
-    expect((root.querySelector('[aria-label="Letra más grande"]') as HTMLButtonElement).disabled).toBe(true);
+    await tap(root.querySelector('[aria-label="Tamaño de letra"]'));
+    expect(document.querySelector('[aria-label="22 píxeles"]')?.getAttribute("aria-checked")).toBe("true");
   });
 
   it("ignora un tamano guardado que no es valido", async () => {

@@ -1,12 +1,12 @@
-// Lector ePub Zen (CU-03, paso 4). Tres bloques: encabezado (reloj sutil, avance y tamano de
-// letra), la pagina del libro y el pie (pagina anterior, "Terminé antes de tiempo", pagina
+// Lector ePub Zen (CU-03, paso 4). Tres bloques: encabezado (reloj, avance, boton de tamano de
+// letra y de ocultar), la pagina del libro y el pie (pagina anterior, "Terminé antes de tiempo", pagina
 // siguiente). Sin navegacion inferior. La interfaz se puede ocultar (SRS 10.8): queda el texto,
 // una linea de progreso de 2 px y un boton flotante que abre el menu (tambien el tercio central);
 // cada sesion empieza con la interfaz visible.
 // El tiempo lo lleva la misma maquina que el libro fisico: el aviso de gracia es una
 // superposicion flotante arriba, visible tambien con la interfaz oculta.
 
-import { AArrowDown, AArrowUp, ChevronLeft, ChevronRight, Ellipsis, EyeOff, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Ellipsis, EyeOff, Type, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ZenSheet } from "../../core/components/ZenSheet";
@@ -14,15 +14,12 @@ import type { ThemeId } from "../../core/theme/colorTokens";
 import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
 import type { FocusSnapshot, FocusVisibilityService } from "../../services/focusVisibilityService";
-import {
-  FONT_SIZES,
-  stepFontSize,
-  type ReaderFontSize,
-} from "../../services/readerTheme";
+import type { ReaderFontSize } from "../../services/readerTheme";
 import { earlyFinishAllowed } from "../../services/readingTracker";
 import type { WakeLockService } from "../../services/wakeLockService";
 import { formatClock } from "./clockFormat";
 import "./EpubReaderScreen.css";
+import { FontSizeSheet } from "./FontSizeSheet";
 import { GracePeriodBanner } from "./GracePeriodBanner";
 import { ReaderMenu } from "./ReaderMenu";
 import { useEpubReader, type EpubReaderDeps } from "./useEpubReader";
@@ -68,6 +65,7 @@ export function EpubReaderScreen({
   // Interfaz oculta: no se recuerda entre sesiones (la pantalla se monta con `key={sessionId}`).
   const [immersive, setImmersive] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [fontSheet, setFontSheet] = useState(false);
   const inGrace = snapshot.phase === "grace";
 
   useWakeLock(wakeLock, true);
@@ -123,28 +121,18 @@ export function EpubReaderScreen({
                 {view.percentage !== null && <> · {Math.floor(view.percentage)} %</>}
               </span>
             </div>
-            <div className="epub-reader__fonts" role="group" aria-label="Tamaño de letra">
+            <div className="epub-reader__actions">
               <button
                 type="button"
-                className="epub-reader__icon"
-                aria-label="Letra más pequeña"
-                disabled={fontPx === FONT_SIZES[0]}
-                onClick={() => onFontPx(stepFontSize(fontPx, "smaller"))}
+                className="epub-reader__icon epub-reader__icon--filled"
+                aria-label="Tamaño de letra"
+                onClick={() => setFontSheet(true)}
               >
-                <AArrowDown size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+                <Type size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
               </button>
               <button
                 type="button"
-                className="epub-reader__icon"
-                aria-label="Letra más grande"
-                disabled={fontPx === FONT_SIZES[FONT_SIZES.length - 1]}
-                onClick={() => onFontPx(stepFontSize(fontPx, "larger"))}
-              >
-                <AArrowUp size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="epub-reader__icon"
+                className="epub-reader__icon epub-reader__icon--filled"
                 aria-label="Ocultar interfaz"
                 onClick={() => setImmersive(true)}
               >
@@ -237,14 +225,15 @@ export function EpubReaderScreen({
               // Provisional (unidad 6): igual que Terminar sesion; la charla se ofrece al guardar.
               onTalk={fromMenu(finishEarly)}
               onFinish={fromMenu(finishEarly)}
-              // Provisional (unidad 3): muestra la interfaz, donde estan los botones de tamano.
-              onFontSize={fromMenu(() => setImmersive(false))}
+              onFontSize={fromMenu(() => setFontSheet(true))}
               onToggleTheme={fromMenu(onToggleTheme)}
               onShowInterface={fromMenu(() => setImmersive(false))}
             />
           )}
         </>
       )}
+
+      {fontSheet && <FontSizeSheet fontPx={fontPx} onFontPx={onFontPx} onClose={() => setFontSheet(false)} />}
 
       {confirming && (
         <ZenSheet title="¿Terminar sin guardar?" onClose={() => setConfirming(false)}>

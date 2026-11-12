@@ -1,0 +1,56 @@
+/* Selector del tamano de letra. Solo tokens de core/theme; el unico valor propio es el tamano de
+   la muestra, que es justo lo que se esta eligiendo (16 a 22 px). */
+
+.font-size-sheet {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.font-size-sheet__option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: calc(var(--touch-target) + var(--space-4));
+  padding: var(--space-1);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color var(--transition-ui),
+    background-color var(--transition-ui);
+}
+
+.font-size-sheet__option--selected {
+  border-color: var(--color-text-primary);
+  background: var(--color-bg-elevated);
+}
+
+.font-size-sheet__option:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+.font-size-sheet__sample {
+  font-family: var(--font-serif);
+  line-height: 1;
+}
+
+.font-size-sheet__value {
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .font-size-sheet__option {
+    transition: none;
+  }
+}
