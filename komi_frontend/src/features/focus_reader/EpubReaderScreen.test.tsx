@@ -193,18 +193,78 @@ describe("EpubReaderScreen", () => {
     expect(fake.handle.prev).toHaveBeenCalledTimes(1);
   });
 
-  it("muestra el porcentaje solo cuando existe", async () => {
+  it("subtitulo del modo y avance: el porcentaje solo aparece cuando existe", async () => {
     const { root, fake } = await mount();
-    expect(root.querySelector(".epub-reader__percent")).toBeNull();
+    const subtitle = () => root.querySelector(".epub-reader__percent")?.textContent?.replace(/\s+/g, " ").trim();
+    expect(subtitle()).toBe("Temporizador");
     await act(async () => fake.see({ cfi: "c", percentage: 33.7, text: "" }));
-    expect(root.querySelector(".epub-reader__percent")?.textContent).toBe("33 %");
+    expect(subtitle()).toBe("Temporizador · 33 %");
     await act(async () => fake.see({ cfi: "d", percentage: null, text: "" }));
-    expect(root.querySelector(".epub-reader__percent")?.textContent).toBe("33 %"); // no se borra ni se inventa
+    expect(subtitle()).toBe("Temporizador · 33 %"); // no se borra ni se inventa
   });
 
-  it("en gracia aparece el aviso en el encabezado", async () => {
+  it("en gracia el aviso es una superposicion flotante, fuera del encabezado y del flujo", async () => {
     const { root } = await mount({ snapshot: snap({ phase: "grace", graceRemainingMs: 9_100 }) });
-    expect(root.querySelector(".epub-reader__header .grace-banner")?.textContent).toContain("10 s");
+    const banner = root.querySelector(".epub-reader__grace .grace-banner");
+    expect(banner?.textContent).toContain("10 s");
+    expect(root.querySelector(".epub-reader__header .grace-banner")).toBeNull();
+  });
+
+  describe("interfaz oculta", () => {
+    it("empieza visible: cabecera, pagina y pie, sin linea de progreso ni boton flotante", async () => {
+      const { root } = await mount();
+      expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+      expect(root.querySelector(".epub-reader__header")).not.toBeNull();
+      expect(root.querySelector(".epub-reader__footer")).not.toBeNull();
+      expect(root.querySelector(".epub-reader__progress")).toBeNull();
+      expect(root.querySelector(".epub-reader__float")).toBeNull();
+    });
+
+    it("Ocultar interfaz deja solo el texto, la linea de progreso y el boton flotante", async () => {
+      const { root, fake } = await mount();
+      await act(async () => fake.see({ cfi: "c", percentage: 40, text: "" }));
+      click(button(root, "Ocultar interfaz"));
+      expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+      expect(root.querySelector(".epub-reader__header")).toBeNull();
+      expect(root.querySelector(".epub-reader__footer")).toBeNull();
+      expect(root.querySelector(".epub-reader__page")).not.toBeNull();
+      const line = root.querySelector('.epub-reader__progress[role="progressbar"]');
+      expect(line?.getAttribute("aria-valuenow")).toBe("40");
+      const fill = root.querySelector<HTMLElement>(".epub-reader__progress-fill");
+      expect(fill?.style.transform).toBe("scaleX(0.4)");
+      expect(root.querySelector(".epub-reader__float")).not.toBeNull();
+    });
+
+    it("la linea de progreso no existe si el libro no tiene locations (nunca uno inventado)", async () => {
+      const { root } = await mount();
+      click(button(root, "Ocultar interfaz"));
+      expect(root.querySelector(".epub-reader__progress")).toBeNull();
+    });
+
+    it("el libro no se reabre al ocultar o mostrar la interfaz", async () => {
+      const { root, fake } = await mount();
+      click(button(root, "Ocultar interfaz"));
+      click(button(root, "Mostrar interfaz"));
+      expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+      expect(fake.open).toHaveBeenCalledTimes(1);
+    });
+
+    it("el tercio central con la interfaz visible no hace nada; oculta, la devuelve", async () => {
+      const { root, fake } = await mount();
+      act(() => fake.inputs[0]?.onCenterTap?.());
+      expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+      click(button(root, "Ocultar interfaz"));
+      act(() => fake.inputs[0]?.onCenterTap?.());
+      expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+      expect(root.querySelector(".epub-reader__header")).not.toBeNull();
+    });
+
+    it("el aviso de gracia se ve tambien con la interfaz oculta", async () => {
+      const { root, rerender } = await mount();
+      click(button(root, "Ocultar interfaz"));
+      rerender("light", snap({ phase: "grace", graceRemainingMs: 9_100 }));
+      expect(root.querySelector(".epub-reader--immersive .epub-reader__grace .grace-banner")).not.toBeNull();
+    });
   });
 
   it("sin archivo: aviso en terracota y Salir sin guardar", async () => {

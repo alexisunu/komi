@@ -97,10 +97,10 @@ describe("tamano de letra", () => {
 });
 
 describe("gestos", () => {
-  it("tercios del toque: atras, nada, adelante", () => {
+  it("tercios del toque: atras, menu, adelante", () => {
     expect(tapAction(10, 300)).toBe("prev");
     expect(tapAction(99, 300)).toBe("prev");
-    expect(tapAction(150, 300)).toBeNull();
+    expect(tapAction(150, 300)).toBe("menu");
     expect(tapAction(201, 300)).toBe("next");
     expect(tapAction(290, 300)).toBe("next");
   });
@@ -115,7 +115,7 @@ describe("gestos", () => {
     expect(x).toBe(300);
     expect(tapAction(x, 340)).toBe("next");
     // Con el ancho del iframe (1020) como referencia el mismo toque caia en el centro: el error que se corrige.
-    expect(tapAction(clientX, 1020)).toBeNull();
+    expect(tapAction(clientX, 1020)).toBe("menu");
     expect(tapAction(toHostX(340 + 20, frameLeft, hostLeft), 340)).toBe("prev");
   });
 

@@ -54,7 +54,7 @@ const THEME = { theme: "light", fontPx: 18, fontBaseUrl: "https://komi.test/" } 
 
 async function open(
   fake: ReturnType<typeof fakeBook>,
-  over: { locations?: string | null; startCfi?: string | null } = {},
+  over: { locations?: string | null; startCfi?: string | null; onCenterTap?: () => void } = {},
 ) {
   const positions: ReaderPosition[] = [];
   const service = createEpubReaderService({ openBook: async () => fake.book as never });
@@ -65,6 +65,7 @@ async function open(
     startCfi: over.startCfi ?? null,
     theme: THEME,
     onPosition: (p) => positions.push(p),
+    ...(over.onCenterTap ? { onCenterTap: over.onCenterTap } : {}),
   });
   return { handle, positions };
 }
@@ -291,13 +292,48 @@ describe("gestos dentro del iframe", () => {
     expect(fake.rendition.prev).not.toHaveBeenCalled();
   });
 
-  it("el tercio izquierdo vuelve atras y el centro no hace nada", async () => {
+  it("el tercio izquierdo vuelve atras y el centro avisa a la pantalla sin pasar de pagina", async () => {
     const { fake, doc } = await withContents(24 - 340);
     doc.body.dispatchEvent(new MouseEvent("click", { clientX: 340 + 20, bubbles: true }));
     expect(fake.rendition.prev).toHaveBeenCalledTimes(1);
     doc.body.dispatchEvent(new MouseEvent("click", { clientX: 340 + 170, bubbles: true }));
     expect(fake.rendition.next).not.toHaveBeenCalled();
     expect(fake.rendition.prev).toHaveBeenCalledTimes(1);
+  });
+
+  it("el tercio central avisa con onCenterTap y no pasa de pagina; izquierda y derecha no lo avisan", async () => {
+    const onCenterTap = vi.fn();
+    const fake = fakeBook({ locations: true });
+    await open(fake, { onCenterTap });
+    const doc = document.implementation.createHTMLDocument("capitulo");
+    const contents = {
+      document: doc,
+      window: { frameElement: { getBoundingClientRect: () => ({ left: 24 }) } },
+      addStylesheetCss: vi.fn((css: string, key: string) => css !== "" && key !== ""),
+    };
+    fake.contentHooks.forEach((hook) => hook(contents));
+    doc.body.dispatchEvent(new MouseEvent("click", { clientX: 170, bubbles: true }));
+    expect(onCenterTap).toHaveBeenCalledTimes(1);
+    expect(fake.rendition.next).not.toHaveBeenCalled();
+    expect(fake.rendition.prev).not.toHaveBeenCalled();
+    doc.body.dispatchEvent(new MouseEvent("click", { clientX: 20, bubbles: true }));
+    doc.body.dispatchEvent(new MouseEvent("click", { clientX: 330, bubbles: true }));
+    expect(onCenterTap).toHaveBeenCalledTimes(1);
+    expect(fake.rendition.prev).toHaveBeenCalledTimes(1);
+    expect(fake.rendition.next).toHaveBeenCalledTimes(1);
+  });
+
+  it("el tercio central sin onCenterTap no rompe", async () => {
+    const fake = fakeBook({ locations: true });
+    await open(fake);
+    const doc = document.implementation.createHTMLDocument("capitulo");
+    const contents = {
+      document: doc,
+      window: { frameElement: { getBoundingClientRect: () => ({ left: 24 }) } },
+      addStylesheetCss: vi.fn((css: string, key: string) => css !== "" && key !== ""),
+    };
+    fake.contentHooks.forEach((hook) => hook(contents));
+    expect(() => doc.body.dispatchEvent(new MouseEvent("click", { clientX: 170, bubbles: true }))).not.toThrow();
   });
 
   it("un enlace del libro tiene prioridad sobre el toque", async () => {

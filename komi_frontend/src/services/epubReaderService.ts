@@ -31,6 +31,8 @@ export interface OpenReaderInput {
   startCfi: string | null;
   theme: ReaderThemeInput;
   onPosition(position: ReaderPosition): void;
+  /** Toque en el tercio central de la pantalla. Quien lo usa decide si abre algo. */
+  onCenterTap?(): void;
 }
 
 export interface ReaderHandle {
@@ -156,7 +158,9 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
           const frame = contents.window.frameElement?.getBoundingClientRect();
           const host = input.host.getBoundingClientRect();
           if (!frame) return;
-          turn(tapAction(toHostX(event.clientX, frame.left, host.left), host.width));
+          const tap = tapAction(toHostX(event.clientX, frame.left, host.left), host.width);
+          if (tap === "menu") input.onCenterTap?.();
+          else turn(tap);
         });
         doc.addEventListener("keydown", (event: KeyboardEvent) => turn(keyAction(event.key)));
       });

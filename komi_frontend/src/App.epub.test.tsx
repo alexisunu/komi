@@ -311,7 +311,7 @@ describe("sesion EPUB", () => {
     const saved = await storedProgress();
     expect(saved?.cfi).toBe("cfi-1");
     expect(saved?.percentage).toBeNull();
-    expect(root.querySelector(".epub-reader__percent")).toBeNull();
+    expect(root.querySelector(".epub-reader__percent")?.textContent).not.toContain("%");
   });
 
   it("al reabrir la app con la sesion en curso reanuda en el CFI guardado y conserva el extracto", async () => {
@@ -510,12 +510,12 @@ describe("posicion de lectura aparte del avance validado", () => {
 });
 
 describe("gracia y tamano de letra en el lector", () => {
-  it("al salir muestra el aviso en el encabezado; pasados 15 s se invalida y vuelve al Dashboard", async () => {
+  it("al salir muestra el aviso flotante; pasados 15 s se invalida y vuelve al Dashboard", async () => {
     const { root, env, gate } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
     await act(async () => env.hide());
-    expect(root.querySelector(".epub-reader__header .grace-banner")?.textContent).toContain("15 s");
+    expect(root.querySelector(".epub-reader__grace .grace-banner")?.textContent).toContain("15 s");
     env.advance(15_001);
     await act(async () => env.show());
     await settle();

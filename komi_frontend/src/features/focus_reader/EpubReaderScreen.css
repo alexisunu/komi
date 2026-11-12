@@ -2,6 +2,7 @@
    El texto del libro vive en un iframe: sus colores salen de services/readerTheme.ts. */
 
 .epub-reader {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -39,7 +40,7 @@
 }
 
 .epub-reader__percent {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }
@@ -142,4 +143,67 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+/* Aviso de gracia: superposicion flotante arriba. No entra en el flujo (no aplasta el texto) y se
+   ve tambien con la interfaz oculta. */
+.epub-reader__grace {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + var(--space-1));
+  right: var(--screen-margin);
+  left: var(--screen-margin);
+  z-index: 5;
+}
+
+/* Interfaz oculta: solo el texto, una linea de progreso y un boton flotante. */
+.epub-reader--immersive .epub-reader__page {
+  padding-top: var(--space-3);
+  padding-bottom: calc(var(--touch-target) + var(--space-2));
+}
+
+.epub-reader__progress {
+  position: absolute;
+  right: 0;
+  bottom: env(safe-area-inset-bottom);
+  left: 0;
+  height: 2px;
+  background: var(--color-bg-surface);
+  pointer-events: none;
+}
+
+.epub-reader__progress-fill {
+  width: 100%;
+  height: 100%;
+  background: var(--color-accent-secondary);
+  transform-origin: left center;
+  transition: transform var(--transition-ui);
+}
+
+.epub-reader__float {
+  position: absolute;
+  right: var(--screen-margin);
+  bottom: calc(env(safe-area-inset-bottom) + var(--space-1));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.epub-reader__float:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .epub-reader__progress-fill {
+    transition: none;
+  }
 }

@@ -56,8 +56,14 @@ export function useEpubReader(args: {
   sessionId: string;
   host: RefObject<HTMLDivElement | null>;
   theme: ReaderThemeInput;
+  /** Toque en el tercio central de la pagina. Se lee siempre la version mas reciente. */
+  onCenterTap?: () => void;
 }): UseEpubReader {
-  const { deps, book, sessionId, host, theme } = args;
+  const { deps, book, sessionId, host, theme, onCenterTap } = args;
+  const latestCenterTap = useRef(onCenterTap);
+  useEffect(() => {
+    latestCenterTap.current = onCenterTap;
+  });
   const [status, setStatus] = useState<ReaderStatus>("loading");
   const [percentage, setPercentage] = useState<number | null>(null);
   const handle = useRef<ReaderHandle | null>(null);
@@ -127,6 +133,7 @@ export function useEpubReader(args: {
           locations: file.locations,
           startCfi: resume,
           theme: latestTheme.current,
+          onCenterTap: () => latestCenterTap.current?.(),
           onPosition(position) {
             if (!alive) return;
             rememberPosition(position.cfi);
