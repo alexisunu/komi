@@ -40,7 +40,7 @@ export interface UseEpubReader {
   status: ReaderStatus;
   /** 0 a 100 o null mientras no haya `locations`. */
   percentage: number | null;
-  /** Porcentaje del momento, leido sin esperar a un repintado (para "Terminé antes de tiempo"). */
+  /** Porcentaje del momento, leido sin esperar a un repintado (para "Terminar sesión"). */
   currentPercentage(): number | null;
   next(): void;
   prev(): void;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyFinal,
   applyHidden,
-  earlyFinish,
+  peekFinish,
   elapsedMs,
   evaluate,
   foregroundSec,
@@ -151,15 +151,24 @@ describe("estado final guardado", () => {
   });
 });
 
-describe("Terminé antes de tiempo (FA-3.3)", () => {
-  it("50 % exacto es valido; un segundo menos pide confirmacion", () => {
-    expect(earlyFinish(session(), T0 + 300_000)).toEqual({ actualSec: 300, belowHalf: false });
-    expect(earlyFinish(session(), T0 + 299_000)).toEqual({ actualSec: 299, belowHalf: true });
+describe("Terminar sesion (FA-3.3, regla unica)", () => {
+  it("5:00 exactos bastan; un segundo menos no", () => {
+    expect(peekFinish(session(), T0 + 300_000)).toEqual({ actualSec: 300, enough: true });
+    expect(peekFinish(session(), T0 + 299_000)).toEqual({ actualSec: 299, enough: false });
+  });
+
+  it("los segundos se truncan hacia abajo: 4:59.9 todavia no es 5:00", () => {
+    expect(peekFinish(session(), T0 + 299_999)).toEqual({ actualSec: 299, enough: false });
+  });
+
+  it("ya no depende del tiempo programado: 5 minutos de un temporizador largo bastan", () => {
+    const hour = { ...session(), plannedSec: 3600 };
+    expect(peekFinish(hour, T0 + 300_000).enough).toBe(true);
   });
 
   it("no supera lo programado ni baja de cero con el reloj atras", () => {
-    expect(earlyFinish(session(), T0 + 99 * 60_000).actualSec).toBe(PLANNED);
-    expect(earlyFinish(session(), T0 - 5_000).actualSec).toBe(0);
+    expect(peekFinish(session(), T0 + 99 * 60_000).actualSec).toBe(PLANNED);
+    expect(peekFinish(session(), T0 - 5_000).actualSec).toBe(0);
   });
 });
 

@@ -409,7 +409,7 @@ describe("Terminar sesión en el lector", () => {
   it("con 99,99 % no cuenta como terminado: pide confirmacion", async () => {
     const { root } = await startAndRead(99.99);
     await tap(byText(root, "button", "Terminar sesión"));
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("no se guarda ningún avance");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("El tiempo mínimo es 5 min");
     expect(sheetTitle()).toBe("¿Terminar sin guardar?");
   });
 
@@ -422,7 +422,7 @@ describe("Terminar sesión en el lector", () => {
   it("confirmar la cancelacion no guarda nada y vuelve al Dashboard", async () => {
     const { root } = await startAndRead(40);
     await tap(byText(root, "button", "Terminar sesión"));
-    await tap(byText(document.body, "button", "Cancelar sesión"));
+    await tap(byText(document.body, "button", "Descartar"));
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(await db.sessions.count()).toBe(0);
     expect(await db.meta.get(META_KEYS.activeSession)).toBeUndefined();
@@ -461,7 +461,7 @@ describe("posicion de lectura aparte del avance validado", () => {
     await act(async () => fake.see({ cfi: "cfi-9", percentage: 40, text: "" }));
     env.advance(200_000); // bajo el 50 %: se cancela
     await tap(byText(root, "button", "Terminar sesión"));
-    await tap(byText(document.body, "button", "Cancelar sesión"));
+    await tap(byText(document.body, "button", "Descartar"));
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12, last_epub_cfi: null });
 
@@ -551,6 +551,7 @@ describe("gracia y tamano de letra en el lector", () => {
     const { root, env, gate } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
+    env.advance(300_000); // 5 minutos de lectura: la invalidada se guarda
     await act(async () => env.hide());
     expect(root.querySelector(".epub-reader__grace .grace-banner")?.textContent).toContain("15 s");
     env.advance(15_001);
@@ -560,6 +561,22 @@ describe("gracia y tamano de letra en el lector", () => {
     expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
     expect(gate.isBlocked()).toBe(false);
     expect(await db.sessions.count()).toBe(1);
+  });
+
+  it("invalidada con menos de 5 minutos: se avisa y vuelve al Dashboard, pero no se guarda", async () => {
+    const { root, env, gate } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    env.advance(120_000);
+    await act(async () => env.hide());
+    env.advance(15_001);
+    await act(async () => env.show());
+    await settle();
+    expect(root.querySelector(".epub-reader")).toBeNull();
+    expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+    expect(await db.sessions.count()).toBe(0);
+    expect(await db.meta.get(META_KEYS.activeSession)).toBeUndefined();
   });
 
   it("cambiar el tamano de letra se guarda en local y se reaplica al lector abierto", async () => {

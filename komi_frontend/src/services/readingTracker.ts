@@ -38,14 +38,14 @@ export function isFinished(percentage: number | null): boolean {
 }
 
 /**
- * FA-3.3: "Terminé antes de tiempo" vale con el 50 % del tiempo o con el libro terminado. Sin
+ * FA-3.3: "Terminar sesion" guarda con 5 minutos o con el libro terminado, por corta que sea. Sin
  * `locations` (porcentaje nulo) no se puede afirmar que se termino.
  */
-export function earlyFinishAllowed(
-  early: { belowHalf: boolean } | null,
+export function canFinishNow(
+  finish: { enough: boolean } | null,
   percentage: number | null,
 ): boolean {
-  return early !== null && (!early.belowHalf || isFinished(percentage));
+  return finish !== null && (finish.enough || isFinished(percentage));
 }
 
 function normalize(text: string): string {

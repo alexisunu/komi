@@ -387,8 +387,8 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
               onToggleTheme={toggleTheme}
               fontPx={fontPx}
               onFontPx={changeFontPx}
-              peekEarlyFinish={focus.peekEarlyFinish}
-              onAcceptEarly={focus.acceptEarlyFinish}
+              peekFinish={focus.peekFinish}
+              onFinish={focus.acceptFinish}
               onTalkRequested={() => setTalkNext(true)}
               onCancel={focus.leave}
             />
@@ -397,8 +397,8 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
               book={sessionBook}
               snapshot={snapshot}
               wakeLock={deps.wakeLock}
-              peekEarlyFinish={focus.peekEarlyFinish}
-              onAcceptEarly={focus.acceptEarlyFinish}
+              peekFinish={focus.peekFinish}
+              onFinish={focus.acceptFinish}
               onCancel={focus.leave}
             />
           )}

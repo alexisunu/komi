@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createProgressWriter,
-  earlyFinishAllowed,
+  canFinishNow,
   createReadingTracker,
   isFinished,
   MAX_EXCERPT_CHARS,
@@ -49,20 +49,20 @@ describe("toPercentage e isFinished (borde del 100 %)", () => {
   });
 });
 
-describe("earlyFinishAllowed (FA-3.3)", () => {
-  it("el 50 % del tiempo basta sin importar el libro", () => {
-    expect(earlyFinishAllowed({ belowHalf: false }, 5)).toBe(true);
-    expect(earlyFinishAllowed({ belowHalf: false }, null)).toBe(true);
+describe("canFinishNow (FA-3.3)", () => {
+  it("5 minutos bastan sin importar el libro", () => {
+    expect(canFinishNow({ enough: true }, 5)).toBe(true);
+    expect(canFinishNow({ enough: true }, null)).toBe(true);
   });
 
-  it("bajo el 50 % solo vale con el libro terminado (100 exacto)", () => {
-    expect(earlyFinishAllowed({ belowHalf: true }, 100)).toBe(true);
-    expect(earlyFinishAllowed({ belowHalf: true }, 99.99)).toBe(false);
-    expect(earlyFinishAllowed({ belowHalf: true }, null)).toBe(false);
+  it("con menos de 5 minutos solo vale con el libro terminado (100 exacto)", () => {
+    expect(canFinishNow({ enough: false }, 100)).toBe(true);
+    expect(canFinishNow({ enough: false }, 99.99)).toBe(false);
+    expect(canFinishNow({ enough: false }, null)).toBe(false);
   });
 
   it("sin sesion no hay nada que aceptar", () => {
-    expect(earlyFinishAllowed(null, 100)).toBe(false);
+    expect(canFinishNow(null, 100)).toBe(false);
   });
 });
 

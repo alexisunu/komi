@@ -124,11 +124,11 @@ describe("prepare", () => {
     expect(await service.prepare(SESSION, 600)).toMatchObject({ actualSec: 450 });
   });
 
-  it("belowHalf es estricto: exactamente el 50 % no esta por debajo", async () => {
-    record = active({ finalSec: 450 });
-    expect(await ready()).toMatchObject({ belowHalf: false });
-    record = active({ finalSec: 449 });
-    expect(await ready()).toMatchObject({ belowHalf: true });
+  it("short es estricto: exactamente 5 minutos no es corta", async () => {
+    record = active({ finalSec: 300 });
+    expect(await ready()).toMatchObject({ short: false });
+    record = active({ finalSec: 299 });
+    expect(await ready()).toMatchObject({ short: true });
   });
 
   it("ignora el avance de otra sesion", async () => {

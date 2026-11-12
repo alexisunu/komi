@@ -15,7 +15,7 @@ import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
 import type { FocusSnapshot, FocusVisibilityService } from "../../services/focusVisibilityService";
 import type { ReaderFontSize } from "../../services/readerTheme";
-import { earlyFinishAllowed } from "../../services/readingTracker";
+import { canFinishNow } from "../../services/readingTracker";
 import type { WakeLockService } from "../../services/wakeLockService";
 import { formatClock } from "./clockFormat";
 import "./EpubReaderScreen.css";
@@ -36,11 +36,11 @@ export interface EpubReaderScreenProps {
   onToggleTheme: () => void;
   fontPx: ReaderFontSize;
   onFontPx: (size: ReaderFontSize) => void;
-  peekEarlyFinish: FocusVisibilityService["peekEarlyFinish"];
-  onAcceptEarly: () => void;
+  peekFinish: FocusVisibilityService["peekFinish"];
+  onFinish: () => void;
   /**
    * "Hablar con Komi": se avisa justo antes de aceptar el cierre para que, al guardarse la lectura,
-   * la charla se abra sola. Con menos del 50 % no se llama: la sesion se cancela y no hay charla.
+   * la charla se abra sola. Con menos de 5 minutos (y el libro sin terminar) no se llama: aparece el aviso.
    */
   onTalkRequested?: () => void;
   onCancel: () => void | Promise<void>;
@@ -61,8 +61,8 @@ export function EpubReaderScreen({
   onToggleTheme,
   fontPx,
   onFontPx,
-  peekEarlyFinish,
-  onAcceptEarly,
+  peekFinish,
+  onFinish,
   onTalkRequested,
   onCancel,
 }: EpubReaderScreenProps) {
@@ -88,25 +88,25 @@ export function EpubReaderScreen({
     },
   });
 
-  const finishEarly = () => {
-    if (earlyFinishAllowed(peekEarlyFinish(), view.currentPercentage())) onAcceptEarly();
+  // Regla unica (FA-3.3): con 5 minutos o con el libro terminado se guarda directo; con menos, aviso.
+  const finishSession = () => {
+    if (canFinishNow(peekFinish(), view.currentPercentage())) onFinish();
     else setConfirming(true);
   };
 
-  // Misma regla del 50 % que Terminar sesion, sin confirmacion extra: con el tiempo cumplido guarda y
-  // abre la charla; con menos, aparece la misma hoja de siempre (cancelar o seguir leyendo).
+  // Igual que Terminar sesion, sin confirmacion extra: guarda y abre la charla; con menos de
+  // 5 minutos aparece el mismo aviso.
   const talkToKomi = () => {
-    if (earlyFinishAllowed(peekEarlyFinish(), view.currentPercentage())) {
+    if (canFinishNow(peekFinish(), view.currentPercentage())) {
       onTalkRequested?.();
-      onAcceptEarly();
+      onFinish();
     } else setConfirming(true);
   };
 
-  // El tiempo siguio corriendo con la hoja abierta: puede que ya se pase del 50 %.
-  const confirmCancel = () => {
+  // Descartar es explicito: no guarda nada aunque el tiempo siga corriendo con el aviso abierto.
+  const discard = () => {
     setConfirming(false);
-    if (earlyFinishAllowed(peekEarlyFinish(), view.currentPercentage())) onAcceptEarly();
-    else void onCancel();
+    void onCancel();
   };
 
   // Cada accion del menu lo cierra antes de ejecutarse.
@@ -191,7 +191,7 @@ export function EpubReaderScreen({
           >
             <ChevronLeft size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
           </button>
-          <ZenPrimaryButton variant="secondary" className="epub-reader__finish" onClick={finishEarly}>
+          <ZenPrimaryButton variant="secondary" className="epub-reader__finish" onClick={finishSession}>
             Terminar sesión
           </ZenPrimaryButton>
           <button
@@ -238,7 +238,7 @@ export function EpubReaderScreen({
               theme={theme}
               onClose={() => setMenuOpen(false)}
               onTalk={fromMenu(talkToKomi)}
-              onFinish={fromMenu(finishEarly)}
+              onFinish={fromMenu(finishSession)}
               onFontSize={fromMenu(() => setFontSheet(true))}
               onToggleTheme={fromMenu(onToggleTheme)}
               onShowInterface={fromMenu(() => setImmersive(false))}
@@ -252,13 +252,13 @@ export function EpubReaderScreen({
       {confirming && (
         <ZenSheet title="¿Terminar sin guardar?" onClose={() => setConfirming(false)}>
           <p className="epub-reader__confirm-text">
-            Aún no llevas la mitad del tiempo que programaste. Si terminas ahora, la sesión se
-            cancela y no se guarda ningún avance.
+            El tiempo mínimo es 5 min. Si terminas ahora, la sesión no se guarda y no se registra
+            ningún avance.
           </p>
           <div className="epub-reader__confirm-actions">
             <ZenPrimaryButton onClick={() => setConfirming(false)}>Seguir leyendo</ZenPrimaryButton>
-            <ZenPrimaryButton variant="secondary" onClick={confirmCancel}>
-              Cancelar sesión
+            <ZenPrimaryButton variant="secondary" onClick={discard}>
+              Descartar
             </ZenPrimaryButton>
           </div>
         </ZenSheet>

@@ -1,5 +1,5 @@
 // Integracion del bloque 4: iniciar la sesion de un libro fisico, la pantalla de concentracion sin
-// navegacion, "Terminé antes de tiempo", la gracia, la pantalla provisional y "Leer este libro".
+// navegacion, "Terminar sesión", la gracia, la pantalla provisional y "Leer este libro".
 // Dexie y la app son reales; el reloj, Page Visibility y wakeLock son falsos.
 
 import { act } from "react";
@@ -172,11 +172,11 @@ describe("sesion de un libro fisico", () => {
     expect(root.querySelectorAll("[data-block]").length).toBeLessThanOrEqual(4);
   });
 
-  it("Terminé antes de tiempo con el 50 % o mas: abre la hoja post-lectura y aun no guarda nada", async () => {
+  it("Terminar sesión con 5 minutos o mas: abre la hoja post-lectura directo y aun no guarda nada", async () => {
     const { root, env, wakeLock, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
-    env.advance(450_000); // 7:30 de 15:00 = 50 %
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    env.advance(450_000); // 7:30: mas de 5 minutos, sin confirmacion
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle();
     expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
     expect(root.querySelector(".bottom-nav")).toBeNull();
@@ -191,7 +191,7 @@ describe("sesion de un libro fisico", () => {
     const { root, env, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(600_000);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle();
     expect(sheet()?.querySelector("input")?.value).toBe("30"); // ultima pagina guardada
     await submitPage("60");
@@ -231,7 +231,7 @@ describe("sesion de un libro fisico", () => {
     const first = await mountApp([book(1)]);
     await tap(startButton(first.root));
     first.env.advance(600_000);
-    await tap(byText(first.root, "button", "Terminé antes de tiempo"));
+    await tap(byText(first.root, "button", "Terminar sesión"));
     await settle();
     expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
     expect(await db.sessions.count()).toBe(0);
@@ -248,25 +248,25 @@ describe("sesion de un libro fisico", () => {
     expect(again.gate.isBlocked()).toBe(false);
   });
 
-  it("Terminé antes de tiempo con menos del 50 % pide confirmacion; Seguir leyendo no cambia nada", async () => {
+  it("Terminar sesión con menos de 5 minutos muestra el aviso; Seguir leyendo no cambia nada", async () => {
     const { root, env } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(200_000);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain("no se guarda ningún avance");
+    expect(dialog?.textContent).toContain("El tiempo mínimo es 5 min");
     await tap(byText(document.body, "button", "Seguir leyendo"));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(root.querySelector("[role=timer]")).not.toBeNull();
     expect(await storedSession()).not.toBeNull();
   });
 
-  it("confirmar la cancelacion vuelve al Dashboard sin guardar nada", async () => {
+  it("Descartar vuelve al Dashboard sin guardar nada", async () => {
     const { root, env, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(200_000);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
-    await tap(byText(document.body, "button", "Cancelar sesión"));
+    await tap(byText(root, "button", "Terminar sesión"));
+    await tap(byText(document.body, "button", "Descartar"));
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(root.querySelector(".bottom-nav")).not.toBeNull();
     expect(await db.sessions.count()).toBe(0);
@@ -274,15 +274,32 @@ describe("sesion de un libro fisico", () => {
     expect(gate.isBlocked()).toBe(false);
   });
 
-  it("si con la hoja abierta se supera el 50 %, confirmar ya no cancela: la sesion es valida", async () => {
+  it("Descartar no guarda nada aunque con el aviso abierto se pasen los 5 minutos", async () => {
+    const { root, env, gate } = await mountApp([book(1)]);
+    await tap(startButton(root));
+    env.advance(200_000);
+    await tap(byText(root, "button", "Terminar sesión"));
+    env.advance(300_000); // 500 s: ya hay 5 minutos, pero el lector eligio descartar
+    await tap(byText(document.body, "button", "Descartar"));
+    await settle();
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(await db.sessions.count()).toBe(0);
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("Seguir leyendo reanuda la sesion y despues, con 5 minutos, termina directo", async () => {
     const { root, env } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(200_000);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
-    env.advance(300_000); // 500 s de 900 > 50 %
-    await tap(byText(document.body, "button", "Cancelar sesión"));
+    await tap(byText(root, "button", "Terminar sesión"));
+    await tap(byText(document.body, "button", "Seguir leyendo"));
+    env.advance(100_000); // 300 s exactos
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle();
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("El tiempo mínimo");
     expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    expect((await storedSession())?.finalSec).toBe(300);
   });
 
   it("al llegar el tiempo a 00:00 se abre la hoja post-lectura", async () => {
@@ -315,7 +332,7 @@ describe("periodo de gracia en pantalla", () => {
   it("pasados 15 s se invalida: se guarda la sesion invalida, no cambia el libro y avisa", async () => {
     const { root, env, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
-    env.advance(60_000);
+    env.advance(300_000);
     await act(async () => env.hide());
     env.advance(15_100);
     await act(async () => env.show());
@@ -325,13 +342,28 @@ describe("periodo de gracia en pantalla", () => {
     expect(root.querySelector(".bottom-nav")).not.toBeNull();
     const sessions = await db.sessions.toArray();
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]).toMatchObject({ session_status: "INVALIDATED_GRACE_EXPIRED", actual_duration_sec: 60 });
+    expect(sessions[0]).toMatchObject({ session_status: "INVALIDATED_GRACE_EXPIRED", actual_duration_sec: 300 });
     expect((await db.books.get(uuid(1)))?.progress_percentage).toBe(10);
     expect(gate.isBlocked()).toBe(false);
 
     await tap(byText(root, "button", "Entendido"));
     expect(root.querySelector('[data-testid="session-invalidated"]')).toBeNull();
     expect(await storedSession()).toBeNull();
+  });
+
+  it("invalidada con menos de 5 minutos: se avisa pero no se guarda sesion alguna", async () => {
+    const { root, env, gate } = await mountApp([book(1)]);
+    await tap(startButton(root));
+    env.advance(299_000);
+    await act(async () => env.hide());
+    env.advance(15_100);
+    await act(async () => env.show());
+    await settle();
+    expect(root.querySelector('[data-testid="session-invalidated"]')?.textContent).toContain("más de 15 segundos");
+    expect(await db.sessions.count()).toBe(0);
+    expect((await db.books.get(uuid(1)))?.progress_percentage).toBe(10);
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
   });
 });
 
@@ -410,13 +442,13 @@ describe("recuperacion y hoja post-lectura sin trampas", () => {
 
   it("una sesion pasada de 15 s desde lastSeen se invalida al abrir y se avisa", async () => {
     const env = createFocusEnv();
-    await seedSession(saved({ lastSeen: T0 + 30_000 }));
-    env.set(T0 + 30_000 + 16_000);
+    await seedSession(saved({ lastSeen: T0 + 330_000 }));
+    env.set(T0 + 330_000 + 16_000);
     const { root } = await mountApp([book(1)], env);
     expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
     expect((await db.sessions.toArray())[0]).toMatchObject({
       session_status: "INVALIDATED_GRACE_EXPIRED",
-      actual_duration_sec: 30,
+      actual_duration_sec: 330,
     });
   });
 });

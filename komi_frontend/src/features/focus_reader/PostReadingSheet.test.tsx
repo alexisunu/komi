@@ -59,7 +59,7 @@ function service(result: SaveResult = SAVED): PostReadingService {
       actualSec: 600,
       book: BOOK,
       progress: null,
-      belowHalf: false,
+      short: false,
     })),
     save: vi.fn(async () => result),
   } as unknown as PostReadingService;

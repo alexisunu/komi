@@ -93,16 +93,38 @@ describe("gracia de 15 s por salida", () => {
 
   it("15,1 s fuera: se invalida y se guarda con los segundos de primer plano", async () => {
     const env = await started();
-    env.advance(42_000);
+    env.advance(342_000);
     env.hide();
     env.advance(15_100);
     await env.show();
-    expect(env.service.getSnapshot()).toMatchObject({ phase: "invalidated", actualSec: 42 });
+    expect(env.service.getSnapshot()).toMatchObject({ phase: "invalidated", actualSec: 342 });
     expect(env.invalidated).toHaveLength(1);
-    expect(env.invalidated[0]).toMatchObject({ actualSec: 42 });
+    expect(env.invalidated[0]).toMatchObject({ actualSec: 342 });
     expect(env.invalidated[0]?.session.sessionId).toBe(SESSION_ID);
     expect(env.stored).toBeNull();
     expect(env.listenerCount()).toBe(0);
+  });
+
+  it("invalidada con menos de 5 minutos de lectura: no se guarda, pero la sesion termina y el registro se borra", async () => {
+    const env = await started();
+    env.advance(299_000);
+    env.hide();
+    env.advance(15_100);
+    await env.show();
+    expect(env.service.getSnapshot()).toMatchObject({ phase: "invalidated", actualSec: 299 });
+    expect(env.invalidated).toHaveLength(0);
+    expect(env.stored).toBeNull();
+    expect(env.listenerCount()).toBe(0);
+  });
+
+  it("invalidada con exactamente 5 minutos de lectura: se guarda", async () => {
+    const env = await started();
+    env.advance(300_000);
+    env.hide();
+    env.advance(15_100);
+    await env.show();
+    expect(env.invalidated).toHaveLength(1);
+    expect(env.invalidated[0]).toMatchObject({ actualSec: 300 });
   });
 
   it("varias salidas cortas no se acumulan: 3 de 10 s siguen validas", async () => {
@@ -119,6 +141,7 @@ describe("gracia de 15 s por salida", () => {
 
   it("tras una salida corta, la siguiente salida empieza de cero y la larga invalida", async () => {
     const env = await started();
+    env.advance(300_000);
     env.hide();
     env.advance(14_000);
     await env.show();
@@ -127,7 +150,7 @@ describe("gracia de 15 s por salida", () => {
     env.advance(15_001);
     await env.show();
     expect(env.service.getSnapshot()?.phase).toBe("invalidated");
-    expect(env.invalidated[0]?.actualSec).toBe(5 + 14);
+    expect(env.invalidated[0]?.actualSec).toBe(300 + 5 + 14);
   });
 
   it("dos eventos hidden seguidos no reinician la cuenta", async () => {
@@ -150,6 +173,7 @@ describe("gracia de 15 s por salida", () => {
 
   it("si un tick llega con la pagina oculta pasados los 15 s, invalida sin esperar al regreso", async () => {
     const env = await started();
+    env.advance(300_000);
     env.hide();
     env.advance(16_000);
     await env.service.tick();
@@ -205,27 +229,27 @@ describe("recuperacion tras recarga con active_session", () => {
 
   it("con hiddenAt y mas de 15 s fuera: se guarda invalidada y se borra el registro", async () => {
     const env = await started();
-    env.advance(20_000);
+    env.advance(320_000);
     env.hide();
     env.advance(16_000);
     await env.settle();
     const again = env.reload();
     const snap = await again.recover();
-    expect(snap).toMatchObject({ phase: "invalidated", actualSec: 20 });
+    expect(snap).toMatchObject({ phase: "invalidated", actualSec: 320 });
     expect(env.invalidated).toHaveLength(1);
     expect(env.stored).toBeNull();
   });
 
   it("cierre forzado sin evento hidden: pasados 15 s desde lastSeen se invalida con lastSeen", async () => {
     const env = await started();
-    env.advance(30_000);
-    env.pagehide(); // lastSeen = T0 + 30 s; la pagina muere sin visibilitychange
+    env.advance(330_000);
+    env.pagehide(); // lastSeen = T0 + 330 s; la pagina muere sin visibilitychange
     env.advance(15_001);
     await env.settle();
     const again = env.reload();
     const snap = await again.recover();
-    expect(snap).toMatchObject({ phase: "invalidated", actualSec: 30 });
-    expect(env.invalidated[0]?.actualSec).toBe(30);
+    expect(snap).toMatchObject({ phase: "invalidated", actualSec: 330 });
+    expect(env.invalidated[0]?.actualSec).toBe(330);
   });
 
   it("cierre forzado y reapertura a los 15 000 ms exactos de lastSeen: se retoma", async () => {
@@ -255,10 +279,10 @@ describe("recuperacion tras recarga con active_session", () => {
     expect(snap?.actualSec).toBe(40);
   });
 
-  it("una sesion terminada y sin guardar vuelve tal cual (completada o anticipada)", async () => {
+  it("una sesion terminada y sin guardar vuelve tal cual (completada o terminada por el lector)", async () => {
     const env = await started();
     env.advance(400_000);
-    env.service.acceptEarlyFinish();
+    env.service.acceptFinish();
     env.advance(10 * 3_600_000);
     await env.settle();
     const again = env.reload();
@@ -274,7 +298,9 @@ describe("recuperacion tras recarga con active_session", () => {
 
   it("si guardar la invalidada falla, el registro se conserva para reintentar", async () => {
     const env = await started();
+    env.advance(300_000);
     env.hide();
+    await env.settle();
     env.advance(20_000);
     const failing = createFocusEnv();
     failing.stored = env.stored;
@@ -334,21 +360,21 @@ describe("latido de lastSeen", () => {
   });
 });
 
-describe("Terminé antes de tiempo", () => {
-  it("con el 50 % o mas es valido y queda con finalSec", async () => {
+describe("Terminar sesion", () => {
+  it("con 5 minutos o mas es valido y queda con finalSec", async () => {
     const env = await started();
     env.advance(300_000);
-    expect(env.service.peekEarlyFinish()).toEqual({ actualSec: 300, belowHalf: false });
-    env.service.acceptEarlyFinish();
+    expect(env.service.peekFinish()).toEqual({ actualSec: 300, enough: true });
+    env.service.acceptFinish();
     await env.settle();
     expect(env.service.getSnapshot()).toMatchObject({ phase: "early", actualSec: 300 });
     expect(env.stored?.finalSec).toBe(300);
   });
 
-  it("con menos del 50 % avisa para pedir confirmacion; cancelar no guarda nada", async () => {
+  it("con menos de 5 minutos avisa para pedir confirmacion; descartar no guarda nada", async () => {
     const env = await started();
     env.advance(100_000);
-    expect(env.service.peekEarlyFinish()).toEqual({ actualSec: 100, belowHalf: true });
+    expect(env.service.peekFinish()).toEqual({ actualSec: 100, enough: false });
     await env.service.close();
     expect(env.stored).toBeNull();
     expect(env.invalidated).toHaveLength(0);

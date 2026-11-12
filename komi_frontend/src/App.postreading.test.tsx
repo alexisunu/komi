@@ -123,11 +123,11 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
 const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lectura") as HTMLButtonElement;
 const openButton = (root: HTMLElement) => byText(root, "button", "Abrir lector") as HTMLButtonElement;
 
-/** Lee `minutes` y termina antes de tiempo; deja la hoja abierta en el Paso 1. */
+/** Lee `advanceMs` y termina la sesion; deja la hoja abierta en el Paso 1. */
 async function finishPhysical(ctx: Awaited<ReturnType<typeof mountApp>>, advanceMs: number) {
   await tap(startButton(ctx.root));
   ctx.env.advance(advanceMs);
-  await tap(byText(ctx.root, "button", "Terminé antes de tiempo"));
+  await tap(byText(ctx.root, "button", "Terminar sesión"));
   await settle();
 }
 
@@ -227,12 +227,12 @@ describe("Bono de Vitalidad Solar y florecimiento", () => {
   });
 });
 
-describe("Terminé el libro (menos del 50 % del tiempo)", () => {
+describe("Terminé el libro (menos de 5 minutos)", () => {
   async function openDialog() {
     const ctx = await mountApp([book()]);
     await tap(startButton(ctx.root));
     ctx.env.advance(200_000);
-    await tap(byText(ctx.root, "button", "Terminé antes de tiempo"));
+    await tap(byText(ctx.root, "button", "Terminar sesión"));
     return ctx;
   }
 
@@ -271,9 +271,9 @@ describe("Terminé el libro (menos del 50 % del tiempo)", () => {
     expect(ctx.gate.isBlocked()).toBe(false);
   });
 
-  it("cancelar sigue sin guardar nada", async () => {
+  it("Descartar sigue sin guardar nada", async () => {
     const ctx = await openDialog();
-    await tap(sheetButton("Cancelar sesión"));
+    await tap(sheetButton("Descartar"));
     expect(sheet()).toBeNull();
     expect(await db.sessions.count()).toBe(0);
     expect(await storedSession()).toBeNull();

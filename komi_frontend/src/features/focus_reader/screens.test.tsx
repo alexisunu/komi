@@ -52,22 +52,22 @@ function wakeLock() {
   };
 }
 
-function timer(over: { snapshot?: FocusSnapshot; early?: { actualSec: number; belowHalf: boolean } | null } = {}) {
+function timer(over: { snapshot?: FocusSnapshot; early?: { actualSec: number; enough: boolean } | null } = {}) {
   const lock = wakeLock();
-  const onAcceptEarly = vi.fn();
+  const onFinish = vi.fn();
   const onCancel = vi.fn();
-  const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, belowHalf: false } : over.early));
+  const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, enough: true } : over.early));
   mounted = render(
     <PhysicalTimerScreen
       book={BOOK}
       snapshot={over.snapshot ?? snap()}
       wakeLock={lock}
-      peekEarlyFinish={peek}
-      onAcceptEarly={onAcceptEarly}
+      peekFinish={peek}
+      onFinish={onFinish}
       onCancel={onCancel}
     />,
   );
-  return { root: mounted.container, lock, onAcceptEarly, onCancel, peek };
+  return { root: mounted.container, lock, onFinish, onCancel, peek };
 }
 
 const button = (root: ParentNode, text: string) =>
@@ -113,8 +113,8 @@ describe("PhysicalTimerScreen", () => {
         book={BOOK}
         snapshot={snap({ phase: "grace", graceRemainingMs: 9_100 })}
         wakeLock={wakeLock()}
-        peekEarlyFinish={() => null}
-        onAcceptEarly={() => {}}
+        peekFinish={() => null}
+        onFinish={() => {}}
         onCancel={() => {}}
       />,
     );
@@ -122,33 +122,76 @@ describe("PhysicalTimerScreen", () => {
     expect(root.querySelector(".grace-banner")?.textContent).toContain("10 s");
   });
 
-  it("con el 50 % o mas, Terminé antes de tiempo acepta sin preguntar", () => {
-    const { root, onAcceptEarly, onCancel } = timer({ early: { actualSec: 450, belowHalf: false } });
-    click(button(root, "Terminé antes de tiempo"));
-    expect(onAcceptEarly).toHaveBeenCalledTimes(1);
+  it("Terminar sesion con 5 minutos o mas termina directo, sin confirmacion", () => {
+    const { root, onFinish, onCancel } = timer({ early: { actualSec: 300, enough: true } });
+    click(button(root, "Terminar sesión"));
+    expect(onFinish).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("con menos del 50 % abre la confirmacion y no cancela hasta confirmar", () => {
-    const { onAcceptEarly, onCancel, root } = timer({ early: { actualSec: 449, belowHalf: true } });
-    click(button(root, "Terminé antes de tiempo"));
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("no se guarda ningún avance");
-    expect(onAcceptEarly).not.toHaveBeenCalled();
-    expect(onCancel).not.toHaveBeenCalled();
-    click(button(document.body, "Cancelar sesión"));
-    expect(onCancel).toHaveBeenCalledTimes(1);
-    expect(onAcceptEarly).not.toHaveBeenCalled();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  it("ya no existe el boton Terminé antes de tiempo", () => {
+    const { root } = timer();
+    expect(button(root, "Terminé antes de tiempo")).toBeUndefined();
+    expect(button(root, "Terminar sesión")).toBeDefined();
   });
 
-  it("Seguir leyendo cierra la hoja sin cancelar ni aceptar", () => {
-    const { onAcceptEarly, onCancel, root } = timer({ early: { actualSec: 10, belowHalf: true } });
-    click(button(root, "Terminé antes de tiempo"));
-    click(button(document.body, "Seguir leyendo"));
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(onAcceptEarly).not.toHaveBeenCalled();
-    expect(onCancel).not.toHaveBeenCalled();
+  describe("aviso de menos de 5 minutos", () => {
+    const SHORT = { early: { actualSec: 299, enough: false } };
+    const dialog = () => document.querySelector('[role="dialog"]');
+
+    it("aparece con el motivo claro y no termina ni descarta nada", () => {
+      const { onFinish, onCancel, root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      expect(dialog()?.textContent).toContain("El tiempo mínimo es 5 min");
+      expect(dialog()?.textContent).not.toContain("mitad");
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it("Seguir leyendo es la accion principal, Descartar la secundaria, y no hay Cancelar sesion", () => {
+      const { root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      expect((button(document.body, "Seguir leyendo") as HTMLButtonElement).className).not.toContain("secondary");
+      expect((button(document.body, "Descartar") as HTMLButtonElement).className).toContain("secondary");
+      expect(button(document.body, "Cancelar sesión")).toBeUndefined();
+    });
+
+    it("Seguir leyendo cierra la hoja sin descartar ni terminar", () => {
+      const { onFinish, onCancel, root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Seguir leyendo"));
+      expect(dialog()).toBeNull();
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it("Descartar sale sin guardar nada: onCancel una vez, onFinish nunca", () => {
+      const { onFinish, onCancel, root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Descartar"));
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(dialog()).toBeNull();
+    });
+
+    it("aunque pasen los 5 minutos con el aviso abierto, Descartar no guarda", () => {
+      const ctx = timer(SHORT);
+      click(button(ctx.root, "Terminar sesión"));
+      ctx.peek.mockReturnValue({ actualSec: 301, enough: true });
+      click(button(document.body, "Descartar"));
+      expect(ctx.onCancel).toHaveBeenCalledTimes(1);
+      expect(ctx.onFinish).not.toHaveBeenCalled();
+    });
+
+    it("Terminé el libro (solo libro fisico) cierra el aviso y deja que la hoja de cierre pida la ultima pagina", () => {
+      const { onFinish, onCancel, root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Terminé el libro"));
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onCancel).not.toHaveBeenCalled();
+      expect(dialog()).toBeNull();
+    });
   });
 
   it("solo usa tokens de color y no mueve nada que no sea decorativo", () => {

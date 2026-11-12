@@ -132,7 +132,7 @@ const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lect
 async function finishPhysical(ctx: Awaited<ReturnType<typeof mountApp>>, advanceMs: number) {
   await tap(startButton(ctx.root));
   ctx.env.advance(advanceMs);
-  await tap(byText(ctx.root, "button", "Terminé antes de tiempo"));
+  await tap(byText(ctx.root, "button", "Terminar sesión"));
   await settle();
 }
 
@@ -405,7 +405,7 @@ describe("Hablar con Komi desde el lector EPUB", () => {
     const ctx = await readEpub(40, 200_000);
     await tap(byText(document.body, "button", "Hablar con Komi"));
     expect(sheet()?.textContent).toContain("¿Terminar sin guardar?");
-    await tap(sheetButton("Cancelar sesión"));
+    await tap(sheetButton("Descartar"));
     expect(ctx.root.querySelector(".dashboard")).not.toBeNull();
     expect(await db.sessions.count()).toBe(0);
     expect(server.startCalls()).toHaveLength(0);

@@ -86,7 +86,7 @@ const buttonByText = (text: string) =>
 async function drive(screen: PreviewScreen) {
   if (screen === "timer-confirm") {
     await wait(50);
-    buttonByText("Terminé antes de tiempo")?.click();
+    buttonByText("Terminar sesión")?.click();
     return;
   }
   if (!screen.startsWith("plant")) return;
@@ -137,8 +137,8 @@ function PreviewBody({ screen }: { screen: PreviewScreen }) {
         book={kokoro}
         snapshot={snapshot(screen === "timer-grace" ? "grace" : "running")}
         wakeLock={FAKE_WAKE_LOCK}
-        peekEarlyFinish={() => ({ actualSec: 145, belowHalf: true })}
-        onAcceptEarly={() => {}}
+        peekFinish={() => ({ actualSec: 145, enough: false })}
+        onFinish={() => {}}
         onCancel={() => {}}
       />
     );

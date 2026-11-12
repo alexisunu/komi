@@ -13,13 +13,14 @@ import {
   isUuid,
   MAX_PLANNED_SEC,
   MIN_PLANNED_SEC,
+  MIN_VALID_SEC,
 } from "../data/local_db/sessionRules";
 import {
   applyFinal,
   applyHeartbeat,
   applyHidden,
   applyVisible,
-  earlyFinish,
+  peekFinish,
   elapsedMs,
   evaluate,
   GRACE_MS,
@@ -169,7 +170,8 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
 
   async function saveInvalidated(record: ActiveSession, actualSec: number): Promise<void> {
     try {
-      await deps.saveInvalidated(record, actualSec);
+      // Una invalidada de menos de 5 minutos no se guarda (regla unica de duracion, FA-3.3).
+      if (actualSec >= MIN_VALID_SEC) await deps.saveInvalidated(record, actualSec);
       await enqueue(() => store.clear());
     } catch {
       // Se conserva el registro: `recover()` volvera a intentarlo al reabrir.
@@ -277,16 +279,16 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
       return () => listeners.delete(listener);
     },
 
-    /** Segundos y si queda por debajo del 50 %, sin cambiar nada (FA-3.3). */
-    peekEarlyFinish(): { actualSec: number; belowHalf: boolean } | null {
-      return active ? earlyFinish(active, now()) : null;
+    /** Segundos y si ya hay 5 minutos, sin cambiar nada (FA-3.3). */
+    peekFinish(): { actualSec: number; enough: boolean } | null {
+      return active ? peekFinish(active, now()) : null;
     },
 
-    /** Cierra la sesion como valida y anticipada (o 100 % del libro). Queda guardada para el cierre. */
-    acceptEarlyFinish(): FocusSnapshot | null {
+    /** Cierra la sesion con el tiempo leido hasta ahora. Queda guardada para el cierre. */
+    acceptFinish(): FocusSnapshot | null {
       if (!active || active.finalSec !== null) return cached;
       const at = now();
-      const { actualSec } = earlyFinish(active, at);
+      const { actualSec } = peekFinish(active, at);
       active = applyFinal(active, actualSec);
       const resolution: Resolution = {
         kind: actualSec >= active.plannedSec ? "completed" : "early",

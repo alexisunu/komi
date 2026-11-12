@@ -293,10 +293,10 @@ export function PostReadingSheet({
                 submitPage();
               }}
             >
-              {prepared?.belowHalf && (
+              {prepared?.short && (
                 <p className="post-reading__text">
-                  Llevas menos de la mitad del tiempo. La sesión solo se guarda si llegaste a la última
-                  página{total ? ` (${total})` : ""}.
+                  Llevas menos de 5 minutos. La sesión solo se guarda si llegaste a la última página
+                  {total ? ` (${total})` : ""}.
                 </p>
               )}
               <div className="post-reading__field">
@@ -344,7 +344,7 @@ export function PostReadingSheet({
 
           {stage.kind === "discarded" && (
             <p className="post-reading__text">
-              Leíste menos de la mitad del tiempo y no llegaste a la última página, así que esta sesión
+              Leíste menos de 5 minutos y no llegaste a la última página, así que esta sesión
               no se guardó. Tu avance anterior sigue intacto.
             </p>
           )}

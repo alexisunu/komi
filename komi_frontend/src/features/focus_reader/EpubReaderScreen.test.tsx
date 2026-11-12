@@ -75,7 +75,7 @@ async function mount(
     snapshot?: FocusSnapshot;
     file?: LocalEpubFile | undefined;
     open?: () => Promise<never>;
-    early?: { actualSec: number; belowHalf: boolean } | null;
+    early?: { actualSec: number; enough: boolean } | null;
   } = {},
 ) {
   const fake = createFakeReader();
@@ -95,9 +95,9 @@ async function mount(
   const onFontPx = vi.fn();
   const onToggleTheme = vi.fn();
   const onTalkRequested = vi.fn();
-  const onAcceptEarly = vi.fn();
+  const onFinish = vi.fn();
   const onCancel = vi.fn();
-  const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, belowHalf: false } : over.early));
+  const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, enough: true } : over.early));
   const element = (theme: ThemeId, snapshot: FocusSnapshot, fontPx: ReaderFontSize) => (
     <EpubReaderScreen
       book={BOOK}
@@ -109,8 +109,8 @@ async function mount(
       onTalkRequested={onTalkRequested}
       fontPx={fontPx}
       onFontPx={onFontPx}
-      peekEarlyFinish={peek}
-      onAcceptEarly={onAcceptEarly}
+      peekFinish={peek}
+      onFinish={onFinish}
       onCancel={onCancel}
     />
   );
@@ -123,8 +123,9 @@ async function mount(
     onFontPx,
     onToggleTheme,
     onTalkRequested,
-    onAcceptEarly,
+    onFinish,
     onCancel,
+    peek,
     rerender: (theme: ThemeId, snapshot = over.snapshot ?? snap(), fontPx: ReaderFontSize = over.fontPx ?? 18) =>
       mounted?.rerender(element(theme, snapshot, fontPx)),
   };
@@ -390,30 +391,30 @@ describe("EpubReaderScreen", () => {
     });
 
     it("Hablar con Komi con el tiempo cumplido avisa y acepta el cierre, en ese orden", async () => {
-      const ctx = await hidden({ early: { actualSec: 600, belowHalf: false } });
+      const ctx = await hidden({ early: { actualSec: 600, enough: true } });
       const order: string[] = [];
       ctx.onTalkRequested.mockImplementation(() => order.push("talk"));
-      ctx.onAcceptEarly.mockImplementation(() => order.push("accept"));
+      ctx.onFinish.mockImplementation(() => order.push("accept"));
       click(button(ctx.root, "Abrir menú"));
       click(button(ctx.root, "Hablar con Komi"));
       expect(order).toEqual(["talk", "accept"]);
       expect(ctx.root.querySelector(".reader-menu")).toBeNull();
     });
 
-    it("Hablar con Komi con menos del 50 % pide la confirmacion y no avisa de la charla", async () => {
-      const ctx = await hidden({ early: { actualSec: 100, belowHalf: true } });
+    it("Hablar con Komi con menos de 5 minutos pide el aviso y no avisa de la charla", async () => {
+      const ctx = await hidden({ early: { actualSec: 100, enough: false } });
       click(button(ctx.root, "Abrir menú"));
       click(button(ctx.root, "Hablar con Komi"));
       expect(ctx.onTalkRequested).not.toHaveBeenCalled();
-      expect(ctx.onAcceptEarly).not.toHaveBeenCalled();
+      expect(ctx.onFinish).not.toHaveBeenCalled();
       expect(document.querySelector('[role="dialog"]')?.textContent).toContain("¿Terminar sin guardar?");
     });
 
     it("Terminar sesion no avisa de la charla", async () => {
-      const ctx = await hidden({ early: { actualSec: 600, belowHalf: false } });
+      const ctx = await hidden({ early: { actualSec: 600, enough: true } });
       click(button(ctx.root, "Abrir menú"));
       click(button(ctx.root, "Terminar sesión"));
-      expect(ctx.onAcceptEarly).toHaveBeenCalledTimes(1);
+      expect(ctx.onFinish).toHaveBeenCalledTimes(1);
       expect(ctx.onTalkRequested).not.toHaveBeenCalled();
     });
 
@@ -427,19 +428,19 @@ describe("EpubReaderScreen", () => {
       expect(root.querySelector(".epub-reader__footer")).not.toBeNull();
     });
 
-    it("Terminar sesion usa la regla de siempre: con el tiempo cumplido acepta y sin el 50 % pide confirmacion", async () => {
-      const ok = await hidden({ early: { actualSec: 600, belowHalf: false } });
+    it("Terminar sesion del menu usa la regla unica: con 5 minutos termina y con menos muestra el aviso", async () => {
+      const ok = await hidden({ early: { actualSec: 600, enough: true } });
       click(button(ok.root, "Abrir menú"));
       click(button(ok.root, "Terminar sesión"));
-      expect(ok.onAcceptEarly).toHaveBeenCalledTimes(1);
+      expect(ok.onFinish).toHaveBeenCalledTimes(1);
       unmountNow();
       document.body.innerHTML = "";
 
-      const low = await hidden({ early: { actualSec: 100, belowHalf: true } });
+      const low = await hidden({ early: { actualSec: 100, enough: false } });
       click(button(low.root, "Abrir menú"));
       click(button(low.root, "Terminar sesión"));
-      expect(low.onAcceptEarly).not.toHaveBeenCalled();
-      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("no se guarda ningún avance");
+      expect(low.onFinish).not.toHaveBeenCalled();
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("El tiempo mínimo es 5 min");
     });
 
     it("el aviso de gracia queda por encima de la veladura (capas del CSS)", () => {
@@ -469,10 +470,11 @@ describe("EpubReaderScreen", () => {
     expect(root.querySelector('[role="alert"]')?.textContent).toContain("No pudimos abrir este libro");
   });
 
-  it("Terminar sesion del pie con el 50 % acepta sin preguntar", async () => {
-    const { root, onAcceptEarly } = await mount({ early: { actualSec: 450, belowHalf: false } });
+  it("Terminar sesion del pie con 5 minutos o mas termina directo, sin confirmacion", async () => {
+    const { root, onFinish } = await mount({ early: { actualSec: 300, enough: true } });
     click(button(root, "Terminar sesión"));
-    expect(onAcceptEarly).toHaveBeenCalledTimes(1);
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("el pie tiene solo tres controles, en orden: pagina anterior, Terminar sesion, pagina siguiente", async () => {
@@ -484,13 +486,79 @@ describe("EpubReaderScreen", () => {
     expect(button(root, "Terminé antes de tiempo")).toBeUndefined();
   });
 
-  it("con menos del 50 % pide confirmacion y no acepta", async () => {
-    const { root, onAcceptEarly } = await mount({ early: { actualSec: 100, belowHalf: true } });
-    click(button(root, "Terminar sesión"));
-    expect(onAcceptEarly).not.toHaveBeenCalled();
-    const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain("¿Terminar sin guardar?");
-    expect(dialog?.textContent).toContain("Aún no llevas la mitad del tiempo");
+  describe("aviso de menos de 5 minutos", () => {
+    const SHORT = { early: { actualSec: 100, enough: false } };
+    const dialog = () => document.querySelector('[role="dialog"]');
+
+    it("aparece con menos de 5 minutos, con el motivo claro, y no termina nada", async () => {
+      const { root, onFinish, onCancel } = await mount(SHORT);
+      click(button(root, "Terminar sesión"));
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(onCancel).not.toHaveBeenCalled();
+      expect(dialog()?.textContent).toContain("¿Terminar sin guardar?");
+      expect(dialog()?.textContent).toContain("El tiempo mínimo es 5 min");
+      expect(dialog()?.textContent).not.toContain("mitad");
+    });
+
+    it("Seguir leyendo es la accion principal y Descartar la secundaria", async () => {
+      const { root } = await mount(SHORT);
+      click(button(root, "Terminar sesión"));
+      const keep = button(document.body, "Seguir leyendo") as HTMLButtonElement;
+      const drop = button(document.body, "Descartar") as HTMLButtonElement;
+      expect(keep.className).not.toContain("secondary");
+      expect(drop.className).toContain("secondary");
+      expect(button(document.body, "Cancelar sesión")).toBeUndefined();
+    });
+
+    it("Seguir leyendo cierra el aviso y no termina ni descarta", async () => {
+      const { root, onFinish, onCancel } = await mount(SHORT);
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Seguir leyendo"));
+      expect(dialog()).toBeNull();
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it("Descartar sale sin guardar: llama a onCancel y nunca a onFinish", async () => {
+      const { root, onFinish, onCancel } = await mount(SHORT);
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Descartar"));
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(dialog()).toBeNull();
+    });
+
+    it("no aparece si la sesion lleva el libro al 100 %: se guarda directo", async () => {
+      const { root, fake, onFinish } = await mount(SHORT);
+      await act(async () => fake.see({ cfi: "fin", percentage: 100, text: "" }));
+      click(button(root, "Terminar sesión"));
+      expect(dialog()).toBeNull();
+      expect(onFinish).toHaveBeenCalledTimes(1);
+    });
+
+    it("99,99 % no cuenta como libro terminado: aparece el aviso", async () => {
+      const { root, fake, onFinish } = await mount(SHORT);
+      await act(async () => fake.see({ cfi: "casi", percentage: 99.99, text: "" }));
+      click(button(root, "Terminar sesión"));
+      expect(dialog()).not.toBeNull();
+      expect(onFinish).not.toHaveBeenCalled();
+    });
+
+    it("sin porcentaje conocido no se puede afirmar que termino: aparece el aviso", async () => {
+      const { root, onFinish } = await mount(SHORT);
+      click(button(root, "Terminar sesión"));
+      expect(dialog()).not.toBeNull();
+      expect(onFinish).not.toHaveBeenCalled();
+    });
+
+    it("aunque el tiempo siga corriendo con el aviso abierto, Descartar no guarda nada", async () => {
+      const ctx = await mount(SHORT);
+      click(button(ctx.root, "Terminar sesión"));
+      ctx.peek.mockReturnValue({ actualSec: 400, enough: true });
+      click(button(document.body, "Descartar"));
+      expect(ctx.onCancel).toHaveBeenCalledTimes(1);
+      expect(ctx.onFinish).not.toHaveBeenCalled();
+    });
   });
 
   it("solo usa tokens de color y no anima nada", () => {

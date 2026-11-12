@@ -9,6 +9,8 @@
 //   - Un reloj que retrocede nunca da tiempos negativos.
 //   - `lastSeen` cubre el cierre forzado sin evento `hidden`: al reabrir se usa como referencia.
 
+import { MIN_VALID_SEC } from "../data/local_db/sessionRules";
+
 export const GRACE_MS = 15_000;
 export const HEARTBEAT_MS = 5_000;
 
@@ -108,15 +110,13 @@ export function applyFinal(a: ActiveSession, sec: number): ActiveSession {
 }
 
 /**
- * "Terminé antes de tiempo" (FA-3.3): valida con al menos el 50 %. Con menos, la interfaz pide
- * confirmacion para cancelar sin guardar (o, si el libro llega al 100 %, el lector la acepta).
+ * "Terminar sesion" (FA-3.3, regla unica): solo dice cuantos segundos van y si ya hay 5 minutos.
+ * Con menos, la interfaz avisa que no se guardara (salvo que el libro llegue al 100 %, caso que
+ * decide el lector).
  */
-export function earlyFinish(
-  a: ActiveSession,
-  now: number,
-): { actualSec: number; belowHalf: boolean } {
+export function peekFinish(a: ActiveSession, now: number): { actualSec: number; enough: boolean } {
   const actualSec = foregroundSec(a, Math.min(now, a.startedAt + plannedMs(a)));
-  return { actualSec, belowHalf: actualSec * 2 < a.plannedSec };
+  return { actualSec, enough: actualSec >= MIN_VALID_SEC };
 }
 
 function isNum(value: unknown): value is number {
