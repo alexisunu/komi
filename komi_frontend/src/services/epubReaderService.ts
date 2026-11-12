@@ -130,7 +130,20 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         allowScriptedContent: false,
       });
 
+      // Punto de lectura que se conserva mientras se cambia el tamano de letra. Con otra letra la
+      // paginacion cambia y `display(cfi)` cae en la pagina que CONTIENE ese punto, que empieza en
+      // el o antes: si cada cambio partiera del inicio de la pagina vigente, la lectura iria
+      // retrocediendo. Mientras `reflowActive`, los `relocated` (los de nuestros propios `display` y
+      // los que dispara una fuente tardia) no mueven el ancla; solo la apaga una navegacion del
+      // lector (pasar pagina, enlace del libro). No depende de ningun plazo.
+      let anchorCfi: string | null = null;
+      let reflowActive = false;
+      const userNavigated = () => {
+        reflowActive = false;
+      };
+
       const turn = (action: TurnAction) => {
+        userNavigated();
         if (action === "next") void rendition.next();
         else if (action === "prev") void rendition.prev();
       };
@@ -165,7 +178,10 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         });
         doc.addEventListener("click", (event: MouseEvent) => {
           const target = event.target as Element | null;
-          if (target?.closest("a[href]")) return; // un enlace del libro manda
+          if (target?.closest("a[href]")) {
+            userNavigated();
+            return; // un enlace del libro manda
+          }
           // El iframe del capitulo mide varias paginas y se desplaza: el toque se mide contra el
           // contenedor visible, no contra el ancho del iframe.
           const frame = contents.window.frameElement?.getBoundingClientRect();
@@ -181,7 +197,7 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       rendition.on("relocated", (location: Location) => {
         const fraction = hasLocations ? book.locations.percentageFromCfi(location.end.cfi) : null;
         input.onPosition({
-          cfi: location.start.cfi,
+          cfi: reflowActive && anchorCfi ? anchorCfi : location.start.cfi,
           percentage: toPercentage(fraction),
           text: visibleText(rendition, location),
         });
@@ -192,7 +208,12 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         // Con otro tamano de letra cambia la paginacion y la pagina vigente se desplaza: se anota
         // el CFI de inicio y se vuelve a el al reacomodar el texto (medido: sin esto, agrandar la
         // letra perdia la pagina). Cambiar solo el color no mueve nada.
-        const resumeAt = theme.fontPx !== currentFontPx ? currentStartCfi(rendition) : null;
+        const fontChanged = theme.fontPx !== currentFontPx;
+        const resumeAt = fontChanged ? (reflowActive && anchorCfi ? anchorCfi : currentStartCfi(rendition)) : null;
+        if (resumeAt) {
+          anchorCfi = resumeAt;
+          reflowActive = true;
+        }
         currentFontPx = theme.fontPx;
         themeCss = buildReaderCss(theme);
         rendition.themes.registerCss(THEME_KEY, themeCss);
@@ -222,8 +243,14 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       if (reopened && input.startCfi) await redisplayAfterFonts(rendition, input.startCfi);
 
       return {
-        next: () => rendition.next(),
-        prev: () => rendition.prev(),
+        next: () => {
+          userNavigated();
+          return rendition.next();
+        },
+        prev: () => {
+          userNavigated();
+          return rendition.prev();
+        },
         setTheme: applyTheme,
         resize() {
           rendition.resize(Math.max(input.host.clientWidth, 1), Math.max(input.host.clientHeight, 1));

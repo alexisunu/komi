@@ -116,6 +116,52 @@ describe("epubReaderService.open", () => {
       expect(fake.rendition.display).toHaveBeenLastCalledWith("pagina-actual");
     });
 
+    it("varios cambios seguidos vuelven siempre al mismo punto, aunque cada pagina empiece antes", async () => {
+      vi.useFakeTimers();
+      const fake = fakeBook({ locations: true });
+      const { handle } = await open(fake);
+      // Cada display(cfi) cae en una pagina que empieza antes: el inicio de la pagina vigente retrocede.
+      let drift = 0;
+      fake.rendition.display.mockImplementation(async () => {
+        drift += 1;
+        fake.rendition.currentLocation.mockReturnValue({ start: { cfi: `antes-${drift}` } } as never);
+      });
+      fake.rendition.display.mockClear();
+      for (const px of [22, 18, 16, 20] as const) {
+        handle.setTheme({ theme: "light", fontPx: px, fontBaseUrl: "https://komi.test/" });
+        await vi.advanceTimersByTimeAsync(SETTLE_MS);
+      }
+      const targets = fake.rendition.display.mock.calls.map((call) => call[0]);
+      expect(targets.length).toBe(8);
+      expect(new Set(targets)).toEqual(new Set(["pagina-actual"]));
+    });
+
+    it("mientras dura el reacomodo, relocated guarda el punto de lectura y no el inicio de la pagina nueva", async () => {
+      vi.useFakeTimers();
+      const fake = fakeBook({ locations: true });
+      const { handle, positions } = await open(fake);
+      handle.setTheme({ theme: "light", fontPx: 22, fontBaseUrl: "https://komi.test/" });
+      fake.relocate({ start: { cfi: "antes-1" }, end: { cfi: "fin" } });
+      await vi.advanceTimersByTimeAsync(SETTLE_MS);
+      fake.relocate({ start: { cfi: "antes-2" }, end: { cfi: "fin" } }); // fuente tardia
+      expect(positions.map((p) => p.cfi)).toEqual(["pagina-actual", "pagina-actual"]);
+    });
+
+    it("pasar de pagina apaga la conservacion: el siguiente cambio parte de la pagina nueva", async () => {
+      vi.useFakeTimers();
+      const fake = fakeBook({ locations: true });
+      const { handle, positions } = await open(fake);
+      handle.setTheme({ theme: "light", fontPx: 22, fontBaseUrl: "https://komi.test/" });
+      await vi.advanceTimersByTimeAsync(SETTLE_MS);
+      await handle.next();
+      fake.relocate({ start: { cfi: "pagina-siguiente" }, end: { cfi: "fin" } });
+      expect(positions.at(-1)?.cfi).toBe("pagina-siguiente");
+      fake.rendition.currentLocation.mockReturnValue({ start: { cfi: "pagina-siguiente" } } as never);
+      fake.rendition.display.mockClear();
+      handle.setTheme({ theme: "light", fontPx: 16, fontBaseUrl: "https://komi.test/" });
+      expect(fake.rendition.display).toHaveBeenLastCalledWith("pagina-siguiente");
+    });
+
     it("cambiar solo el tema (mismo tamano) no mueve la pagina", async () => {
       vi.useFakeTimers();
       const fake = fakeBook({ locations: true });
