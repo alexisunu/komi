@@ -53,6 +53,7 @@
   justify-content: center;
   gap: var(--space-1);
   min-height: 0;
+  padding-bottom: var(--space-3);
   text-align: center;
 }
 
@@ -66,19 +67,18 @@
 
 .dashboard__book-author {
   margin: 0;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }
 
 .dashboard__progress {
-  width: 100%;
-  max-width: 240px;
-  height: 4px;
+  width: 160px;
+  height: 6px;
   margin-top: var(--space-1);
   overflow: hidden;
   border-radius: var(--radius-pill);
-  background: var(--color-bg-surface);
+  background: var(--color-border-subtle);
 }
 
 .dashboard__progress-fill {
@@ -90,7 +90,7 @@
 
 .dashboard__progress-text {
   margin: 0;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }
@@ -119,8 +119,8 @@
   height: var(--button-height);
   margin: 0;
   color: var(--color-text-primary);
-  font-size: var(--font-body-size);
-  line-height: var(--font-body-line);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
 }
 
 .dashboard__free svg {

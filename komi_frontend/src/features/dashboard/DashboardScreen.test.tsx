@@ -92,7 +92,8 @@ describe("lienzo", () => {
     const root = mount();
     expect(root.querySelector("h1")?.textContent).toBe("El nombre del viento");
     expect(root.textContent).toContain("Patrick Rothfuss");
-    expect(root.textContent).toContain("Pág. 84 de 250 — 33%");
+    expect(root.textContent).toContain("Patrick Rothfuss · Físico");
+    expect(root.textContent).toContain("Pág. 84 de 250 · 33 % leído");
     const bar = root.querySelector('[role="progressbar"]');
     expect(bar?.getAttribute("aria-valuenow")).toBe("33");
     expect(bar?.firstElementChild?.getAttribute("style")).toContain("width: 33%");

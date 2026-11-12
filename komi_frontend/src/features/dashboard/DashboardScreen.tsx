@@ -4,7 +4,7 @@
 // selector Temporizador | Libre (mockup 07): con Temporizador, los minutos; con Libre, un texto.
 
 import { Infinity as InfinityIcon, Settings } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FEATURES } from "../../core/featureFlags";
 import { StreakBadge } from "../../core/components/StreakBadge";
 import { TimerStepperButton } from "../../core/components/TimerStepperButton";
@@ -13,7 +13,7 @@ import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
 import { wholePercent } from "../../services/botanicCalculator";
 import type { TimerType } from "../../services/focusSessionMachine";
-import { progressLabel } from "./activeBook";
+import { dashboardAuthorLine, dashboardProgressLabel } from "./activeBook";
 import "./DashboardScreen.css";
 import { SettingsPanel, type SettingsRecovery } from "./SettingsPanel";
 import { SunflowerStageWidget } from "./SunflowerStageWidget";
@@ -25,6 +25,28 @@ import {
   TIMER_MAX_MINUTES,
   TIMER_MIN_MINUTES,
 } from "./timerSelection";
+
+/** Pantallas de poca altura (Android con barras del navegador): el girasol se achica y deja aire. */
+const COMPACT_HEIGHT_QUERY = "(max-height: 760px)";
+const SUNFLOWER_SIZE = 200;
+const SUNFLOWER_SIZE_COMPACT = 160;
+
+function useCompactHeight(): boolean {
+  const read = () =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(COMPACT_HEIGHT_QUERY).matches
+      : false;
+  const [compact, setCompact] = useState(read);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(COMPACT_HEIGHT_QUERY);
+    const update = () => setCompact(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return compact;
+}
 
 /** Lo que pide el lector al empezar: el modo y los minutos del selector (solo cuentan en TIMER). */
 export interface StartSelection {
@@ -73,6 +95,7 @@ export function DashboardScreen({
   };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const percent = book ? wholePercent(book.progress_percentage) : 0;
+  const compact = useCompactHeight();
 
   return (
     <div className="dashboard">
@@ -93,12 +116,12 @@ export function DashboardScreen({
         <SunflowerStageWidget
           percentage={book?.progress_percentage ?? 0}
           fallow={book?.status === "FALLOW"}
-          size={200}
+          size={compact ? SUNFLOWER_SIZE_COMPACT : SUNFLOWER_SIZE}
         />
         {book ? (
           <>
             <h1 className="dashboard__book-title">{book.title}</h1>
-            <p className="dashboard__book-author">{book.author}</p>
+            <p className="dashboard__book-author">{dashboardAuthorLine(book)}</p>
             <div
               className="dashboard__progress"
               role="progressbar"
@@ -109,7 +132,7 @@ export function DashboardScreen({
             >
               <div className="dashboard__progress-fill" style={{ width: `${percent}%` }} />
             </div>
-            <p className="dashboard__progress-text tabular">{progressLabel(book)}</p>
+            <p className="dashboard__progress-text tabular">{dashboardProgressLabel(book)}</p>
           </>
         ) : (
           <h1 className="dashboard__book-title">{EMPTY_TITLE}</h1>
