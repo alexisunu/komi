@@ -65,16 +65,25 @@ describe("zonas", () => {
     ]);
   });
 
-  it("el header muestra la racha y el boton de ajustes", () => {
+  it("con la racha oculta (la v2) el header muestra la marca Komi y el boton de ajustes, sin racha", () => {
     const root = mount({ streakDays: 5 });
-    expect(root.textContent).toContain("5 días seguidos");
+    expect(root.querySelector(".dashboard__brand")?.textContent).toBe("Komi");
+    expect(root.textContent).not.toContain("días seguidos");
+    expect(root.textContent).not.toContain("Sin racha");
     expect(byLabel(root, "Ajustes")).not.toBeNull();
   });
 
-  it("racha 0 y 1", () => {
-    expect(mount({ streakDays: 0 }).textContent).toContain("Sin racha aún");
+  it("con la bandera encendida el header vuelve a mostrar la racha en lugar de la marca", () => {
+    const root = mount({ streakDays: 5, showStreak: true });
+    expect(root.textContent).toContain("5 días seguidos");
+    expect(root.querySelector(".dashboard__brand")).toBeNull();
+    expect(byLabel(root, "Ajustes")).not.toBeNull();
+  });
+
+  it("racha 0 y 1 (con la bandera encendida)", () => {
+    expect(mount({ streakDays: 0, showStreak: true }).textContent).toContain("Sin racha aún");
     mounted?.unmount();
-    expect(mount({ streakDays: 1 }).textContent).toContain("1 día seguido");
+    expect(mount({ streakDays: 1, showStreak: true }).textContent).toContain("1 día seguido");
   });
 });
 

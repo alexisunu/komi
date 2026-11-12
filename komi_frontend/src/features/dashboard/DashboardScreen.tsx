@@ -4,6 +4,7 @@
 
 import { Settings } from "lucide-react";
 import { useState } from "react";
+import { FEATURES } from "../../core/featureFlags";
 import { StreakBadge } from "../../core/components/StreakBadge";
 import { TimerStepperButton } from "../../core/components/TimerStepperButton";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
@@ -24,6 +25,8 @@ import {
 
 export interface DashboardScreenProps {
   streakDays: number;
+  /** Muestra la racha. Por defecto, la bandera de la app (apagada en la v2); las pruebas lo fuerzan. */
+  showStreak?: boolean;
   book: LocalBook | null;
   dailyGoalMinutes: number;
   /** Hay libro, se puede leer y no hay otra sesion. Sin esto el boton queda deshabilitado. */
@@ -39,6 +42,7 @@ const EMPTY_TITLE = "Tu primera semilla te espera";
 
 export function DashboardScreen({
   streakDays,
+  showStreak = FEATURES.statsAndStreak,
   book,
   dailyGoalMinutes,
   canStart = false,
@@ -52,7 +56,7 @@ export function DashboardScreen({
   return (
     <div className="dashboard">
       <header className="dashboard__header" data-block="header">
-        <StreakBadge days={streakDays} />
+        {showStreak ? <StreakBadge days={streakDays} /> : <span className="dashboard__brand">Komi</span>}
         <button
           type="button"
           className="dashboard__settings"

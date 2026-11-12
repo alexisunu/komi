@@ -239,7 +239,7 @@ function ThemePanel({ theme }: { theme: ThemeId }) {
         </Row>
         <Row label="Activo: Estadísticas">
           <div className="gallery-nav">
-            <BottomNavZen active="estadisticas" onSelect={() => {}} />
+            <BottomNavZen active="estadisticas" onSelect={() => {}} showStats />
           </div>
         </Row>
       </Section>

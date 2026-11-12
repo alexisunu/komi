@@ -17,6 +17,14 @@
   justify-content: space-between;
 }
 
+/* Marca "Komi" (mockup 07): ocupa el lugar de la racha mientras esta oculta. */
+.dashboard__brand {
+  font-family: var(--font-h1-family);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
+  font-weight: var(--font-h1-weight);
+}
+
 .dashboard__settings {
   display: inline-flex;
   align-items: center;
@@ -26,8 +34,8 @@
   padding: 0;
   border: 0;
   border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--color-text-secondary);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }

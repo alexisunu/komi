@@ -222,7 +222,8 @@ describe("sesion de un libro fisico", () => {
     expect(sheet()).toBeNull();
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(root.querySelector(".bottom-nav")).not.toBeNull();
-    expect(root.querySelector(".streak-badge")?.textContent).toBe("1 día seguido");
+    expect(root.querySelector(".streak-badge")).toBeNull(); // oculta en la v2; la racha sigue guardada
+    expect((await db.meta.get(META_KEYS.streakCurrent))?.value).toBe(1);
     expect(root.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain("40 por ciento");
   });
 
