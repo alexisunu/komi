@@ -23,7 +23,9 @@ from apps.garden.models import BookGarden
 from apps.profiles.models import ReaderProfile
 from apps.reading_sessions import streak_engine
 from apps.reading_sessions.models import ReadingSession
+from apps.reading_sessions.serializers import DURATION_OUT_OF_RANGE, MIN_PLANNED_SEC
 
+MIN_VALID_SEC = MIN_PLANNED_SEC  # 5 minutos reales (FA-3.3)
 SessionStatus = ReadingSession.SessionStatus
 ZERO = Decimal("0.00")
 HUNDRED = Decimal("100.00")
@@ -101,21 +103,21 @@ def _new_progress(book: BookGarden, data: dict) -> tuple[Decimal, int, bool]:
 
 
 def _validated_status(data: dict, new_progress: Decimal, previous: Decimal) -> str:
-    """Estado final derivado de las duraciones; el servidor no confia en el del cliente.
+    """Estado de una sesion valida; el servidor no confia en el del cliente.
 
-    COMPLETED exige tiempo completo; EARLY_VALID, al menos el 50% o llegar al 100% del libro
-    (RF-02, FA-3.3). Una sesion que no alcanza ninguna de las dos no se registra como valida.
+    Una sola regla para el temporizador y el modo libre (FA-3.3): vale la sesion cuyo tiempo real
+    esta entre 5 y 120 minutos, o la que lleva el libro al 100 %, por corta que sea. El tope de
+    120 minutos lo impone el serializador (`planned` va de 5 a 120 y `actual` no lo supera). Toda
+    sesion valida queda COMPLETED: EARLY_VALID ya no se emite (solo existe en datos antiguos).
     """
-    actual, planned = data["actual_duration_sec"], data["planned_duration_sec"]
-    if actual >= planned:
+    reaches_full = new_progress >= HUNDRED and previous < HUNDRED
+    if data["actual_duration_sec"] >= MIN_VALID_SEC or reaches_full:
         return SessionStatus.COMPLETED
-    if actual * 2 >= planned or (new_progress >= HUNDRED and previous < HUNDRED):
-        return SessionStatus.EARLY_VALID
     raise ValidationError(
         {
-            "session_status": ErrorDetail(
-                "La sesion no alcanza el 50% de la duracion programada.",
-                code="below_50_percent",
+            "actual_duration_sec": ErrorDetail(
+                "La sesion dura menos de 5 minutos y no termina el libro.",
+                code=DURATION_OUT_OF_RANGE,
             )
         }
     )

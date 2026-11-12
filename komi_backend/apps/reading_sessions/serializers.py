@@ -6,8 +6,10 @@ from rest_framework.exceptions import ErrorDetail
 
 from apps.reading_sessions.models import ReadingSession
 
-MIN_PLANNED_SEC = 5 * 60  # CU-03: de 5:00 a 120:00 minutos.
+# Una sola regla de duracion para el temporizador y el modo libre (SRS FA-3.3): de 5:00 a 120:00.
+MIN_PLANNED_SEC = 5 * 60
 MAX_PLANNED_SEC = 120 * 60
+DURATION_OUT_OF_RANGE = "duration_out_of_range"
 MAX_EXCERPT_CHARS = 20_000  # SRS 17, punto 12.
 MAX_CFI_CHARS = 2_000
 # La hora local mas adelantada del planeta es UTC+14; se tolera un margen de 5 minutos.
@@ -43,9 +45,9 @@ class SessionPayloadSerializer(serializers.Serializer):
     # UUID de la sesion, generado por el cliente: hace idempotente el reintento (SRS 11.4).
     id = serializers.UUIDField()
     book_id = serializers.UUIDField()
-    planned_duration_sec = serializers.IntegerField(
-        min_value=MIN_PLANNED_SEC, max_value=MAX_PLANNED_SEC
-    )
+    # Fuera de 5 a 120 minutos se rechaza con un codigo propio. Una sesion libre que cierra el libro
+    # en menos de 5 minutos llega con planned = max(actual, 300): asi pasa este limite.
+    planned_duration_sec = serializers.IntegerField()
     actual_duration_sec = serializers.IntegerField(min_value=0)
     started_at_local = LocalWallClockField()
     session_status = serializers.ChoiceField(choices=ReadingSession.SessionStatus.choices)
@@ -64,6 +66,13 @@ class SessionPayloadSerializer(serializers.Serializer):
         max_length=MAX_EXCERPT_CHARS,
         trim_whitespace=False,
     )
+
+    def validate_planned_duration_sec(self, value):
+        if not MIN_PLANNED_SEC <= value <= MAX_PLANNED_SEC:
+            raise serializers.ValidationError(
+                ErrorDetail("La duracion va de 5 a 120 minutos.", code=DURATION_OUT_OF_RANGE)
+            )
+        return value
 
     def validate(self, attrs):
         if attrs["actual_duration_sec"] > attrs["planned_duration_sec"]:

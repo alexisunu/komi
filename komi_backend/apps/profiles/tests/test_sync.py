@@ -450,10 +450,10 @@ class BloomedBookTests(SyncTestCase):
         self.assertEqual(ReadingSession.objects.get().progress_delta, Decimal("0"))
         self.assert_untouched()
 
-    def test_a_short_valid_session_below_50_percent_is_still_rejected(self):
+    def test_a_short_valid_session_duration_out_of_range_is_still_rejected(self):
         item = session_item(self.book.id, current_page=264, actual_duration_sec=100)
         result = self.ok(sessions=[item])
-        self.assertEqual(codes(result, "sessions"), [(0, "below_50_percent")])
+        self.assertEqual(codes(result, "sessions"), [(0, "duration_out_of_range")])
         self.assert_untouched()
 
     def test_a_session_still_counts_for_the_streak(self):
@@ -601,7 +601,7 @@ class SessionSyncTests(SyncTestCase):
         book = self.book["id"]
         good = session_item(book, current_page=50, **day(1))
         batch = [
-            session_item(book, actual_duration_sec=PLANNED // 2 - 1),
+            session_item(book, actual_duration_sec=299),
             good,
             session_item(book, started_at_local="2099-01-01T00:00:00"),
             session_item(book, planned_duration_sec=60),
@@ -617,9 +617,9 @@ class SessionSyncTests(SyncTestCase):
         self.assertEqual(
             codes(result, "sessions"),
             [
-                (0, "below_50_percent"),
+                (0, "duration_out_of_range"),
                 (2, "future_start"),
-                (3, "validation_error"),
+                (3, "duration_out_of_range"),
                 (4, "validation_error"),
                 (5, "validation_error"),
                 (6, "validation_error"),
@@ -635,19 +635,28 @@ class SessionSyncTests(SyncTestCase):
         rejected = self.ok(sessions=[bad])["sessions"]["rejected"][0]
         self.assertEqual(rejected["index"], 0)
         self.assertEqual(rejected["id"], bad["id"])
-        self.assertEqual(rejected["code"], "below_50_percent")
-        self.assertIn("session_status", rejected["detail"])
+        self.assertEqual(rejected["code"], "duration_out_of_range")
+        self.assertIn("actual_duration_sec", rejected["detail"])
 
-    def test_the_50_percent_rule_is_shared_with_complete(self):
-        half = session_item(self.book["id"], actual_duration_sec=PLANNED // 2)
-        result = self.ok(sessions=[half])
-        self.assertEqual(result["sessions"]["accepted"][0]["session_status"], "EARLY_VALID")
+    def test_the_duration_rule_is_shared_with_complete(self):
+        five = session_item(self.book["id"], actual_duration_sec=300)
+        short = session_item(self.book["id"], actual_duration_sec=299)
+        result = self.ok(sessions=[five, short])
+        self.assertEqual(result["sessions"]["accepted"][0]["session_status"], "COMPLETED")
+        self.assertEqual(codes(result, "sessions"), [(1, "duration_out_of_range")])
+
+    def test_the_hundred_twenty_minute_limit_is_shared_with_complete(self):
+        top = session_item(self.book["id"], planned_duration_sec=7200, actual_duration_sec=7200)
+        over = session_item(self.book["id"], planned_duration_sec=7201, actual_duration_sec=7201)
+        result = self.ok(sessions=[top, over])
+        self.assertEqual(len(result["sessions"]["accepted"]), 1)
+        self.assertEqual(codes(result, "sessions"), [(1, "duration_out_of_range")])
 
     def test_a_short_session_that_blooms_the_book_is_valid(self):
         book = book_item(total_pages=100)
         short = session_item(book["id"], current_page=100, actual_duration_sec=10)
         result = self.ok(books=[book], sessions=[short])
-        self.assertEqual(result["sessions"]["accepted"][0]["session_status"], "EARLY_VALID")
+        self.assertEqual(result["sessions"]["accepted"][0]["session_status"], "COMPLETED")
 
     def test_a_session_of_a_rejected_book_is_rejected_as_book_rejected(self):
         broken = book_item(total_pages=None)
@@ -1030,7 +1039,7 @@ class BatchBaselineTests(SyncTestCase):
 
         self.assertEqual(codes(result, "sessions"), [])
         accepted = self.entry(result, short)
-        self.assertEqual(accepted["session_status"], "EARLY_VALID")
+        self.assertEqual(accepted["session_status"], "COMPLETED")
         self.assertEqual(accepted["progress_delta"], 100)
         self.assertTrue(accepted["just_bloomed"])
         stored = self.book(book["id"])
@@ -1057,7 +1066,7 @@ class BatchBaselineTests(SyncTestCase):
         result = self.ok(books=[finished], sessions=[short])
 
         accepted = self.entry(result, short)
-        self.assertEqual(accepted["session_status"], "EARLY_VALID")
+        self.assertEqual(accepted["session_status"], "COMPLETED")
         self.assertEqual(accepted["progress_delta"], 60)
         self.assertEqual(self.book(book["id"]).status, "BLOOMED")
 
@@ -1065,14 +1074,14 @@ class BatchBaselineTests(SyncTestCase):
         book = book_item(total_pages=100, current_page=40)
         short = session_item(book["id"], current_page=40, actual_duration_sec=23, **day(10))
         result = self.ok(books=[book], sessions=[short])
-        self.assertEqual(codes(result, "sessions"), [(0, "below_50_percent")])
+        self.assertEqual(codes(result, "sessions"), [(0, "duration_out_of_range")])
 
         existing = book_item(total_pages=100, current_page=10)
         self.ok(books=[existing])
         moved = {**existing, "current_page": 40, "updated_at": hours_ago(0)}
         short = session_item(existing["id"], current_page=40, actual_duration_sec=23, **day(10))
         result = self.ok(books=[moved], sessions=[short])
-        self.assertEqual(codes(result, "sessions"), [(0, "below_50_percent")])
+        self.assertEqual(codes(result, "sessions"), [(0, "duration_out_of_range")])
 
     def test_the_delta_and_the_solar_bonus_use_the_progress_before_the_batch(self):
         book = book_item(total_pages=1000, current_page=120)
@@ -1121,7 +1130,7 @@ class BatchBaselineTests(SyncTestCase):
         short_open = session_item(book["id"], current_page=30, actual_duration_sec=10, **day(10))
         closing = session_item(book["id"], current_page=100, actual_duration_sec=10, **day(11))
         result = self.ok(books=[book], sessions=[short_open, closing])
-        self.assertEqual(codes(result, "sessions"), [(0, "below_50_percent")])
+        self.assertEqual(codes(result, "sessions"), [(0, "duration_out_of_range")])
         self.assertEqual(self.entry(result, closing)["progress_delta"], 100)
 
     def test_the_same_batch_replayed_changes_nothing(self):
@@ -1152,7 +1161,7 @@ class BatchBaselineTests(SyncTestCase):
         }
         result = self.ok(books=[book], sessions=[short])
         self.assertEqual(codes(result, "sessions"), [])
-        self.assertEqual(self.entry(result, short)["session_status"], "EARLY_VALID")
+        self.assertEqual(self.entry(result, short)["session_status"], "COMPLETED")
 
     def test_a_book_missing_from_the_batch_still_uses_its_stored_progress(self):
         book = book_item(total_pages=1000, current_page=100)
@@ -1169,7 +1178,7 @@ class BatchBaselineTests(SyncTestCase):
         closing = session_item(book["id"], current_page=100, actual_duration_sec=23, **day(11))
         result = self.ok(books=[book], sessions=[lost, closing])
         self.assertEqual(codes(result, "sessions"), [])
-        self.assertEqual(self.entry(result, closing)["session_status"], "EARLY_VALID")
+        self.assertEqual(self.entry(result, closing)["session_status"], "COMPLETED")
         self.assertEqual(self.entry(result, closing)["progress_delta"], 100)
 
     def test_ids_in_upper_case_use_the_same_baseline(self):
@@ -1178,4 +1187,4 @@ class BatchBaselineTests(SyncTestCase):
         short = session_item(book["id"], current_page=100, actual_duration_sec=23, **day(10))
         result = self.ok(books=[book], sessions=[short])
         self.assertEqual(codes(result, "sessions"), [])
-        self.assertEqual(self.entry(result, short)["session_status"], "EARLY_VALID")
+        self.assertEqual(self.entry(result, short)["session_status"], "COMPLETED")
