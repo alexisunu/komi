@@ -180,9 +180,4 @@ describe("GracePeriodBanner", () => {
     view.unmount();
   });
 
-  it("en la variante invalidada avisa con calma y como alerta", () => {
-    const view = render(<GracePeriodBanner variant="invalidated" />);
-    expect(view.container.querySelector("[role=alert]")?.textContent).toContain("15 segundos");
-    view.unmount();
-  });
 });

@@ -60,6 +60,11 @@ export function PhysicalTimerScreen({
 
   return (
     <div className="focus-timer">
+      {inGrace && (
+        <div className="focus-timer__grace">
+          <GracePeriodBanner variant="grace" graceRemainingMs={snapshot.graceRemainingMs} />
+        </div>
+      )}
       <section className="focus-timer__canvas" data-block="canvas" aria-label="Libro en lectura">
         <SunflowerStageWidget
           percentage={book?.progress_percentage ?? 0}
@@ -81,7 +86,6 @@ export function PhysicalTimerScreen({
         <p className="focus-timer__mode tabular">
           {sessionSubtitle(snapshot.timerType, book ? book.progress_percentage : null)}
         </p>
-        {inGrace && <GracePeriodBanner variant="grace" graceRemainingMs={snapshot.graceRemainingMs} />}
       </div>
 
       <div className="focus-timer__actions" data-block="actions">

@@ -9,6 +9,7 @@ import type { LocalBook } from "../data/local_db/types";
 import { EpubImportError } from "../services/epubService";
 import type { GardenPlantService } from "../services/plantBookService";
 import { DashboardScreen } from "../features/dashboard/DashboardScreen";
+import { InvalidatedSessionSheet } from "../features/focus_reader/InvalidatedSessionSheet";
 import { PhysicalTimerScreen } from "../features/focus_reader/PhysicalTimerScreen";
 import type { FocusSnapshot } from "../services/focusVisibilityService";
 import type { WakeLockService } from "../services/wakeLockService";
@@ -29,6 +30,7 @@ export type PreviewScreen =
   | "timer"
   | "timer-grace"
   | "timer-free"
+  | "dashboard-invalidated"
   | "timer-confirm";
 
 function book(over: Partial<LocalBook> & Pick<LocalBook, "id" | "title" | "author">): LocalBook {
@@ -134,6 +136,14 @@ function PreviewBody({ screen }: { screen: PreviewScreen }) {
   if (screen === "dashboard") {
     return <DashboardScreen streakDays={4} book={kokoro} dailyGoalMinutes={15} canStart onStart={() => {}} />;
   }
+  if (screen === "dashboard-invalidated") {
+    return (
+      <>
+        <DashboardScreen streakDays={4} book={kokoro} dailyGoalMinutes={15} canStart onStart={() => {}} />
+        <InvalidatedSessionSheet onClose={() => {}} />
+      </>
+    );
+  }
   if (screen === "timer" || screen === "timer-grace" || screen === "timer-confirm" || screen === "timer-free") {
     return (
       <PhysicalTimerScreen
@@ -158,7 +168,7 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
     <ThemeProvider storedMode={theme}>
       <div className="app-shell" data-preview={SCREEN_PREVIEW_MARKER}>
         <div className="app-shell__screen">
-          {["dashboard", "timer", "timer-grace", "timer-confirm", "timer-free"].includes(screen) ? (
+          {["dashboard", "dashboard-invalidated", "timer", "timer-grace", "timer-confirm", "timer-free"].includes(screen) ? (
             <PreviewBody screen={screen} />
           ) : (
           <MyGardenScreen

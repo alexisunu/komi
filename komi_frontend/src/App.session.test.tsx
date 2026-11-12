@@ -352,6 +352,66 @@ describe("periodo de gracia en pantalla", () => {
     expect(await storedSession()).toBeNull();
   });
 
+  describe("aviso de sesion invalidada: hoja modal (A4)", () => {
+    async function invalidate(afterSec: number) {
+      const ctx = await mountApp([book(1)]);
+      await tap(startButton(ctx.root));
+      ctx.env.advance(afterSec * 1000);
+      await act(async () => ctx.env.hide());
+      ctx.env.advance(15_100);
+      await act(async () => ctx.env.show());
+      await settle();
+      return ctx;
+    }
+    const dialog = (root: HTMLElement) => root.querySelector('[role="dialog"]');
+
+    it("es un dialogo modal titulado 'Sesion no valida' que contiene el aviso y su salida", async () => {
+      const { root } = await invalidate(300);
+      const sheet = dialog(root);
+      expect(sheet?.getAttribute("aria-modal")).toBe("true");
+      expect(sheet?.querySelector("h2")?.textContent).toBe("Sesión no válida");
+      expect(sheet?.querySelector('[data-testid="session-invalidated"]')?.textContent).toContain(
+        "la sesión no se guardó como válida",
+      );
+      expect(byText(sheet as HTMLElement, "button", "Entendido")).not.toBeNull();
+    });
+
+    it("el titulo no afirma que no se guardo nada: con 5 min o mas la sesion invalida si se registra", async () => {
+      const { root } = await invalidate(300);
+      expect(dialog(root)?.textContent).not.toContain("no guardada");
+      expect(await db.sessions.count()).toBe(1);
+    });
+
+    it("con menos de 5 min el mismo aviso sale y no se guarda ninguna sesion", async () => {
+      const { root } = await invalidate(299);
+      expect(dialog(root)?.querySelector("h2")?.textContent).toBe("Sesión no válida");
+      expect(await db.sessions.count()).toBe(0);
+    });
+
+    it("no ocupa sitio en el flujo: el Dashboard no tiene ningun bloque de aviso antes de su contenido", async () => {
+      const { root } = await invalidate(300);
+      const screen = root.querySelector(".app-shell__screen") as HTMLElement;
+      expect(screen.querySelector(":scope > .session-notice")).toBeNull();
+      expect(screen.firstElementChild?.classList.contains("zen-sheet-backdrop")).toBe(true);
+      expect(root.querySelector(".dashboard")).not.toBeNull();
+    });
+
+    it("Escape y la X cierran el aviso igual que Entendido", async () => {
+      const first = await invalidate(300);
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      expect(dialog(first.root)).toBeNull();
+      expect(await storedSession()).toBeNull();
+      mounted?.unmount();
+      await db.sessions.clear();
+      const second = await invalidate(300);
+      await tap(byLabel(dialog(second.root) as HTMLElement, "Cerrar"));
+      expect(dialog(second.root)).toBeNull();
+      expect(await storedSession()).toBeNull();
+    });
+  });
+
   it("invalidada con menos de 5 minutos: se avisa pero no se guarda sesion alguna", async () => {
     const { root, env, gate } = await mountApp([book(1)]);
     await tap(startButton(root));

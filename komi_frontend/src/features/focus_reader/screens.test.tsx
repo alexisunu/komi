@@ -275,6 +275,19 @@ describe("PhysicalTimerScreen", () => {
     });
   });
 
+  it("el aviso de gracia flota arriba y no entra en el flujo: el reloj no se mueve al aparecer (A4)", () => {
+    const rule = /\.focus-timer__grace \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toContain("position: absolute");
+    expect(/\.focus-timer \{([^}]*)\}/.exec(css)?.[1]).toContain("position: relative");
+  });
+
+  it("el aviso de gracia es hijo directo de la pantalla, no del bloque del reloj", () => {
+    const { root } = timer({ snapshot: snap({ phase: "grace", graceRemainingMs: 9_000 }) });
+    const banner = root.querySelector(".grace-banner");
+    expect(banner?.parentElement?.className).toBe("focus-timer__grace");
+    expect(root.querySelector('[data-block="clock"] .grace-banner')).toBeNull();
+  });
+
   it("el subtitulo del modo usa text-primary (contraste del texto pequeno del lector)", () => {
     const rule = /\.focus-timer__mode \{([^}]*)\}/.exec(css)?.[1] ?? "";
     expect(rule).toContain("color: var(--color-text-primary)");

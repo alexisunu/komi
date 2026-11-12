@@ -18,14 +18,13 @@ import { CompanionChatScreen } from "./features/ai_companion/CompanionChatScreen
 import { canReadBook, resolveActiveBook } from "./features/dashboard/activeBook";
 import { DashboardScreen } from "./features/dashboard/DashboardScreen";
 import { EpubReaderScreen } from "./features/focus_reader/EpubReaderScreen";
-import { GracePeriodBanner } from "./features/focus_reader/GracePeriodBanner";
 import { PhysicalTimerScreen } from "./features/focus_reader/PhysicalTimerScreen";
 import { PostReadingSheet, type SavedReading } from "./features/focus_reader/PostReadingSheet";
 import { useFocusSession } from "./features/focus_reader/useFocusSession";
 import { MyGardenScreen } from "./features/garden_library/MyGardenScreen";
 import { useLibrary } from "./features/garden_library/useLibrary";
 import { OnboardingScreen } from "./features/onboarding/OnboardingScreen";
-import { ZenPrimaryButton } from "./core/components/ZenPrimaryButton";
+import { InvalidatedSessionSheet } from "./features/focus_reader/InvalidatedSessionSheet";
 import { StatsScreen } from "./features/stats/StatsScreen";
 import type { TimerType } from "./services/focusSessionMachine";
 import type { CompleteOnboardingResult } from "./services/onboardingService";
@@ -480,14 +479,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   return (
     <div className="app-shell">
       <div className="app-shell__screen">
-        {snapshot?.phase === "invalidated" && (
-          <div className="session-notice" data-testid="session-invalidated">
-            <GracePeriodBanner variant="invalidated" />
-            <ZenPrimaryButton variant="secondary" onClick={() => void focus.leave()}>
-              Entendido
-            </ZenPrimaryButton>
-          </div>
-        )}
+        {snapshot?.phase === "invalidated" && <InvalidatedSessionSheet onClose={() => void focus.leave()} />}
         {missingEpub && nav === "lectura" && !startError && (
           <p className="app-notice" role="status">
             Falta el archivo .epub de «{missingEpub.title}». Vuelve a importarlo desde Mi Jardín para leerlo.
