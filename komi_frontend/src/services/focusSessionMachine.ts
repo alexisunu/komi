@@ -9,15 +9,27 @@
 //   - Un reloj que retrocede nunca da tiempos negativos.
 //   - `lastSeen` cubre el cierre forzado sin evento `hidden`: al reabrir se usa como referencia.
 
-import { MIN_VALID_SEC } from "../data/local_db/sessionRules";
+import { MAX_PLANNED_SEC, MIN_VALID_SEC } from "../data/local_db/sessionRules";
 
 export const GRACE_MS = 15_000;
 export const HEARTBEAT_MS = 5_000;
 
+/** Modo de la sesion. Solo vive en el registro local: el servidor no lo conoce (SRS FA-3.3). */
+export type TimerType = "TIMER" | "FREE";
+
+/** Tope de una sesion libre: el mismo que el del servidor (120 minutos). */
+export const FREE_CAP_SEC = MAX_PLANNED_SEC;
+
 export interface ActiveSession {
   sessionId: string;
   bookId: string;
+  /**
+   * Segundos programados. En modo libre no hay tiempo programado: vale el tope (7200 s), asi la
+   * sesion se completa sola a las 2 horas con la misma logica del temporizador.
+   */
   plannedSec: number;
+  /** TIMER cuenta hacia atras; FREE, hacia arriba. Los registros viejos sin el campo son TIMER. */
+  timerType: TimerType;
   /** Date.now() al iniciar. */
   startedAt: number;
   /** Hora de pared local de inicio, para la racha (SRS 16, punto 1). */
@@ -45,6 +57,19 @@ export interface EvaluateOptions {
 }
 
 export const plannedMs = (a: Pick<ActiveSession, "plannedSec">): number => a.plannedSec * 1000;
+
+/**
+ * `planned_duration_sec` que se envia al servidor. En el temporizador es lo programado; en libre,
+ * el tiempo real con un piso de 5 minutos (`max(actual, 300)`): asi una sesion libre que termina el
+ * libro en menos de 5 minutos pasa el limite del serializador. Nunca supera el tope de 7200 s.
+ */
+export function reportedPlannedSec(
+  a: Pick<ActiveSession, "timerType" | "plannedSec">,
+  actualSec: number,
+): number {
+  if (a.timerType === "FREE") return Math.min(FREE_CAP_SEC, Math.max(actualSec, MIN_VALID_SEC));
+  return a.plannedSec;
+}
 
 /** Tiempo transcurrido desde el inicio, nunca negativo ni mayor que el programado. */
 export function elapsedMs(a: ActiveSession, now: number): number {
@@ -136,6 +161,9 @@ export function parseActiveSession(raw: unknown): ActiveSession | null {
   const r = data as Record<string, unknown>;
   const hiddenAt = r.hiddenAt === null ? null : r.hiddenAt;
   const finalSec = r.finalSec === null ? null : r.finalSec;
+  // Un registro anterior al modo libre no trae el campo: es un temporizador.
+  const timerType = r.timerType === undefined ? "TIMER" : r.timerType;
+  if (timerType !== "TIMER" && timerType !== "FREE") return null;
   if (
     typeof r.sessionId !== "string" ||
     typeof r.bookId !== "string" ||
@@ -153,6 +181,7 @@ export function parseActiveSession(raw: unknown): ActiveSession | null {
     sessionId: r.sessionId,
     bookId: r.bookId,
     plannedSec: r.plannedSec,
+    timerType,
     startedAt: r.startedAt,
     startedAtLocal: r.startedAtLocal,
     hiddenAt,

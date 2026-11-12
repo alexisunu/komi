@@ -26,8 +26,10 @@ import {
   GRACE_MS,
   heartbeatDue,
   remainingMs,
+  FREE_CAP_SEC,
   type ActiveSession,
   type Resolution,
+  type TimerType,
 } from "./focusSessionMachine";
 
 export type FocusPhase = "running" | "grace" | "completed" | "early" | "invalidated";
@@ -38,6 +40,7 @@ export interface FocusSnapshot {
   remainingMs: number;
   elapsedMs: number;
   plannedSec: number;
+  timerType: TimerType;
   /** Solo en `grace`: lo que queda de los 15 s de esta salida. */
   graceRemainingMs: number;
   /** Segundos finales cuando la fase ya es terminal. */
@@ -72,11 +75,11 @@ export interface FocusServiceDeps {
   saveInvalidated: (session: ActiveSession, actualSec: number) => Promise<void>;
 }
 
-export interface StartInput {
-  sessionId: string;
-  bookId: string;
-  plannedSec: number;
-}
+/** Temporizador (con minutos programados) o modo libre (sin tiempo programado, con tope de 120 min). */
+export type StartInput = { sessionId: string; bookId: string } & (
+  | { timerType?: "TIMER"; plannedSec: number }
+  | { timerType: "FREE"; plannedSec?: never }
+);
 
 export function createFocusVisibilityService(deps: FocusServiceDeps) {
   const { now, doc, win, store } = deps;
@@ -115,6 +118,7 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
       elapsedMs: elapsed,
       remainingMs: terminal ? 0 : remainingMs(record, at),
       plannedSec: record.plannedSec,
+      timerType: record.timerType,
       graceRemainingMs: resolution.kind === "grace" ? resolution.graceRemainingMs : 0,
       actualSec: terminal ? resolution.actualSec : null,
       sessionId: record.sessionId,
@@ -217,10 +221,12 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
       if (!isUuid(input.sessionId)) {
         throw new InvalidSessionError("id", "El id de la sesion debe ser un UUID.");
       }
+      const timerType: TimerType = input.timerType === "FREE" ? "FREE" : "TIMER";
+      const plannedSec = timerType === "FREE" ? FREE_CAP_SEC : (input.plannedSec as number);
       if (
-        !Number.isInteger(input.plannedSec) ||
-        input.plannedSec < MIN_PLANNED_SEC ||
-        input.plannedSec > MAX_PLANNED_SEC
+        !Number.isInteger(plannedSec) ||
+        plannedSec < MIN_PLANNED_SEC ||
+        plannedSec > MAX_PLANNED_SEC
       ) {
         throw new InvalidSessionError(
           "planned_duration_sec",
@@ -232,7 +238,8 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
       active = {
         sessionId: input.sessionId,
         bookId: input.bookId,
-        plannedSec: input.plannedSec,
+        plannedSec,
+        timerType,
         startedAt: at,
         startedAtLocal: formatLocalWallClock(new Date(at)),
         hiddenAt: null,

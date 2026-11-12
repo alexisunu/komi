@@ -18,7 +18,7 @@ import { createWakeService, type WakeService } from "../data/network/wakeService
 import { createEpubReaderService, type EpubReaderService } from "../services/epubReaderService";
 import { createEpubService, type EpubService } from "../services/epubService";
 import { parseReaderPosition, parseReadingProgress, type ReadingProgress } from "../services/readingTracker";
-import { parseActiveSession } from "../services/focusSessionMachine";
+import { parseActiveSession, reportedPlannedSec } from "../services/focusSessionMachine";
 import {
   createFocusVisibilityService,
   type FocusDocument,
@@ -94,7 +94,7 @@ export function createAppDeps(options: AppOptions = {}) {
       await sessions.completeSession({
         id: session.sessionId,
         book_id: session.bookId,
-        planned_duration_sec: session.plannedSec,
+        planned_duration_sec: reportedPlannedSec(session, actualSec),
         actual_duration_sec: actualSec,
         started_at_local: session.startedAtLocal,
         session_status: "INVALIDATED_GRACE_EXPIRED",

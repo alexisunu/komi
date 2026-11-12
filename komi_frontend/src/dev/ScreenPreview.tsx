@@ -119,6 +119,7 @@ function snapshot(phase: "running" | "grace"): FocusSnapshot {
     remainingMs: 754_200,
     elapsedMs: 145_800,
     plannedSec: 900,
+    timerType: "TIMER",
     graceRemainingMs: phase === "grace" ? 9_100 : 0,
     actualSec: null,
     sessionId: "s",

@@ -17,7 +17,7 @@ import type { FocusSnapshot, FocusVisibilityService } from "../../services/focus
 import type { ReaderFontSize } from "../../services/readerTheme";
 import { canFinishNow } from "../../services/readingTracker";
 import type { WakeLockService } from "../../services/wakeLockService";
-import { formatClock } from "./clockFormat";
+import { sessionClock, sessionSubtitle } from "./clockFormat";
 import "./EpubReaderScreen.css";
 import { FontSizeSheet } from "./FontSizeSheet";
 import { GracePeriodBanner } from "./GracePeriodBanner";
@@ -128,12 +128,15 @@ export function EpubReaderScreen({
         <header className="epub-reader__header" data-block="header">
           <div className="epub-reader__bar">
             <div className="epub-reader__time">
-              <output className="epub-reader__clock tabular" role="timer" aria-label="Tiempo restante">
-                {formatClock(snapshot.remainingMs)}
+              <output
+                className="epub-reader__clock tabular"
+                role="timer"
+                aria-label={snapshot.timerType === "FREE" ? "Tiempo leído" : "Tiempo restante"}
+              >
+                {sessionClock(snapshot)}
               </output>
               <span className="epub-reader__percent tabular" aria-label="Modo y avance del libro">
-                Temporizador
-                {view.percentage !== null && <> · {Math.floor(view.percentage)} %</>}
+                {sessionSubtitle(snapshot.timerType, view.percentage)}
               </span>
             </div>
             <div className="epub-reader__actions">

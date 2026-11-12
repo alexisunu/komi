@@ -407,3 +407,97 @@ describe("cierre y desmontaje", () => {
     expect(env.invalidated).toHaveLength(0);
   });
 });
+
+describe("modo libre", () => {
+  const startedFree = async () => {
+    const env = createFocusEnv();
+    await env.service.start({ sessionId: SESSION_ID, bookId: BOOK_ID, timerType: "FREE" });
+    return env;
+  };
+
+  it("se guarda con timerType FREE y el tope de 7200 s como plannedSec", async () => {
+    const env = await startedFree();
+    expect(env.stored).toMatchObject({ timerType: "FREE", plannedSec: 7200, finalSec: null });
+    expect(env.service.getSnapshot()).toMatchObject({ phase: "running", timerType: "FREE", elapsedMs: 0 });
+  });
+
+  it("el temporizador sigue guardando TIMER", async () => {
+    const env = await started();
+    expect(env.stored?.timerType).toBe("TIMER");
+    expect(env.service.getSnapshot()?.timerType).toBe("TIMER");
+  });
+
+  it("cuenta hacia arriba con marcas de tiempo, sin depender de los ticks", async () => {
+    const env = await startedFree();
+    env.advance(7 * 60_000);
+    await env.service.tick();
+    expect(env.service.getSnapshot()).toMatchObject({ phase: "running", elapsedMs: 7 * 60_000 });
+  });
+
+  it("reanuda tras una suspension de Safari: 20 minutos sin ticks ni eventos dan 20:00", async () => {
+    const env = await startedFree();
+    env.advance(20 * 60_000);
+    env.pagehide(); // la pestana se suspende con la ultima marca vista
+    await env.settle();
+    const again = env.reload();
+    const snap = await again.recover();
+    // Pasaron 20 minutos desde el inicio; la ultima marca vista es la de pagehide, y se retoma.
+    expect(snap).toMatchObject({ phase: "running", timerType: "FREE", elapsedMs: 20 * 60_000 });
+    again.dispose();
+  });
+
+  it("a las 2 horas se completa sola, queda guardada con 7200 s y no depende de ver el tick", async () => {
+    const env = await startedFree();
+    env.advance(7_200_000 + 3);
+    await env.service.tick();
+    await env.settle();
+    expect(env.service.getSnapshot()).toMatchObject({ phase: "completed", actualSec: 7200 });
+    expect(env.stored?.finalSec).toBe(7200);
+  });
+
+  it("dejarlo corriendo mucho mas de 2 horas no pasa del tope", async () => {
+    const env = await startedFree();
+    env.advance(10 * 3_600_000);
+    await env.service.tick();
+    expect(env.service.getSnapshot()?.actualSec).toBe(7200);
+  });
+
+  it("4:59 no alcanza y 5:00 si", async () => {
+    const env = await startedFree();
+    env.advance(299_000);
+    expect(env.service.peekFinish()).toEqual({ actualSec: 299, enough: false });
+    env.advance(1_000);
+    expect(env.service.peekFinish()).toEqual({ actualSec: 300, enough: true });
+  });
+
+  it("terminar con 5 minutos deja finalSec y fase terminada", async () => {
+    const env = await startedFree();
+    env.advance(300_000);
+    env.service.acceptFinish();
+    await env.settle();
+    expect(env.service.getSnapshot()).toMatchObject({ phase: "early", actualSec: 300, timerType: "FREE" });
+    expect(env.stored?.finalSec).toBe(300);
+  });
+
+  it("gracia de 15 s: mas de 15 s fuera invalida y con 5 minutos o mas se guarda", async () => {
+    const env = await startedFree();
+    env.advance(360_000);
+    env.hide();
+    env.advance(15_100);
+    await env.show();
+    expect(env.service.getSnapshot()).toMatchObject({ phase: "invalidated", actualSec: 360 });
+    expect(env.invalidated).toHaveLength(1);
+    expect(env.invalidated[0]?.session.timerType).toBe("FREE");
+  });
+
+  it("invalidada con menos de 5 minutos: no se guarda ni se envia, pero la sesion termina", async () => {
+    const env = await startedFree();
+    env.advance(299_000);
+    env.hide();
+    env.advance(15_100);
+    await env.show();
+    expect(env.service.getSnapshot()?.phase).toBe("invalidated");
+    expect(env.invalidated).toHaveLength(0);
+    expect(env.stored).toBeNull();
+  });
+});

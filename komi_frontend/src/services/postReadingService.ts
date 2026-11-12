@@ -15,7 +15,7 @@ import {
   type CompleteSessionInput,
 } from "../data/local_db/sessionRules";
 import type { LocalBook, LocalSession } from "../data/local_db/types";
-import type { ActiveSession } from "./focusSessionMachine";
+import { reportedPlannedSec, type ActiveSession } from "./focusSessionMachine";
 import type { EpubService } from "./epubService";
 import { computeStreak } from "./localStreak";
 import type { ReadingProgress } from "./readingTracker";
@@ -163,7 +163,8 @@ export function createPostReadingService(deps: PostReadingDeps) {
       const base: CompleteSessionInput = {
         id: record.sessionId,
         book_id: record.bookId,
-        planned_duration_sec: record.plannedSec,
+        // Libre: max(actual, 300), para que pase el limite si termina el libro en menos de 5 minutos.
+        planned_duration_sec: reportedPlannedSec(record, actualSec),
         actual_duration_sec: actualSec,
         started_at_local: record.startedAtLocal,
         session_status: "COMPLETED",

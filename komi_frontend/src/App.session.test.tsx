@@ -373,6 +373,7 @@ describe("recuperacion y hoja post-lectura sin trampas", () => {
       sessionId: uuid(500),
       bookId: uuid(1),
       plannedSec: 900,
+      timerType: "TIMER",
       startedAt: T0,
       startedAtLocal: "2026-11-05T10:00:00",
       hiddenAt: null,
@@ -500,5 +501,164 @@ describe("Leer este libro", () => {
     await db.meta.put({ key: META_KEYS.activeBookId, value: uuid(99) });
     const { root } = await mountApp([book(1), book(2)]);
     expect(root.querySelector(".dashboard__book-title")?.textContent).toBe("Libro 2");
+  });
+});
+
+describe("modo libre (la sesion se siembra: el selector del Dashboard llega despues)", () => {
+  /** Registro libre con la ultima marca vista a `readSec` segundos de lectura; el reloj queda 3 s despues. */
+  async function freeSession(readSec: number, over: Partial<ActiveSession> = {}) {
+    const env = createFocusEnv();
+    await seedSession({
+      sessionId: uuid(500),
+      bookId: uuid(1),
+      plannedSec: 7200,
+      timerType: "FREE",
+      startedAt: T0,
+      startedAtLocal: "2026-11-05T10:00:00",
+      hiddenAt: null,
+      lastSeen: T0 + readSec * 1000,
+      finalSec: null,
+      ...over,
+    });
+    env.set(T0 + readSec * 1000 + 3_000);
+    return env;
+  }
+  const finishButton = (root: HTMLElement) => byText(root, "button", "Terminar sesión");
+  const dialogText = () => document.querySelector('[role="dialog"]')?.textContent ?? "";
+
+  it("se retoma con el cronometro hacia arriba y el subtitulo Modo libre", async () => {
+    const env = await freeSession(600);
+    const { root } = await mountApp([book(1)], env);
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("10:03");
+    expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo leído");
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Modo libre · 10 %");
+    env.advance(57_000);
+    await settle(320);
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("11:00");
+  });
+
+  it("pasada la hora el cronometro pasa a h:mm:ss", async () => {
+    const env = await freeSession(3_700);
+    const { root } = await mountApp([book(1)], env);
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("1:01:43");
+  });
+
+  it("con 10 minutos termina directo y se guarda con planned = actual", async () => {
+    const env = await freeSession(600);
+    const { root, gate } = await mountApp([book(1)], env);
+    await tap(finishButton(root));
+    expect(dialogText()).not.toContain("El tiempo mínimo");
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    await submitPage("60");
+    const [stored] = await db.sessions.toArray();
+    expect(stored).toMatchObject({ session_status: "COMPLETED", planned_duration_sec: 603, actual_duration_sec: 603 });
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("menos de 5 minutos: aviso; Seguir leyendo reanuda y Descartar no guarda nada", async () => {
+    const env = await freeSession(120);
+    const { root, gate } = await mountApp([book(1)], env);
+    await tap(finishButton(root));
+    expect(dialogText()).toContain("El tiempo mínimo es 5 min");
+    await tap(byText(document.body, "button", "Seguir leyendo"));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(root.querySelector("[role=timer]")).not.toBeNull();
+    await tap(finishButton(root));
+    await tap(byText(document.body, "button", "Descartar"));
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(await db.sessions.count()).toBe(0);
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("menos de 5 minutos con Terminé el libro: la ultima pagina guarda con planned = 300 y florece", async () => {
+    const env = await freeSession(117); // 2:00 de lectura al abrir
+    const { root } = await mountApp([book(1)], env);
+    await tap(finishButton(root));
+    await tap(byText(document.body, "button", "Terminé el libro"));
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    await submitPage("300");
+    const [stored] = await db.sessions.toArray();
+    expect(stored).toMatchObject({ session_status: "COMPLETED", planned_duration_sec: 300, actual_duration_sec: 120 });
+    expect(await db.books.get(uuid(1))).toMatchObject({ status: "BLOOMED", progress_percentage: 100 });
+  });
+
+  it("menos de 5 minutos con otra pagina que la ultima: no se guarda", async () => {
+    const env = await freeSession(117);
+    const { root } = await mountApp([book(1)], env);
+    await tap(finishButton(root));
+    await tap(byText(document.body, "button", "Terminé el libro"));
+    await settle();
+    await submitPage("299");
+    expect(sheetTitle()).toBe("Sesión sin guardar");
+    expect(await db.sessions.count()).toBe(0);
+    expect((await db.books.get(uuid(1)))?.progress_percentage).toBe(10);
+  });
+
+  it("a las 2 horas se completa sola, abre la hoja y se guarda con 7200 s", async () => {
+    const env = await freeSession(7_199);
+    const { root } = await mountApp([book(1)], env);
+    env.advance(2_000);
+    await settle(320);
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    expect((await storedSession())?.finalSec).toBe(7200);
+    await submitPage("200");
+    expect((await db.sessions.toArray())[0]).toMatchObject({ planned_duration_sec: 7200, actual_duration_sec: 7200 });
+    void root;
+  });
+
+  it("gracia: mas de 15 s fuera con 5 minutos o mas se guarda invalidada con planned = actual", async () => {
+    const env = await freeSession(397); // 6:40 al abrir
+    const { root, gate } = await mountApp([book(1)], env);
+    await act(async () => env.hide());
+    expect(root.querySelector(".grace-banner")?.textContent).toContain("15 s");
+    env.advance(15_100);
+    await act(async () => env.show());
+    await settle();
+    expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
+    const [stored] = await db.sessions.toArray();
+    expect(stored).toMatchObject({
+      session_status: "INVALIDATED_GRACE_EXPIRED",
+      planned_duration_sec: 400,
+      actual_duration_sec: 400,
+    });
+    expect((await db.books.get(uuid(1)))?.progress_percentage).toBe(10);
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("gracia: con menos de 5 minutos se avisa pero no se guarda ni se envia", async () => {
+    const env = await freeSession(100);
+    const { root, gate } = await mountApp([book(1)], env);
+    await act(async () => env.hide());
+    env.advance(15_100);
+    await act(async () => env.show());
+    await settle();
+    expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
+    expect(await db.sessions.count()).toBe(0);
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("un registro guardado antes del modo libre, sin timerType, se retoma como temporizador", async () => {
+    const env = createFocusEnv();
+    await seedSession({
+      sessionId: uuid(500),
+      bookId: uuid(1),
+      plannedSec: 900,
+      startedAt: T0,
+      startedAtLocal: "2026-11-05T10:00:00",
+      hiddenAt: null,
+      lastSeen: T0,
+      finalSec: null,
+    });
+    env.advance(8_000);
+    const { root } = await mountApp([book(1)], env);
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("14:52");
+    expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo restante");
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Temporizador · 10 %");
   });
 });

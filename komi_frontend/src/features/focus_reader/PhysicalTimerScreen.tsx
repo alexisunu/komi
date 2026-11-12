@@ -9,7 +9,7 @@ import type { LocalBook } from "../../data/local_db/types";
 import type { FocusSnapshot, FocusVisibilityService } from "../../services/focusVisibilityService";
 import type { WakeLockService } from "../../services/wakeLockService";
 import { SunflowerStageWidget } from "../dashboard/SunflowerStageWidget";
-import { formatClock } from "./clockFormat";
+import { sessionClock, sessionSubtitle } from "./clockFormat";
 import { GracePeriodBanner } from "./GracePeriodBanner";
 import "./PhysicalTimerScreen.css";
 import { useWakeLock } from "./useWakeLock";
@@ -71,9 +71,16 @@ export function PhysicalTimerScreen({
       </section>
 
       <div className="focus-timer__middle" data-block="clock">
-        <output className="focus-timer__clock tabular" role="timer" aria-label="Tiempo restante">
-          {formatClock(snapshot.remainingMs)}
+        <output
+          className="focus-timer__clock tabular"
+          role="timer"
+          aria-label={snapshot.timerType === "FREE" ? "Tiempo leído" : "Tiempo restante"}
+        >
+          {sessionClock(snapshot)}
         </output>
+        <p className="focus-timer__mode tabular">
+          {sessionSubtitle(snapshot.timerType, book ? book.progress_percentage : null)}
+        </p>
         {inGrace && <GracePeriodBanner variant="grace" graceRemainingMs={snapshot.graceRemainingMs} />}
       </div>
 

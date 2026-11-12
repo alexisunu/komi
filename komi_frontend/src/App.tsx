@@ -27,6 +27,7 @@ import { useLibrary } from "./features/garden_library/useLibrary";
 import { OnboardingScreen } from "./features/onboarding/OnboardingScreen";
 import { ZenPrimaryButton } from "./core/components/ZenPrimaryButton";
 import { StatsScreen } from "./features/stats/StatsScreen";
+import type { TimerType } from "./services/focusSessionMachine";
 import type { CompleteOnboardingResult } from "./services/onboardingService";
 import { DEFAULT_FONT_SIZE, isFontSize, type ReaderFontSize } from "./services/readerTheme";
 import "./App.css";
@@ -334,7 +335,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
       ? activeBook
       : null;
 
-  const startReading = async (minutes: number) => {
+  const startReading = async (minutes: number, timerType: TimerType = "TIMER") => {
     if (!activeBook || !canReadBook(activeBook)) return;
     setStarting(true);
     setStartError(null);
@@ -347,11 +348,10 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
           return;
         }
       }
-      await focus.start({
-        sessionId: crypto.randomUUID(),
-        bookId: activeBook.id,
-        plannedSec: minutes * 60,
-      });
+      const common = { sessionId: crypto.randomUUID(), bookId: activeBook.id };
+      await focus.start(
+        timerType === "FREE" ? { ...common, timerType: "FREE" } : { ...common, plannedSec: minutes * 60 },
+      );
     } catch {
       setStartError("No se pudo iniciar la sesión. Intenta de nuevo.");
     } finally {

@@ -56,6 +56,7 @@ function active(over: Partial<ActiveSession> = {}): ActiveSession {
     sessionId: SESSION,
     bookId: uuid(1),
     plannedSec: 900,
+    timerType: "TIMER",
     startedAt: 0,
     startedAtLocal: "2026-11-06T11:30:00",
     hiddenAt: null,
@@ -547,5 +548,56 @@ describe("fallo de Dexie", () => {
     await ready();
     expect(await db.sessions.count()).toBe(0);
     expect(await db.meta.count()).toBe(0);
+  });
+});
+
+describe("modo libre al cerrar la sesion", () => {
+  const sent = async () => {
+    const stored = await db.sessions.get(SESSION);
+    return stored && { planned: stored.planned_duration_sec, actual: stored.actual_duration_sec, status: stored.session_status };
+  };
+
+  it("con 10 minutos envia planned = actual y COMPLETED", async () => {
+    record = active({ timerType: "FREE", plannedSec: 7200, finalSec: 600 });
+    expect(await service.save(await ready(), { page: 100 })).toMatchObject({ kind: "saved" });
+    expect(await sent()).toEqual({ planned: 600, actual: 600, status: "COMPLETED" });
+  });
+
+  it("exactamente 5:00 se guarda", async () => {
+    record = active({ timerType: "FREE", plannedSec: 7200, finalSec: 300 });
+    expect(await service.save(await ready(), { page: 100 })).toMatchObject({ kind: "saved" });
+    expect(await sent()).toEqual({ planned: 300, actual: 300, status: "COMPLETED" });
+  });
+
+  it("4:59 sin terminar el libro no se guarda", async () => {
+    record = active({ timerType: "FREE", plannedSec: 7200, finalSec: 299 });
+    expect(await service.save(await ready(), { page: 299 })).toEqual({ kind: "discarded" });
+    expect(await db.sessions.count()).toBe(0);
+  });
+
+  it("menos de 5 minutos que terminan el libro: planned = 300, actual real, COMPLETED y florece", async () => {
+    record = active({ timerType: "FREE", plannedSec: 7200, finalSec: 120 });
+    expect(await service.save(await ready(), { page: 300 })).toMatchObject({ kind: "saved", bloomed: true });
+    expect(await sent()).toEqual({ planned: 300, actual: 120, status: "COMPLETED" });
+  });
+
+  it("el tope de 120 minutos se guarda con planned = actual = 7200", async () => {
+    record = active({ timerType: "FREE", plannedSec: 7200, finalSec: 7200 });
+    expect(await service.save(await ready(), { page: 100 })).toMatchObject({ kind: "saved" });
+    expect(await sent()).toEqual({ planned: 7200, actual: 7200, status: "COMPLETED" });
+  });
+
+  it("EPUB libre que llega al 100 % en menos de 5 minutos tambien se guarda", async () => {
+    await db.books.put(book({ format_type: "EPUB", total_pages: null, current_page: 0, progress_percentage: 40 }));
+    record = active({ timerType: "FREE", plannedSec: 7200, finalSec: 90 });
+    progress = { sessionId: SESSION, cfi: "cfi-fin", percentage: 100, excerpt: "", updatedAt: 1 };
+    expect(await service.save(await ready())).toMatchObject({ kind: "saved", bloomed: true });
+    expect(await sent()).toEqual({ planned: 300, actual: 90, status: "COMPLETED" });
+  });
+
+  it("el temporizador sigue enviando lo programado", async () => {
+    record = active({ plannedSec: 900, finalSec: 600 });
+    await service.save(await ready(), { page: 100 });
+    expect(await sent()).toEqual({ planned: 900, actual: 600, status: "COMPLETED" });
   });
 });

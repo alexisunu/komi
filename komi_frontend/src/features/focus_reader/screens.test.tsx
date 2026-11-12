@@ -3,7 +3,7 @@ import type { LocalBook } from "../../data/local_db/types";
 import type { FocusSnapshot } from "../../services/focusVisibilityService";
 import type { WakeLockService } from "../../services/wakeLockService";
 import { click, render } from "../../test/render";
-import { formatClock } from "./clockFormat";
+import { formatClock, formatElapsed, sessionClock, sessionSubtitle } from "./clockFormat";
 import css from "./PhysicalTimerScreen.css?raw";
 import { PhysicalTimerScreen } from "./PhysicalTimerScreen";
 
@@ -37,6 +37,7 @@ function snap(over: Partial<FocusSnapshot> = {}): FocusSnapshot {
     remainingMs: 754_200,
     elapsedMs: 145_800,
     plannedSec: 900,
+    timerType: "TIMER",
     graceRemainingMs: 0,
     actualSec: null,
     sessionId: "s",
@@ -84,6 +85,41 @@ describe("formatClock", () => {
   });
 });
 
+describe("formatElapsed (cronometro del modo libre)", () => {
+  it("empieza en 00:00 y trunca: los segundos ya cumplidos", () => {
+    expect(formatElapsed(0)).toBe("00:00");
+    expect(formatElapsed(999)).toBe("00:00");
+    expect(formatElapsed(1_000)).toBe("00:01");
+    expect(formatElapsed(59_999)).toBe("00:59");
+    expect(formatElapsed(60_000)).toBe("01:00");
+    expect(formatElapsed(299_000)).toBe("04:59");
+    expect(formatElapsed(3_599_000)).toBe("59:59");
+  });
+
+  it("pasada la hora usa h:mm:ss", () => {
+    expect(formatElapsed(3_600_000)).toBe("1:00:00");
+    expect(formatElapsed(3_661_000)).toBe("1:01:01");
+    expect(formatElapsed(7_200_000)).toBe("2:00:00");
+  });
+
+  it("nunca es negativo", () => {
+    expect(formatElapsed(-5_000)).toBe("00:00");
+  });
+
+  it("sessionClock elige el restante o el transcurrido segun el modo", () => {
+    const base = { remainingMs: 754_200, elapsedMs: 145_800 };
+    expect(sessionClock({ ...base, timerType: "TIMER" })).toBe("12:35");
+    expect(sessionClock({ ...base, timerType: "FREE" })).toBe("02:25");
+  });
+
+  it("sessionSubtitle: Modo libre o Temporizador, con el avance si se conoce", () => {
+    expect(sessionSubtitle("FREE", 12.9)).toBe("Modo libre · 12 %");
+    expect(sessionSubtitle("TIMER", 40)).toBe("Temporizador · 40 %");
+    expect(sessionSubtitle("FREE", null)).toBe("Modo libre");
+    expect(sessionSubtitle("TIMER", null)).toBe("Temporizador");
+  });
+});
+
 describe("PhysicalTimerScreen", () => {
   it("muestra el titulo, el reloj y una sola accion, en 3 bloques", () => {
     const { root } = timer();
@@ -120,6 +156,51 @@ describe("PhysicalTimerScreen", () => {
     );
     expect(root.querySelector(".sunflower--breathing-paused")).not.toBeNull();
     expect(root.querySelector(".grace-banner")?.textContent).toContain("10 s");
+  });
+
+  it("en temporizador muestra Temporizador · N % y el reloj de lo que resta", () => {
+    const { root } = timer();
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Temporizador · 32 %");
+    expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo restante");
+  });
+
+  describe("modo libre", () => {
+    const FREE = snap({ timerType: "FREE", plannedSec: 7200, elapsedMs: 3_725_000, remainingMs: 3_475_000 });
+
+    it("el reloj cuenta hacia arriba con h:mm:ss y el subtitulo dice Modo libre", () => {
+      const { root } = timer({ snapshot: FREE });
+      expect(root.querySelector("[role=timer]")?.textContent).toBe("1:02:05");
+      expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo leído");
+      expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Modo libre · 32 %");
+      expect(root.querySelector("[role=timer]")?.className).toContain("tabular");
+    });
+
+    it("bajo la hora usa mm:ss", () => {
+      const { root } = timer({ snapshot: snap({ timerType: "FREE", elapsedMs: 145_800 }) });
+      expect(root.querySelector("[role=timer]")?.textContent).toBe("02:25");
+    });
+
+    it("el aviso, Seguir leyendo, Descartar y Terminé el libro funcionan igual", () => {
+      const a = timer({ snapshot: FREE, early: { actualSec: 299, enough: false } });
+      click(button(a.root, "Terminar sesión"));
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("El tiempo mínimo es 5 min");
+      click(button(document.body, "Seguir leyendo"));
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      click(button(a.root, "Terminar sesión"));
+      click(button(document.body, "Descartar"));
+      expect(a.onCancel).toHaveBeenCalledTimes(1);
+      expect(a.onFinish).not.toHaveBeenCalled();
+      click(button(a.root, "Terminar sesión"));
+      click(button(document.body, "Terminé el libro"));
+      expect(a.onFinish).toHaveBeenCalledTimes(1);
+    });
+
+    it("con 5 minutos o mas termina directo", () => {
+      const { root, onFinish } = timer({ snapshot: FREE, early: { actualSec: 300, enough: true } });
+      click(button(root, "Terminar sesión"));
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    });
   });
 
   it("Terminar sesion con 5 minutos o mas termina directo, sin confirmacion", () => {

@@ -54,6 +54,7 @@ function snap(over: Partial<FocusSnapshot> = {}): FocusSnapshot {
     remainingMs: 754_200,
     elapsedMs: 145_800,
     plannedSec: 900,
+    timerType: "TIMER",
     graceRemainingMs: 0,
     actualSec: null,
     sessionId: "s",
@@ -484,6 +485,46 @@ describe("EpubReaderScreen", () => {
     );
     expect(labels).toEqual(["Página anterior", "Terminar sesión", "Página siguiente"]);
     expect(button(root, "Terminé antes de tiempo")).toBeUndefined();
+  });
+
+  describe("modo libre", () => {
+    const FREE = snap({ timerType: "FREE", plannedSec: 7200, elapsedMs: 3_725_000, remainingMs: 3_475_000 });
+
+    it("en temporizador el subtitulo es Temporizador · N %", async () => {
+      const { root, fake } = await mount();
+      await act(async () => fake.see({ cfi: "c", percentage: 33.7, text: "" }));
+      expect(root.querySelector(".epub-reader__percent")?.textContent).toBe("Temporizador · 33 %");
+    });
+
+    it("el reloj cuenta hacia arriba y el subtitulo dice Modo libre · N %", async () => {
+      const { root, fake } = await mount({ snapshot: FREE });
+      await act(async () => fake.see({ cfi: "c", percentage: 33.7, text: "" }));
+      const clock = root.querySelector('.epub-reader__header [role="timer"]');
+      expect(clock?.textContent).toBe("1:02:05");
+      expect(clock?.getAttribute("aria-label")).toBe("Tiempo leído");
+      expect(clock?.className).toContain("tabular");
+      expect(root.querySelector(".epub-reader__percent")?.textContent).toBe("Modo libre · 33 %");
+    });
+
+    it("el aviso de menos de 5 minutos, Seguir leyendo y Descartar funcionan igual", async () => {
+      const { root, onFinish, onCancel } = await mount({ snapshot: FREE, early: { actualSec: 299, enough: false } });
+      click(button(root, "Terminar sesión"));
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("El tiempo mínimo es 5 min");
+      click(button(document.body, "Seguir leyendo"));
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Descartar"));
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onFinish).not.toHaveBeenCalled();
+    });
+
+    it("con el libro al 100 % termina directo aunque lleve menos de 5 minutos", async () => {
+      const { root, fake, onFinish } = await mount({ snapshot: FREE, early: { actualSec: 120, enough: false } });
+      await act(async () => fake.see({ cfi: "fin", percentage: 100, text: "" }));
+      click(button(root, "Terminar sesión"));
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(onFinish).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("aviso de menos de 5 minutos", () => {
