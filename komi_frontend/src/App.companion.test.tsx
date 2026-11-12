@@ -372,7 +372,7 @@ describe("Hablar con Komi desde el lector EPUB", () => {
     await tap(byText(document.body, "button", "Hablar con Komi"));
     await settle(200);
     expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
-    expect(sheet()?.textContent).toContain("Lectura guardada");
+    expect(sheet()?.textContent).toContain("Sesión terminada");
     expect(sheet()?.textContent).not.toContain("¿Quieres charlar");
   });
 

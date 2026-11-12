@@ -36,6 +36,30 @@
   font-weight: var(--font-h1-weight);
 }
 
+.zen-sheet--label {
+  position: relative;
+}
+
+/* Asa decorativa de la hoja de resumen. */
+.zen-sheet--label::before {
+  content: "";
+  position: absolute;
+  top: var(--space-1);
+  left: 50%;
+  width: 40px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-subtle);
+  transform: translateX(-50%);
+}
+
+.zen-sheet--label .zen-sheet__title {
+  font-family: var(--font-sans);
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+  font-weight: 500;
+}
+
 .zen-sheet__title:focus {
   outline: none;
 }

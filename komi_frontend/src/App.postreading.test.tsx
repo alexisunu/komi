@@ -149,7 +149,7 @@ describe("Paso 1: la pagina se valida contra total_pages", () => {
     expect(ctx.gate.isBlocked()).toBe(true);
     // Corregir la pagina y volver a enviar guarda normalmente.
     await enterPage("90");
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.sessions.count()).toBe(1);
   });
 
@@ -182,7 +182,7 @@ describe("Paso 1: la pagina se valida contra total_pages", () => {
     });
     await settle();
     expect(await db.sessions.count()).toBe(1);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
   });
 });
 
@@ -222,7 +222,7 @@ describe("Bono de Vitalidad Solar y florecimiento", () => {
     const ctx = await mountApp([book()]);
     await finishPhysical(ctx, 600_000);
     await enterPage("299");
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(hasAura()).toBe(false);
   });
 });
@@ -337,7 +337,7 @@ describe("la sesion no se pierde", () => {
     await tap(sheetButton("Reintentar"));
     await settle();
     add.mockRestore();
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.sessions.count()).toBe(1);
     expect(await storedSession()).toBeNull();
     expect(ctx.gate.isBlocked()).toBe(false);
@@ -353,7 +353,7 @@ describe("la sesion no se pierde", () => {
     const before = ctx.fetchFn.mock.calls.length;
     await enterPage("90");
     await settle(120);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(ctx.fetchFn.mock.calls.length).toBeGreaterThan(before);
     expect(String(ctx.fetchFn.mock.calls.at(-1)?.[0])).toContain("/profile/sync/");
     expect((await db.sessions.toArray())[0]).toMatchObject({ pending_sync: 1, sync_rejection: null });
@@ -377,7 +377,7 @@ describe("la sesion no se pierde", () => {
     const ctx = await mountApp([book()], { fetchFn: () => new Promise<Response>(() => {}) });
     await finishPhysical(ctx, 600_000);
     await enterPage("90");
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
   });
 });
 
@@ -407,7 +407,7 @@ describe("EPUB en la hoja", () => {
     await settle(320);
     await settle(200);
     expect(percentageAt).toHaveBeenCalledWith(expect.anything(), "cfi-x", '["a"]', expect.any(Function));
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 57.89, last_epub_cfi: "cfi-x" });
     expect(sheet()?.textContent).not.toContain("Bono de Vitalidad Solar");
   });
@@ -423,7 +423,7 @@ describe("EPUB en la hoja", () => {
     ctx.env.advance(900_000);
     await settle(320);
     await settle(200);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(hasAura()).toBe(false);
     expect((await db.sessions.toArray())[0]?.granted_solar_bonus).toBe(false);
   });
@@ -451,7 +451,7 @@ describe("EPUB en la hoja", () => {
     await db.meta.put({ key: META_KEYS.activeSession, value: JSON.stringify({ ...stored, finalSec: 900 }) });
     const again = await mountApp([], { env: ctx.env });
     await settle(200);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 40 });
     expect(again.gate.isBlocked()).toBe(false);
   });

@@ -355,7 +355,7 @@ describe("sesion EPUB", () => {
     await settle(200);
     expect(fake.handle.destroy).toHaveBeenCalled();
     // EPUB: no hay Paso 1; guarda directo y ofrece la charla.
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(sheet()?.querySelector("input")).toBeNull();
     expect((await db.sessions.toArray())[0]).toMatchObject({
       session_status: "COMPLETED",
@@ -433,7 +433,7 @@ describe("Terminar sesión en el lector", () => {
     env.advance(250_000); // 450 s de 900
     await tap(byText(root, "button", "Terminar sesión"));
     await settle(200);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12 });
   });
 });
@@ -541,7 +541,7 @@ describe("menu del lector en la app", () => {
     await tap(root.querySelector('button[aria-label="Abrir menú"]'));
     await tap(byText(root, "button", "Terminar sesión"));
     await settle(200);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
   });
 });

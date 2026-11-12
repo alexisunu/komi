@@ -292,7 +292,7 @@ describe("sesion de un libro fisico", () => {
     await settle();
     expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
     await submitPage("90");
-    expect(sheet()?.textContent).toContain("Leíste 15 minutos");
+    expect(sheet()?.textContent).toContain("15:00de lectura");
     expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
   });
 });

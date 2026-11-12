@@ -8,7 +8,6 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { PreparationProgress } from "../../core/components/PreparationProgress";
-import { streakLabel } from "../../core/components/StreakBadge";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ZenSheet } from "../../core/components/ZenSheet";
 import { KomiLocalError } from "../../data/local_db/errors";
@@ -21,6 +20,7 @@ import {
 import type { SessionGate } from "../../data/network/syncService";
 import { canRetryGate, GATE_MESSAGES, type GateBlock } from "../ai_companion/chatGateMessages";
 import { SunflowerStageWidget } from "../dashboard/SunflowerStageWidget";
+import { formatClock } from "./clockFormat";
 import "./PostReadingSheet.css";
 
 export type SavedReading = Extract<SaveResult, { kind: "saved" }>;
@@ -60,11 +60,6 @@ type Stage =
   | { kind: "error"; message: string }
   | { kind: "discarded" }
   | { kind: "saved"; result: SavedReading };
-
-function minutesText(actualSec: number): string {
-  const minutes = Math.floor(actualSec / 60);
-  return `${minutes} ${minutes === 1 ? "minuto" : "minutos"}`;
-}
 
 function errorText(error: unknown): string {
   if (error instanceof KomiLocalError) return `${error.message} Tu sesión sigue a salvo.`;
@@ -218,41 +213,70 @@ export function PostReadingSheet({
   };
   const percentage = saved ? saved.book.progress_percentage : (book?.progress_percentage ?? 0);
   const fallow = saved === null && book?.status === "FALLOW";
+  // El girasol solo acompana al resumen en los dos momentos de celebracion (bono solar y florecer).
   const showAura = saved !== null && (saved.solarBonus || saved.bloomed);
 
   let title = "Tu lectura de hoy";
   if (stage.kind === "page") title = "¿Hasta qué página llegaste?";
   else if (stage.kind === "saving") title = "Guardando tu lectura";
-  else if (saved) title = saved.bloomed ? "Tu girasol floreció" : "Lectura guardada";
+  else if (saved) title = saved.bloomed ? "Tu girasol floreció" : "Sesión terminada";
   else if (stage.kind === "discarded") title = "Sesión sin guardar";
   else if (stage.kind === "missing") title = "No encontramos esta sesión";
   else if (stage.kind === "error") title = "No se pudo guardar";
 
-  let summary: string | null = null;
-  if (saved) {
-    const parts = [`Leíste ${minutesText(saved.session.actual_duration_sec)}.`, `${streakLabel(saved.streak)}.`];
-    if (saved.bloomed) parts.unshift("Terminaste el libro y tu girasol floreció.");
-    else if (saved.solarBonus) {
-      parts.unshift("Bono de Vitalidad Solar: tu constancia cuenta aunque el avance sea pequeño.");
-    }
-    summary = parts.join(" ");
-  }
+  // Resumen de la sesion guardada (mockup 05): tiempo leido y avance del libro, "del X % al Y %".
+  const from = saved ? Math.floor(saved.before) : 0;
+  const to = saved ? Math.floor(saved.book.progress_percentage) : 0;
+  const rangeText = from === to ? `Sigues en el ${to} % del libro` : `Del ${from} % al ${to} % del libro`;
 
   const dismissible = saved !== null;
 
   return (
-    <ZenSheet title={title} dismissible={dismissible} onClose={dismissible ? onDone : () => {}}>
+    <ZenSheet
+      title={title}
+      titleVariant={saved ? "label" : "heading"}
+      dismissible={dismissible}
+      onClose={dismissible ? onDone : () => {}}
+    >
       <div className="post-reading">
-        <section className="post-reading__canvas" data-block="canvas" aria-label="Tu girasol">
-          <div aria-hidden="true">
-            <SunflowerStageWidget percentage={percentage} fallow={fallow} solarBonus={showAura} size={140} />
-          </div>
-          {summary && (
-            <p className="post-reading__summary" role="status">
-              {summary}
+        {(saved === null || showAura) && (
+          <section className="post-reading__canvas" data-block="canvas" aria-label="Tu girasol">
+            <div aria-hidden="true">
+              <SunflowerStageWidget
+                percentage={percentage}
+                fallow={fallow}
+                solarBonus={showAura}
+                size={showAura ? 120 : 140}
+              />
+            </div>
+          </section>
+        )}
+
+        {saved && (
+          <section className="post-reading__result" data-block="result" aria-label="Resumen de la sesión" role="status">
+            <p className="post-reading__time">
+              <span className="post-reading__clock tabular">{formatClock(saved.session.actual_duration_sec * 1000)}</span>
+              <span className="post-reading__time-label">de lectura</span>
             </p>
-          )}
-        </section>
+            <div
+              className="post-reading__bar"
+              role="progressbar"
+              aria-label="Avance del libro"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={to}
+            >
+              <div className="post-reading__bar-fill" style={{ width: `${to}%` }} />
+            </div>
+            <p className="post-reading__range tabular">{rangeText}</p>
+            {saved.bloomed && <p className="post-reading__text">Terminaste el libro y tu girasol floreció.</p>}
+            {saved.solarBonus && (
+              <p className="post-reading__text">
+                Bono de Vitalidad Solar: tu constancia cuenta aunque el avance sea pequeño.
+              </p>
+            )}
+          </section>
+        )}
 
         <div className="post-reading__body" data-block="body">
           {stage.kind === "loading" && (
