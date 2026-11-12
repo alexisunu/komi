@@ -29,7 +29,7 @@ Una tarea esta terminada solo si: compila, pasa tests y lint, funciona sin conex
 - Sin emojis en la interfaz, el codigo, los comentarios ni la documentacion. Iconos: `lucide-react` con `stroke-width` 1.75, o SVG propios.
 - Maximo 4 bloques funcionales por pantalla y al menos 40% de espacio en blanco.
 - Tipografia: Lora (titulos y lector) y Plus Jakarta Sans (UI, numeros con `tabular-nums`). Radios, alturas y escala segun la seccion 10 del SRS.
-- Navegacion inferior: exactamente "Lectura", "Mi Jardin", "Estadisticas". Respetar `env(safe-area-inset-bottom)`.
+- Navegacion inferior (v2): exactamente "Lectura" y "Mi Jardin". "Estadisticas" y la racha (badge del Dashboard) quedan ocultas, no borradas, tras la bandera unica `FEATURES.statsAndStreak` de `core/featureFlags.ts` (apagada). Con la bandera encendida vuelven los tres accesos y el badge. Respetar `env(safe-area-inset-bottom)`.
 - Transiciones de 300 a 400 ms `ease-out`.
 
 ## 6. Reglas de negocio criticas

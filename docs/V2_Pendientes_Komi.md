@@ -15,7 +15,7 @@ Reunida el 11 de noviembre de 2026 al cerrar el bloque 5.5. Todo lo de esta list
 
 | N.º | Qué falta |
 |---|---|
-| 5 | La pestaña **Estadísticas** es solo un marcador de posición (`StatsScreen`). §13.2 prometía gráfica semanal, rachas y copia de seguridad. Para la v2: minutos por día de la semana, racha actual y más larga, y estado de la copia. Requiere plan previo. |
+| 5 | La pestaña **Estadísticas** es solo un marcador de posición (`StatsScreen`). §13.2 prometía gráfica semanal, rachas y copia de seguridad. Para la v2: minutos por día de la semana, racha actual y más larga, y estado de la copia. Requiere plan previo. **Mientras tanto, en la v2 la pestaña y la racha del Dashboard están ocultas tras la bandera `FEATURES.statsAndStreak` (SRS 20, bloque 3); el contenido sigue pendiente.** |
 
 ## 3. Limitaciones conocidas de la v1.0 que podrían mejorarse
 
@@ -30,6 +30,7 @@ Reunida el 11 de noviembre de 2026 al cerrar el bloque 5.5. Todo lo de esta list
 - **Parte B del bloque 5.4 (iPhone real):** la hizo la usuaria final y dio el visto bueno (informado por el autor). **No se registró el resultado de cada prueba** (Wake Lock, barra de estado, `navigator.storage.persist()`, descarga del `.ics` en la PWA instalada de iOS, temporizador y periodo de gracia al bloquear la pantalla, portapapeles y autocompletado del campo de recuperación). Si alguna falla al usarla, anotarla aquí.
 - **EPUB en Safari:** sin probar en dispositivo real (solo en Android). La usuaria del iPhone lee solo en físico.
 - **"Despertando a Komi" con el servicio dormido en un dispositivo real:** no se ha visto. En el uso normal es difícil provocarlo (el servicio casi siempre está despierto al llegar a la charla). Medido en frío en el 5.2: 35,4 s.
+- **Prueba automática de "Hablar con Komi" con un EPUB de punta a punta:** en el arnés de pruebas la puerta de la charla con un EPUB no se resuelve (ya ocurría en la base de la rama `v2`; causa sin determinar, SRS 20 punto 2). Lo cubre `PostReadingSheet.test.tsx` y el autor lo probó a mano en un Android.
 - **Latencia de la charla:** primer fragmento de 5 s o menos, a ojo; no se cronometró.
 - **Versión en vivo de los términos de datos de Gemini:** se consultó por búsqueda (vigencia 23 de marzo de 2026), no por lectura completa. Pueden cambiar.
 
