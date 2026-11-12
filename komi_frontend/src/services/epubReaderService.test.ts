@@ -45,8 +45,12 @@ function fakeBook(options: { locations: boolean; displayFails?: boolean; fonts?:
   return { book, rendition, relocate, contentHooks };
 }
 
-function host(): HTMLElement {
+function host(size?: { width: number; height: number }): HTMLElement {
   const element = document.createElement("div");
+  if (size) {
+    Object.defineProperty(element, "clientWidth", { get: () => size.width });
+    Object.defineProperty(element, "clientHeight", { get: () => size.height });
+  }
   element.getBoundingClientRect = () => ({ left: 24, width: 340, top: 0, height: 600 }) as DOMRect;
   return element;
 }
@@ -55,13 +59,18 @@ const THEME = { theme: "light", fontPx: 18, fontBaseUrl: "https://komi.test/" } 
 
 async function open(
   fake: ReturnType<typeof fakeBook>,
-  over: { locations?: string | null; startCfi?: string | null; onCenterTap?: () => void } = {},
+  over: {
+    locations?: string | null;
+    startCfi?: string | null;
+    onCenterTap?: () => void;
+    size?: { width: number; height: number };
+  } = {},
 ) {
   const positions: ReaderPosition[] = [];
   const service = createEpubReaderService({ openBook: async () => fake.book as never });
   const handle = await service.open({
     data: new ArrayBuffer(4),
-    host: host(),
+    host: host(over.size),
     locations: over.locations === undefined ? "[]" : over.locations,
     startCfi: over.startCfi ?? null,
     theme: THEME,
@@ -315,6 +324,106 @@ describe("epubReaderService.open", () => {
     });
     expect(() => handle.destroy()).toThrow();
     expect(fake.book.destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("cambio de tamano del contenedor (ocultar o mostrar la interfaz)", () => {
+  afterEach(() => vi.useRealTimers());
+  const SIZE = { width: 360, height: 600 };
+
+  async function openSized() {
+    const fake = fakeBook({ locations: true });
+    const size = { ...SIZE };
+    const { handle, positions } = await open(fake, { size });
+    fake.rendition.display.mockClear();
+    return { fake, size, handle, positions };
+  }
+
+  it("con otro alto vuelve al punto de lectura al instante y otra vez al terminar el reflujo", async () => {
+    vi.useFakeTimers();
+    const { fake, size, handle } = await openSized();
+    size.height = 680;
+    handle.resize();
+    expect(fake.rendition.resize).toHaveBeenLastCalledWith(360, 680);
+    expect(fake.rendition.display).toHaveBeenCalledTimes(1);
+    expect(fake.rendition.display).toHaveBeenLastCalledWith("pagina-actual");
+    await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    expect(fake.rendition.display).toHaveBeenCalledTimes(2);
+  });
+
+  it("ocultar y mostrar seguidos no retroceden aunque cada pagina empiece antes", async () => {
+    vi.useFakeTimers();
+    const { fake, size, handle } = await openSized();
+    let drift = 0;
+    fake.rendition.display.mockImplementation(async () => {
+      drift += 1;
+      fake.rendition.currentLocation.mockReturnValue({ start: { cfi: `antes-${drift}` } } as never);
+    });
+    for (const height of [680, 600, 680, 600]) {
+      size.height = height;
+      handle.resize();
+      await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    }
+    const targets = fake.rendition.display.mock.calls.map((call) => call[0]);
+    expect(targets.length).toBe(8);
+    expect(new Set(targets)).toEqual(new Set(["pagina-actual"]));
+  });
+
+  it("el aviso inicial del observador (mismo tamano) no vuelve a mostrar la pagina", async () => {
+    vi.useFakeTimers();
+    const { fake, handle } = await openSized();
+    handle.resize();
+    await vi.advanceTimersByTimeAsync(SETTLE_MS * 2);
+    expect(fake.rendition.resize).toHaveBeenCalledTimes(1);
+    expect(fake.rendition.display).not.toHaveBeenCalled();
+  });
+
+  it("mientras dura el reacomodo, relocated guarda el punto y no el inicio de la pagina nueva", async () => {
+    vi.useFakeTimers();
+    const { fake, size, handle, positions } = await openSized();
+    size.height = 680;
+    handle.resize();
+    fake.relocate({ start: { cfi: "antes-1" }, end: { cfi: "fin" } });
+    expect(positions.at(-1)?.cfi).toBe("pagina-actual");
+  });
+
+  it("pasar de pagina apaga el ancla: el siguiente cambio parte de la pagina nueva", async () => {
+    vi.useFakeTimers();
+    const { fake, size, handle } = await openSized();
+    size.height = 680;
+    handle.resize();
+    await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    await handle.next();
+    fake.rendition.currentLocation.mockReturnValue({ start: { cfi: "pagina-siguiente" } } as never);
+    fake.rendition.display.mockClear();
+    size.height = 600;
+    handle.resize();
+    expect(fake.rendition.display).toHaveBeenLastCalledWith("pagina-siguiente");
+  });
+
+  it("letra y alto intercalados comparten el ancla", async () => {
+    vi.useFakeTimers();
+    const { fake, size, handle } = await openSized();
+    fake.rendition.currentLocation.mockReturnValue({ start: { cfi: "otra-pagina" } } as never);
+    handle.setTheme({ theme: "light", fontPx: 22, fontBaseUrl: "https://komi.test/" });
+    size.height = 680;
+    handle.resize();
+    const targets = fake.rendition.display.mock.calls.map((call) => call[0]);
+    expect(new Set(targets)).toEqual(new Set(["otra-pagina"]));
+  });
+
+  it("sin posicion todavia, o si volver falla, el cambio de alto no rompe la lectura", async () => {
+    vi.useFakeTimers();
+    const { fake, size, handle } = await openSized();
+    fake.rendition.currentLocation.mockReturnValue(undefined as never);
+    size.height = 680;
+    handle.resize();
+    expect(fake.rendition.display).not.toHaveBeenCalled();
+    fake.rendition.currentLocation.mockReturnValue({ start: { cfi: "p" } } as never);
+    fake.rendition.display.mockRejectedValue(new Error("fallo"));
+    size.height = 600;
+    expect(() => handle.resize()).not.toThrow();
+    await vi.advanceTimersByTimeAsync(SETTLE_MS * 2);
   });
 });
 

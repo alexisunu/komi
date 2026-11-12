@@ -209,31 +209,45 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         });
       });
 
+      // Anota el punto de lectura (o reutiliza el ancla vigente) antes de un reacomodo y lo
+      // restaura despues: al instante y otra vez cuando el reflujo ya termino. Lo usan el cambio
+      // de tamano de letra y el cambio de alto del contenedor (ocultar o mostrar la interfaz).
+      const holdPoint = (): string | null => {
+        const resumeAt = reflowActive && anchorCfi ? anchorCfi : currentStartCfi(rendition);
+        if (resumeAt) {
+          anchorCfi = resumeAt;
+          reflowActive = true;
+        }
+        return resumeAt;
+      };
+      const restorePoint = (resumeAt: string | null) => {
+        if (!resumeAt) return;
+        // Un ajuste de posicion nunca debe romper la lectura.
+        const back = () => Promise.resolve(rendition.display(resumeAt)).catch(() => {});
+        void back();
+        setTimeout(() => void back(), SETTLE_MS);
+      };
+
       let currentFontPx = input.theme.fontPx;
       const applyTheme = (theme: ReaderThemeInput) => {
         // Con otro tamano de letra cambia la paginacion y la pagina vigente se desplaza: se anota
         // el CFI de inicio y se vuelve a el al reacomodar el texto (medido: sin esto, agrandar la
         // letra perdia la pagina). Cambiar solo el color no mueve nada.
-        const fontChanged = theme.fontPx !== currentFontPx;
-        const resumeAt = fontChanged ? (reflowActive && anchorCfi ? anchorCfi : currentStartCfi(rendition)) : null;
-        if (resumeAt) {
-          anchorCfi = resumeAt;
-          reflowActive = true;
-        }
+        const resumeAt = theme.fontPx !== currentFontPx ? holdPoint() : null;
         currentFontPx = theme.fontPx;
         themeCss = buildReaderCss(theme);
         rendition.themes.registerCss(THEME_KEY, themeCss);
         rendition.themes.select(THEME_KEY);
-        if (resumeAt) {
-          // Un ajuste de posicion nunca debe romper la lectura.
-          // El texto se reacomoda despues de cambiar la hoja de estilos: se vuelve al CFI al
-          // instante y otra vez cuando el reflujo ya termino.
-          const back = () => Promise.resolve(rendition.display(resumeAt)).catch(() => {});
-          void back();
-          setTimeout(() => void back(), SETTLE_MS);
-        }
+        restorePoint(resumeAt);
       };
       applyTheme(input.theme);
+
+      // Tamano del contenedor y si el libro ya se mostro: solo un cambio real de tamano, ya con el
+      // libro puesto, reacomoda el texto y pide conservar el punto (el aviso inicial del observador,
+      // con el mismo tamano, no compite con la espera a las fuentes del reabrir).
+      let lastWidth = Math.max(input.host.clientWidth, 1);
+      let lastHeight = Math.max(input.host.clientHeight, 1);
+      let shown = false;
 
       let reopened = false;
       try {
@@ -248,6 +262,8 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       // al reabrir (con CFI): se espera a las fuentes y se vuelve a ir al mismo CFI.
       if (reopened && input.startCfi) await redisplayAfterFonts(rendition, input.startCfi);
 
+      shown = true;
+
       return {
         next: () => {
           userNavigated();
@@ -259,7 +275,14 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         },
         setTheme: applyTheme,
         resize() {
-          rendition.resize(Math.max(input.host.clientWidth, 1), Math.max(input.host.clientHeight, 1));
+          const width = Math.max(input.host.clientWidth, 1);
+          const height = Math.max(input.host.clientHeight, 1);
+          const changed = width !== lastWidth || height !== lastHeight;
+          lastWidth = width;
+          lastHeight = height;
+          const resumeAt = changed && shown ? holdPoint() : null;
+          rendition.resize(width, height);
+          restorePoint(resumeAt);
         },
         destroy() {
           try {

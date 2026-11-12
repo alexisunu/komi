@@ -204,6 +204,11 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   // Avance (0 a 1) de "Preparando tu libro" antes de abrir un EPUB sin `locations`; null = no aplica.
   const [preparing, setPreparing] = useState<number | null>(null);
   const [fontPx, setFontPx] = useState<ReaderFontSize>(DEFAULT_FONT_SIZE);
+  // Interfaz del lector oculta o visible: local, no se sincroniza; la primera vez, visible.
+  const [readerImmersive, setReaderImmersive] = useState(false);
+  // El lector no se monta hasta leer sus preferencias (letra e interfaz): si no, abriria con los
+  // valores por defecto y se reacomodaria al llegar los guardados.
+  const [readerPrefsReady, setReaderPrefsReady] = useState(false);
   // Ultima eleccion del selector Temporizador | Libre: local, no se sincroniza. Un valor guardado
   // que no sea uno de los dos modos cae a Temporizador.
   const [timerType, setTimerType] = useState<TimerType>("TIMER");
@@ -233,10 +238,13 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
 
   useEffect(() => {
     let alive = true;
-    deps.meta
-      .get(META_KEYS.readerFontSize)
-      .then((value) => alive && isFontSize(value) && setFontPx(value))
-      .catch(() => {});
+    const read = (key: string) => deps.meta.get(key).catch(() => undefined);
+    void Promise.all([read(META_KEYS.readerFontSize), read(META_KEYS.readerImmersive)]).then(([size, hidden]) => {
+      if (!alive) return;
+      if (isFontSize(size)) setFontPx(size);
+      setReaderImmersive(hidden === true);
+      setReaderPrefsReady(true);
+    });
     return () => {
       alive = false;
     };
@@ -257,6 +265,13 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
     setTimerType(next);
     deps.meta.set(META_KEYS.timerMode, next).catch(() => {
       // El modo ya cambio en pantalla; solo no quedo guardado para la proxima vez.
+    });
+  };
+
+  const changeReaderImmersive = (hidden: boolean) => {
+    setReaderImmersive(hidden);
+    deps.meta.set(META_KEYS.readerImmersive, hidden).catch(() => {
+      // Ya cambio en pantalla; solo no quedo guardado para la proxima vez.
     });
   };
 
@@ -398,6 +413,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
       <div className="app-shell">
         <div className="app-shell__screen">
           {sessionBook?.format_type === "EPUB" ? (
+            readerPrefsReady && (
             <EpubReaderScreen
               key={snapshot.sessionId}
               book={sessionBook}
@@ -408,11 +424,14 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
               onToggleTheme={toggleTheme}
               fontPx={fontPx}
               onFontPx={changeFontPx}
+              immersive={readerImmersive}
+              onImmersive={changeReaderImmersive}
               peekFinish={focus.peekFinish}
               onFinish={focus.acceptFinish}
               onTalkRequested={() => setTalkNext(true)}
               onCancel={focus.leave}
             />
+            )
           ) : (
             <PhysicalTimerScreen
               book={sessionBook}

@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LocalBook, LocalEpubFile } from "../../data/local_db/types";
 import type { FocusSnapshot } from "../../services/focusVisibilityService";
@@ -77,6 +77,7 @@ async function mount(
     file?: LocalEpubFile | undefined;
     open?: () => Promise<never>;
     early?: { actualSec: number; enough: boolean } | null;
+    immersive?: boolean;
   } = {},
 ) {
   const fake = createFakeReader();
@@ -99,7 +100,24 @@ async function mount(
   const onFinish = vi.fn();
   const onCancel = vi.fn();
   const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, enough: true } : over.early));
-  const element = (theme: ThemeId, snapshot: FocusSnapshot, fontPx: ReaderFontSize) => (
+  const onImmersive = vi.fn();
+  // Como App: la preferencia vive fuera de la pantalla, asi que los rerender la conservan.
+  let hidden = over.immersive ?? false;
+  const Host = ({ theme, snapshot, fontPx }: { theme: ThemeId; snapshot: FocusSnapshot; fontPx: ReaderFontSize }) => {
+    const [value, setValue] = useState(hidden);
+    return element(theme, snapshot, fontPx, value, (next) => {
+      hidden = next;
+      setValue(next);
+      onImmersive(next);
+    });
+  };
+  const element = (
+    theme: ThemeId,
+    snapshot: FocusSnapshot,
+    fontPx: ReaderFontSize,
+    immersive: boolean,
+    setImmersive: (hidden: boolean) => void,
+  ) => (
     <EpubReaderScreen
       book={BOOK}
       snapshot={snapshot}
@@ -110,25 +128,30 @@ async function mount(
       onTalkRequested={onTalkRequested}
       fontPx={fontPx}
       onFontPx={onFontPx}
+      immersive={immersive}
+      onImmersive={setImmersive}
       peekFinish={peek}
       onFinish={onFinish}
       onCancel={onCancel}
     />
   );
-  mounted = render(element(over.theme ?? "light", over.snapshot ?? snap(), over.fontPx ?? 18));
+  mounted = render(
+    <Host theme={over.theme ?? "light"} snapshot={over.snapshot ?? snap()} fontPx={over.fontPx ?? 18} />,
+  );
   await settle();
   return {
     root: mounted.container,
     fake,
     lock,
     onFontPx,
+    onImmersive,
     onToggleTheme,
     onTalkRequested,
     onFinish,
     onCancel,
     peek,
     rerender: (theme: ThemeId, snapshot = over.snapshot ?? snap(), fontPx: ReaderFontSize = over.fontPx ?? 18) =>
-      mounted?.rerender(element(theme, snapshot, fontPx)),
+      mounted?.rerender(<Host theme={theme} snapshot={snapshot} fontPx={fontPx} />),
   };
 }
 
@@ -250,6 +273,22 @@ describe("EpubReaderScreen", () => {
       expect(root.querySelector(".epub-reader__footer")).not.toBeNull();
       expect(root.querySelector(".epub-reader__progress")).toBeNull();
       expect(root.querySelector(".epub-reader__float")).toBeNull();
+    });
+
+    it("con la preferencia guardada en oculta, abre ya oculta (sin pasar por visible)", async () => {
+      const { root } = await mount({ immersive: true });
+      expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+      expect(root.querySelector(".epub-reader__header")).toBeNull();
+    });
+
+    it("ocultar y mostrar avisan al padre para que guarde la preferencia", async () => {
+      const { root, onImmersive } = await mount();
+      click(button(root, "Ocultar interfaz"));
+      expect(onImmersive).toHaveBeenLastCalledWith(true);
+      click(button(root, "Abrir menú"));
+      click(button(root, "Mostrar interfaz"));
+      expect(onImmersive).toHaveBeenLastCalledWith(false);
+      expect(root.querySelector(".epub-reader--immersive")).toBeNull();
     });
 
     it("Ocultar interfaz deja solo el texto, la linea de progreso y el boton flotante", async () => {

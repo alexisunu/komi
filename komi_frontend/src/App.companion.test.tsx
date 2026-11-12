@@ -394,7 +394,8 @@ describe("Hablar con Komi desde el lector EPUB", () => {
     await settle();
     await act(async () => ctx.fake.see({ cfi: "cfi-2", percentage: 45, text: "" }));
     ctx.env.advance(500_000);
-    await tap(ctx.root.querySelector('button[aria-label="Ocultar interfaz"]'));
+    // La interfaz oculta se recuerda: la segunda sesion ya abre oculta.
+    expect(ctx.root.querySelector(".epub-reader--immersive")).not.toBeNull();
     await tap(ctx.root.querySelector('button[aria-label="Abrir menú"]'));
     await tap(byText(document.body, "button", "Terminar sesión"));
     await settle(200);

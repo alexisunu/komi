@@ -607,4 +607,36 @@ describe("gracia y tamano de letra en el lector", () => {
     await settle();
     expect(fake.inputs[0]?.theme.fontPx).toBe(18);
   });
+
+  it("sin preferencia guardada, la interfaz del lector empieza visible", async () => {
+    const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+  });
+
+  it("ocultar la interfaz se guarda en local", async () => {
+    const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    await tap(root.querySelector('[aria-label="Ocultar interfaz"]'));
+    expect((await db.meta.get(META_KEYS.readerImmersive))?.value).toBe(true);
+  });
+
+  it("recuerda la interfaz oculta: abre oculta y el libro se abre una sola vez", async () => {
+    await db.meta.put({ key: META_KEYS.readerImmersive, value: true });
+    const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+    expect(fake.open).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignora una preferencia de interfaz que no es booleana", async () => {
+    await db.meta.put({ key: META_KEYS.readerImmersive, value: "si" });
+    const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+  });
 });

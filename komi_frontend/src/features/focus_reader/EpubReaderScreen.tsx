@@ -2,7 +2,7 @@
 // letra y de ocultar), la pagina del libro y el pie (pagina anterior, "Terminar sesion", pagina
 // siguiente). Sin navegacion inferior. La interfaz se puede ocultar (SRS 10.8): queda el texto,
 // una linea de progreso de 2 px y un boton flotante que abre el menu (tambien el tercio central);
-// cada sesion empieza con la interfaz visible.
+// la preferencia (oculta o visible) la guarda quien monta la pantalla, en local.
 // El tiempo lo lleva la misma maquina que el libro fisico: el aviso de gracia es una
 // superposicion flotante arriba, visible tambien con la interfaz oculta.
 
@@ -36,6 +36,9 @@ export interface EpubReaderScreenProps {
   onToggleTheme: () => void;
   fontPx: ReaderFontSize;
   onFontPx: (size: ReaderFontSize) => void;
+  /** Interfaz oculta (SRS 10.8). La preferencia se recuerda entre sesiones; la guarda el padre. */
+  immersive: boolean;
+  onImmersive: (hidden: boolean) => void;
   peekFinish: FocusVisibilityService["peekFinish"];
   onFinish: () => void;
   /**
@@ -61,6 +64,8 @@ export function EpubReaderScreen({
   onToggleTheme,
   fontPx,
   onFontPx,
+  immersive,
+  onImmersive,
   peekFinish,
   onFinish,
   onTalkRequested,
@@ -68,8 +73,6 @@ export function EpubReaderScreen({
 }: EpubReaderScreenProps) {
   const host = useRef<HTMLDivElement>(null);
   const [confirming, setConfirming] = useState(false);
-  // Interfaz oculta: no se recuerda entre sesiones (la pantalla se monta con `key={sessionId}`).
-  const [immersive, setImmersive] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [fontSheet, setFontSheet] = useState(false);
   const inGrace = snapshot.phase === "grace";
@@ -152,7 +155,7 @@ export function EpubReaderScreen({
                 type="button"
                 className="epub-reader__icon epub-reader__icon--filled"
                 aria-label="Ocultar interfaz"
-                onClick={() => setImmersive(true)}
+                onClick={() => onImmersive(true)}
               >
                 <EyeOff size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
               </button>
@@ -244,7 +247,7 @@ export function EpubReaderScreen({
               onFinish={fromMenu(finishSession)}
               onFontSize={fromMenu(() => setFontSheet(true))}
               onToggleTheme={fromMenu(onToggleTheme)}
-              onShowInterface={fromMenu(() => setImmersive(false))}
+              onShowInterface={fromMenu(() => onImmersive(false))}
             />
           )}
         </>
