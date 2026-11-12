@@ -13,6 +13,7 @@ import { MAX_TURNS, type CompanionService } from "../../services/companionServic
 import { GATE_MESSAGES } from "./chatGateMessages";
 import { GEMINI_PRIVACY_NOTICE } from "./privacyNotice";
 import { useCompanionChat } from "./useCompanionChat";
+import { toPlainText } from "./toPlainText";
 import "./CompanionChatScreen.css";
 
 export interface CompanionChatScreenProps {
@@ -114,7 +115,9 @@ export function CompanionChatScreen({
                   data-sender={message.sender}
                 >
                   <span className="companion__who">{message.sender === "KOMI_AI" ? "Komi" : "Tú"}</span>
-                  <p className="companion__bubble">{message.content}</p>
+                  <p className="companion__bubble">
+                    {message.sender === "KOMI_AI" ? toPlainText(message.content) : message.content}
+                  </p>
                 </li>
               ))}
               {chat.pending !== null && (
@@ -128,7 +131,7 @@ export function CompanionChatScreen({
               <div className="companion__message" data-sender="KOMI_AI" aria-live="off" aria-busy="true">
                 <span className="companion__who">Komi</span>
                 <p className="companion__bubble" data-testid="streaming-bubble">
-                  {chat.streamed}
+                  {toPlainText(chat.streamed)}
                 </p>
               </div>
             )}
@@ -198,7 +201,7 @@ export function CompanionChatScreen({
           <>
             <p className="companion__seed" data-testid="seed">
               <span className="companion__label">Semilla del día</span>
-              {chat.chat?.key_takeaway ?? "Tu charla con Komi terminó. Gracias por leer hoy."}
+              {toPlainText(chat.chat?.key_takeaway ?? "Tu charla con Komi terminó. Gracias por leer hoy.")}
             </p>
             <ZenPrimaryButton onClick={onLeave}>Guardar reflexión y volver al jardín</ZenPrimaryButton>
           </>

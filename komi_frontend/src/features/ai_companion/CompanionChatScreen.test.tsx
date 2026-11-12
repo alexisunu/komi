@@ -415,6 +415,20 @@ describe("apertura", () => {
 });
 
 describe("conversar", () => {
+  it("muestra en texto plano la respuesta de Komi aunque llegue con Markdown", async () => {
+    await mountChat();
+    const hold = deferred();
+    server.reply({ kind: "ok", chunks: ["Una **pala", "bra** clave. ", "¿Y *tú*?"], hold });
+    await type("Hola");
+    await tap(button("Enviar"));
+    await settle();
+    expect(root().querySelector('[data-testid="streaming-bubble"]')?.textContent).not.toContain("*");
+    hold.resolve();
+    await settle();
+    expect(bubbles().at(-1)).toBe("Una palabra clave. ¿Y tú?");
+    expect(bubbles()).toContain("Hola");
+  });
+
   it("envia, muestra el indicador hasta el primer fragmento y luego el texto que llega", async () => {
     await mountChat();
     const hold = deferred();
