@@ -8,8 +8,8 @@ Reunida el 11 de noviembre de 2026 al cerrar el bloque 5.5. Todo lo de esta list
 |---|---|---|---|
 | 1 | El recordatorio `.ics` no se pudo importar al calendario del teléfono (Google Calendar). | A3 | No investigada. Puede ser la descarga desde la PWA instalada o que ninguna app tome el archivo. |
 | 2 | El aviso de "saliste más de 15 segundos" se muestra dentro del Dashboard y aplasta el contenido, con elementos que se sobreponen. Debería ser una ventana emergente. | A4 | El aviso entra en el flujo del diseño. |
-| 3 | En el lector EPUB, solo al cambiar de capítulo: destello en modo oscuro y reflujo visible de las letras en modo claro. | A6 | No investigada. |
-| 4 | Al reabrir un EPUB tras cerrar la app, el lector queda una o dos páginas antes de donde se dejó y el porcentaje retrocede con la posición. | A7 | No investigada. Revisar cuándo se guarda el CFI y el avance al salir del lector o al cerrar la app. |
+| 3 | En el lector EPUB, solo al cambiar de capítulo: destello en modo oscuro y reflujo visible de las letras en modo claro. | A6 | **Resuelto en la rama `v2` (commit `328c46d`), verificado en un Android real.** epubjs no inyecta en los capítulos nuevos los temas registrados con `registerCss`; el tema llegaba tarde, por un efecto que dependía de la identidad de un objeto nuevo en cada render. Detalle en SRS §20. |
+| 4 | Al reabrir un EPUB tras cerrar la app, el lector queda una o dos páginas antes de donde se dejó y el porcentaje retrocede con la posición. | A7 | **Resuelto en la rama `v2` (commits `a0b20b2`, `16d24a4` y `e358b6d`), verificado en un Android real.** Tres causas: Lora con `font-display: swap` desplazaba la página tras `display(cfi)`; la posición esperaba un intervalo de 10 s; y una sesión invalidada devolvía al último avance validado. Detalle en SRS §20. |
 
 ## 2. Funcionalidad ausente
 
