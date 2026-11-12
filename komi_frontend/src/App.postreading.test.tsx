@@ -245,13 +245,13 @@ describe("Terminé el libro (menos del 50 % del tiempo)", () => {
     expect(sheet()?.textContent).toContain("última página (300)");
   });
 
-  it("con la ultima pagina vale: se guarda como EARLY_VALID y florece", async () => {
+  it("con la ultima pagina vale: se guarda como COMPLETED y florece", async () => {
     const ctx = await openDialog();
     await tap(sheetButton("Terminé el libro"));
     await settle();
     await enterPage("300");
     expect(sheetTitle()).toBe("Tu girasol floreció");
-    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID", actual_duration_sec: 200 });
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED", actual_duration_sec: 200 });
     expect(ctx.gate.isBlocked()).toBe(false);
   });
 

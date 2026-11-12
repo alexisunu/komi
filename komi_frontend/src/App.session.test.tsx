@@ -199,7 +199,7 @@ describe("sesion de un libro fisico", () => {
     const sessions = await db.sessions.toArray();
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({
-      session_status: "EARLY_VALID",
+      session_status: "COMPLETED",
       actual_duration_sec: 600,
       current_page: 60,
       progress_percentage: null,

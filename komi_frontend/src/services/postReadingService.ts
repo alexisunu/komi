@@ -186,7 +186,7 @@ export function createPostReadingService(deps: PostReadingDeps) {
       try {
         result = await deps.sessions.completeSession(complete, { acceptInactiveBook: true });
       } catch (error) {
-        if (error instanceof KomiLocalError && error.code === "below_50_percent") {
+        if (error instanceof KomiLocalError && error.code === "duration_out_of_range") {
           return { kind: "discarded" };
         }
         throw error;

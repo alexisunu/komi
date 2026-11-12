@@ -371,7 +371,7 @@ describe("Hablar con Komi desde el lector EPUB", () => {
     await readEpub(40, 500_000);
     await tap(byText(document.body, "button", "Hablar con Komi"));
     await settle(200);
-    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
     expect(sheet()?.textContent).toContain("Sesión terminada");
     expect(sheet()?.textContent).not.toContain("¿Quieres charlar");
   });
@@ -380,7 +380,7 @@ describe("Hablar con Komi desde el lector EPUB", () => {
     await readEpub(40, 500_000);
     await tap(byText(document.body, "button", "Terminar sesión"));
     await settle(200);
-    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
     expect(sheet()?.textContent).toContain("¿Quieres charlar un poco");
   });
 

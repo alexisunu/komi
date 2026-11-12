@@ -119,11 +119,11 @@ describe("completeSession: sesion y libro en una sola transaccion", () => {
     expect(await db.sessions.count()).toBe(0);
   });
 
-  it("menos del 50% se rechaza sin guardar nada", async () => {
+  it("menos de 5 minutos que no terminan el libro se rechazan sin guardar nada", async () => {
     const book = await physicalBook();
     await expect(
       sessions.completeSession(session(book.id, { actual_duration_sec: 100 })),
-    ).rejects.toMatchObject({ code: "below_50_percent" });
+    ).rejects.toMatchObject({ code: "duration_out_of_range" });
     expect(await db.sessions.count()).toBe(0);
     expect(await books.getBook(book.id)).toEqual(book);
   });

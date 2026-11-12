@@ -177,10 +177,10 @@ describe("libro fisico: pagina", () => {
     });
   });
 
-  it("terminar antes (50 % o mas) queda EARLY_VALID", async () => {
+  it("terminar antes (5 minutos o mas) queda COMPLETED", async () => {
     record = active({ finalSec: 450 });
     await service.save(await ready(), { page: 40 });
-    expect((await db.sessions.get(SESSION))?.session_status).toBe("EARLY_VALID");
+    expect((await db.sessions.get(SESSION))?.session_status).toBe("COMPLETED");
   });
 
   it("una pagina menor a la guardada no baja el avance ni la pagina y el Bono Solar aplica", async () => {
@@ -278,10 +278,10 @@ describe("menos del 50 % del tiempo (Terminé el libro)", () => {
     expect(await streakMeta()).toBeUndefined();
   });
 
-  it("la ultima pagina vale: EARLY_VALID, florece y cuenta para la racha", async () => {
+  it("la ultima pagina vale: COMPLETED, florece y cuenta para la racha", async () => {
     const result = await service.save(await ready(), { page: 300 });
     expect(result).toMatchObject({ kind: "saved", bloomed: true, streak: 1 });
-    expect((await db.sessions.get(SESSION))?.session_status).toBe("EARLY_VALID");
+    expect((await db.sessions.get(SESSION))?.session_status).toBe("COMPLETED");
   });
 
   it("una pagina invalida sigue siendo aviso gentil, no descarte", async () => {

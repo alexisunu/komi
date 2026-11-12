@@ -402,7 +402,7 @@ describe("Terminar sesión en el lector", () => {
     await tap(byText(root, "button", "Terminar sesión"));
     await settle(200);
     expect(sheetTitle()).toBe("Tu girasol floreció");
-    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 100, status: "BLOOMED" });
   });
 
@@ -542,7 +542,7 @@ describe("menu del lector en la app", () => {
     await tap(byText(root, "button", "Terminar sesión"));
     await settle(200);
     expect(sheetTitle()).toBe("Sesión terminada");
-    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
   });
 });
 

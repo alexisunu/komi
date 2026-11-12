@@ -99,9 +99,9 @@ describe("evaluateSession con libros inactivos", () => {
     expect(outcome).toMatchObject({ valid: true, updateCfi: false, justBloomed: false });
   });
 
-  it("la opcion no relaja la regla del 50 %", () => {
+  it("la opcion no relaja la regla de duracion", () => {
     expect(() =>
       evaluateSession(book({ status: "FALLOW" }), input({ actual_duration_sec: 100 }), { acceptInactiveBook: true }),
-    ).toThrow(/50%/);
+    ).toThrow(/5 minutos/);
   });
 });
