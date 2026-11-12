@@ -83,7 +83,12 @@ async function mount(
   const deps: EpubReaderDeps = {
     reader: fake.reader,
     files: { getFile: async () => ("file" in over ? over.file : FILE) },
-    progress: { load: async () => null, save: vi.fn(async () => {}) },
+    progress: {
+      load: async () => null,
+      save: vi.fn(async () => {}),
+      loadPosition: async () => null,
+      savePosition: vi.fn(async () => {}),
+    },
     now: () => 1_000,
   };
   const onFontPx = vi.fn();

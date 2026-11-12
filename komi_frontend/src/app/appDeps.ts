@@ -5,7 +5,7 @@ import type { KomiDatabase } from "../data/local_db/dexieDatabase";
 import { getDatabase } from "../data/local_db/dexieDatabase";
 import { createLocalBookRepository, systemClock } from "../data/local_db/localBookRepository";
 import { createLocalEpubRepository } from "../data/local_db/localEpubRepository";
-import { createLocalMetaRepository, META_KEYS } from "../data/local_db/localMetaRepository";
+import { createLocalMetaRepository, META_KEYS, readerPositionKey } from "../data/local_db/localMetaRepository";
 import { createLocalProfileRepository } from "../data/local_db/localProfileRepository";
 import { createLocalReflectionRepository } from "../data/local_db/localReflectionRepository";
 import { createLocalSessionRepository } from "../data/local_db/localSessionRepository";
@@ -17,7 +17,7 @@ import { createSyncService } from "../data/network/syncService";
 import { createWakeService, type WakeService } from "../data/network/wakeService";
 import { createEpubReaderService, type EpubReaderService } from "../services/epubReaderService";
 import { createEpubService, type EpubService } from "../services/epubService";
-import { parseReadingProgress, type ReadingProgress } from "../services/readingTracker";
+import { parseReaderPosition, parseReadingProgress, type ReadingProgress } from "../services/readingTracker";
 import { parseActiveSession } from "../services/focusSessionMachine";
 import {
   createFocusVisibilityService,
@@ -116,6 +116,9 @@ export function createAppDeps(options: AppOptions = {}) {
         load: async () => parseReadingProgress(await meta.get(META_KEYS.activeSessionProgress)),
         save: (progress: ReadingProgress) =>
           meta.set(META_KEYS.activeSessionProgress, JSON.stringify(progress)),
+        loadPosition: async (bookId: string) => parseReaderPosition(await meta.get(readerPositionKey(bookId))),
+        savePosition: (bookId: string, cfi: string) =>
+          meta.set(readerPositionKey(bookId), JSON.stringify({ cfi, updatedAt: focusNow() })),
       },
       now: focusNow,
     },

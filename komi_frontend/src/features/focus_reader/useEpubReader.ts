@@ -12,6 +12,7 @@ import type { ReaderThemeInput } from "../../services/readerTheme";
 import {
   createProgressWriter,
   createReadingTracker,
+  pickResumeCfi,
   type ReadingProgress,
 } from "../../services/readingTracker";
 
@@ -21,6 +22,9 @@ export const WRITE_CHECK_MS = 2_000;
 export interface ReaderProgressStore {
   load(): Promise<ReadingProgress | null>;
   save(progress: ReadingProgress): Promise<void>;
+  /** Posicion de lectura del libro (aparte del avance validado). `null` si no hay. */
+  loadPosition(bookId: string): Promise<string | null>;
+  savePosition(bookId: string, cfi: string): Promise<void>;
 }
 
 export interface EpubReaderDeps {
@@ -79,6 +83,16 @@ export function useEpubReader(args: {
     let opened: ReaderHandle | null = null;
     latestPercentage.current = null;
 
+    // La posicion se guarda en cada pagina, en orden y aparte del avance: asi un cierre brusco o
+    // una sesion invalidada no devuelven al lector al ultimo avance validado.
+    let positionQueue: Promise<void> = Promise.resolve();
+    let savedCfi: string | null = null;
+    const rememberPosition = (cfi: string) => {
+      if (cfi === savedCfi) return;
+      savedCfi = cfi;
+      positionQueue = positionQueue.then(() => deps.progress.savePosition(book.id, cfi).catch(() => {}));
+    };
+
     const flushNow = () => void writer.flush();
     // Android puede matar la app sin `pagehide`; al pasar a segundo plano siempre hay
     // `visibilitychange`.
@@ -99,7 +113,14 @@ export function useEpubReader(args: {
         }
         const saved = await deps.progress.load().catch(() => null);
         if (saved?.sessionId === sessionId) tracker.restore(saved);
-        const resume = tracker.snapshot().cfi ?? book.last_epub_cfi;
+        const savedPosition = await deps.progress.loadPosition(book.id).catch(() => null);
+        if (!alive) return;
+        savedCfi = savedPosition;
+        const resume = pickResumeCfi({
+          session: tracker.snapshot().cfi,
+          saved: savedPosition,
+          book: book.last_epub_cfi,
+        });
         const next = await deps.reader.open({
           data: file.data,
           host: container,
@@ -108,6 +129,7 @@ export function useEpubReader(args: {
           theme: latestTheme.current,
           onPosition(position) {
             if (!alive) return;
+            rememberPosition(position.cfi);
             if (tracker.record(position)) void writer.update(tracker.snapshot());
             const current = tracker.snapshot().percentage;
             latestPercentage.current = current;

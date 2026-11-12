@@ -24,6 +24,15 @@ export const META_KEYS = {
   readerFontSize: "reader_font_size",
 } as const;
 
+/**
+ * Posicion de lectura de un libro EPUB: JSON `{ cfi, updatedAt }`, una clave por libro. Es aparte
+ * del avance validado (`books.last_epub_cfi` y el porcentaje, que solo mueve una sesion valida):
+ * guarda donde se quedo el lector aunque la sesion se invalide o se abandone.
+ */
+export function readerPositionKey(bookId: string): string {
+  return `reader_position:${bookId}`;
+}
+
 export function createLocalMetaRepository(db: KomiDatabase = getDatabase()) {
   return {
     async get(key: string): Promise<MetaEntry["value"] | undefined> {

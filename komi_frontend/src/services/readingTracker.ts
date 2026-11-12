@@ -118,6 +118,36 @@ export function parseReadingProgress(raw: unknown): ReadingProgress | null {
   return { sessionId, cfi, percentage, excerpt: excerpt.slice(-MAX_EXCERPT_CHARS), updatedAt };
 }
 
+/** Un CFI razonable cabe de sobra aqui; algo mas largo es basura y se ignora. */
+const MAX_POSITION_CFI_CHARS = 4_096;
+
+/** Lee la posicion guardada de un libro; cualquier cosa rara es `null` (se ignora). */
+export function parseReaderPosition(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const { cfi } = value as Record<string, unknown>;
+  if (typeof cfi !== "string" || cfi === "" || cfi.length > MAX_POSITION_CFI_CHARS) return null;
+  return cfi;
+}
+
+/**
+ * Donde reabrir el libro: la sesion en curso, si no la posicion guardada del libro y por ultimo
+ * el CFI del ultimo avance validado.
+ */
+export function pickResumeCfi(sources: {
+  session: string | null;
+  saved: string | null;
+  book: string | null;
+}): string | null {
+  return sources.session || sources.saved || sources.book || null;
+}
+
 export interface ProgressWriterDeps {
   now: () => number;
   save: (progress: ReadingProgress) => Promise<void>;

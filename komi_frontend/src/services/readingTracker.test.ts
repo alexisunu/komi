@@ -5,7 +5,9 @@ import {
   createReadingTracker,
   isFinished,
   MAX_EXCERPT_CHARS,
+  parseReaderPosition,
   parseReadingProgress,
+  pickResumeCfi,
   PROGRESS_WRITE_MS,
   toPercentage,
   type ReadingProgress,
@@ -252,5 +254,25 @@ describe("createProgressWriter (posicion al instante, extracto cada ~10 s)", () 
     await writer.flushIfDue();
     expect(save).toHaveBeenCalledTimes(2);
     expect(save.mock.calls[1]?.[0].cfi).toBe("c1");
+  });
+});
+
+describe("posicion de lectura aparte del avance", () => {
+  it("parseReaderPosition lee el CFI y descarta basura", () => {
+    expect(parseReaderPosition(JSON.stringify({ cfi: "epubcfi(/6/4)", updatedAt: 1 }))).toBe("epubcfi(/6/4)");
+    expect(parseReaderPosition(undefined)).toBeNull();
+    expect(parseReaderPosition("no es json")).toBeNull();
+    expect(parseReaderPosition(JSON.stringify(null))).toBeNull();
+    expect(parseReaderPosition(JSON.stringify({ cfi: "" }))).toBeNull();
+    expect(parseReaderPosition(JSON.stringify({ cfi: 7 }))).toBeNull();
+    expect(parseReaderPosition(JSON.stringify({ cfi: "x".repeat(5_000) }))).toBeNull();
+  });
+
+  it("pickResumeCfi: sesion en curso, luego posicion guardada, luego el ultimo avance validado", () => {
+    expect(pickResumeCfi({ session: "s", saved: "p", book: "b" })).toBe("s");
+    expect(pickResumeCfi({ session: null, saved: "p", book: "b" })).toBe("p");
+    expect(pickResumeCfi({ session: null, saved: null, book: "b" })).toBe("b");
+    expect(pickResumeCfi({ session: null, saved: null, book: null })).toBeNull();
+    expect(pickResumeCfi({ session: "", saved: "", book: "b" })).toBe("b");
   });
 });

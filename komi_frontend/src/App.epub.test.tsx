@@ -6,12 +6,12 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { KomiDatabase } from "./data/local_db/dexieDatabase";
-import { META_KEYS } from "./data/local_db/localMetaRepository";
+import { META_KEYS, readerPositionKey } from "./data/local_db/localMetaRepository";
 import { createLocalProfileRepository } from "./data/local_db/localProfileRepository";
 import type { LocalBook } from "./data/local_db/types";
 import { createApiClient } from "./data/network/apiClient";
 import { createReloadGate } from "./pwa/reloadGate";
-import { parseReadingProgress, PROGRESS_WRITE_MS } from "./services/readingTracker";
+import { parseReaderPosition, parseReadingProgress, PROGRESS_WRITE_MS } from "./services/readingTracker";
 import type { WakeLockService } from "./services/wakeLockService";
 import { createTestDb, fakeClock, uuid } from "./test/db";
 import { createFocusEnv, type FocusEnv } from "./test/focusEnv";
@@ -207,7 +207,7 @@ describe("sesion EPUB", () => {
     expect(root.querySelector(".epub-reader")).not.toBeNull();
     expect(root.querySelector("[role=timer]")?.textContent).toBe("15:00");
     expect((await db.epub_files.get(uuid(1)))?.locations).toBe(LOCATIONS);
-    expect(fake.inputs[0]?.locations).toBe(LOCATIONS);
+    await vi.waitFor(() => expect(fake.inputs[0]?.locations).toBe(LOCATIONS));
   });
 
   it("si el archivo desaparece justo al abrir, avisa y no inicia la sesion", async () => {
@@ -435,6 +435,77 @@ describe("Terminé antes de tiempo en el lector", () => {
     await settle(200);
     expect(sheetTitle()).toBe("Lectura guardada");
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12 });
+  });
+});
+
+describe("posicion de lectura aparte del avance validado", () => {
+  const position = async (bookId: string) => (await db.meta.get(readerPositionKey(bookId)))?.value;
+
+  it("cada pagina deja la posicion guardada, sin tocar el avance del libro", async () => {
+    const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    await act(async () => fake.see({ cfi: "cfi-3", percentage: 40, text: "" }));
+    await settle();
+    expect(parseReaderPosition(await position(uuid(1)))).toBe("cfi-3");
+    await act(async () => fake.see({ cfi: "cfi-4", percentage: 41, text: "" }));
+    await settle();
+    expect(parseReaderPosition(await position(uuid(1)))).toBe("cfi-4");
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12, last_epub_cfi: null });
+  });
+
+  it("una sesion cancelada no pierde el lugar: la siguiente abre ahi y el avance sigue igual", async () => {
+    const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    await act(async () => fake.see({ cfi: "cfi-9", percentage: 40, text: "" }));
+    env.advance(200_000); // bajo el 50 %: se cancela
+    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(document.body, "button", "Cancelar sesión"));
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12, last_epub_cfi: null });
+
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs.at(-1)?.startCfi).toBe("cfi-9");
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12, last_epub_cfi: null });
+  });
+
+  it("sin posicion guardada se usa el ultimo avance validado del libro", async () => {
+    const { root, fake } = await mountApp([epubBook(1, { last_epub_cfi: "cfi-libro" })], {
+      files: [{ bookId: uuid(1) }],
+    });
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs[0]?.startCfi).toBe("cfi-libro");
+  });
+
+  it("la posicion guardada manda sobre el ultimo avance validado", async () => {
+    await db.meta.put({ key: readerPositionKey(uuid(1)), value: JSON.stringify({ cfi: "cfi-pos", updatedAt: 1 }) });
+    const { root, fake } = await mountApp([epubBook(1, { last_epub_cfi: "cfi-libro" })], {
+      files: [{ bookId: uuid(1) }],
+    });
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs[0]?.startCfi).toBe("cfi-pos");
+  });
+
+  it("la posicion de un libro no se usa en otro", async () => {
+    await db.meta.put({ key: readerPositionKey(uuid(2)), value: JSON.stringify({ cfi: "cfi-otro", updatedAt: 1 }) });
+    const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs[0]?.startCfi).toBeNull();
+  });
+
+  it("una posicion danada se ignora", async () => {
+    await db.meta.put({ key: readerPositionKey(uuid(1)), value: "{{{" });
+    const { root, fake } = await mountApp([epubBook(1, { last_epub_cfi: "cfi-libro" })], {
+      files: [{ bookId: uuid(1) }],
+    });
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs[0]?.startCfi).toBe("cfi-libro");
   });
 });
 
