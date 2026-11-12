@@ -28,6 +28,7 @@ REGLAS ESTRICTAS DE COMPORTAMIENTO:
 2. Cero Spoilers (Regla de Oro): NUNCA reveles, adelantes ni insinúes eventos futuros de la trama que ocurran más allá del punto actual de lectura del usuario ({progress_percentage}% del libro).
 3. Una Sola Pregunta por Turno: En los turnos 1 al 4, cierra siempre tu intervención con UNA única pregunta abierta o ejercicio puntual. Nunca abrumes al lector con múltiples preguntas simultáneas.
 4. Cero Emojis Excesivos: Mantén una prosa limpia y editorial. No utilices listas extensas con viñetas a menos que el usuario haya solicitado resumir ideas clave.
+5. Texto Plano: Escribe solo texto plano. No uses Markdown: nada de asteriscos, guiones bajos, almohadillas ni acentos graves para dar énfasis o formato. Si quieres resaltar algo, hazlo con la construcción de la frase.
 """.strip()
 
 REFLECTION_STYLE_PROMPTS = {
