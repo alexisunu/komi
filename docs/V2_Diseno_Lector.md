@@ -13,7 +13,7 @@ Complementa `docs/V2_Pendientes_Komi.md`. Referencia visual en `docs/v2_mockups/
 7. Navegacion inferior de dos items: "Lectura" y "Mi Jardin".
 8. Libro fisico: sonido al terminar el tiempo del temporizador.
 9. Margenes y tipografia del lector segun SRS 10.8 (margen lateral 24 px, Lora, interlineado 1.6; texto justificado con `hyphens: auto` y `lang="es"` para evitar huecos grandes entre palabras; el SRS 10.8 ya fue actualizado).
-10. Pendientes Android de `V2_Pendientes_Komi.md`: (1) .ics no importable en Google Calendar, (2) aviso de "saliste mas de 15 s" debe ser un popup que no deforme el Dashboard, (3) destello/reflujo del lector al cambiar de capitulo, (4) al reabrir el EPUB aterriza 1 a 2 paginas antes y el porcentaje retrocede.
+10. Pendientes Android de `V2_Pendientes_Komi.md`: (1) recordatorios y `.ics`: eliminados de la v2, (2) aviso de "saliste mas de 15 s" debe ser un popup que no deforme el Dashboard, (3) destello/reflujo del lector al cambiar de capitulo, (4) al reabrir el EPUB aterriza 1 a 2 paginas antes y el porcentaje retrocede.
 
 Fuera de alcance v2 (siguen como limitaciones conocidas): codigo de recuperacion = profile_id, restore sin pagina/CFI, cierre anticipado del chat.
 
