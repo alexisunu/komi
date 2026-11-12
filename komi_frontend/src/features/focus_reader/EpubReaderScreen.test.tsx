@@ -8,6 +8,7 @@ import type { ThemeId } from "../../core/theme/colorTokens";
 import { createFakeReader } from "../../test/readerEnv";
 import { click, render } from "../../test/render";
 import css from "./EpubReaderScreen.css?raw";
+import menuCss from "./ReaderMenu.css?raw";
 import { EpubReaderScreen } from "./EpubReaderScreen";
 import type { EpubReaderDeps } from "./useEpubReader";
 
@@ -92,6 +93,7 @@ async function mount(
     now: () => 1_000,
   };
   const onFontPx = vi.fn();
+  const onToggleTheme = vi.fn();
   const onAcceptEarly = vi.fn();
   const onCancel = vi.fn();
   const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, belowHalf: false } : over.early));
@@ -102,6 +104,7 @@ async function mount(
       reader={deps}
       wakeLock={lock as unknown as WakeLockService}
       theme={theme}
+      onToggleTheme={onToggleTheme}
       fontPx={fontPx}
       onFontPx={onFontPx}
       peekEarlyFinish={peek}
@@ -116,6 +119,7 @@ async function mount(
     fake,
     lock,
     onFontPx,
+    onToggleTheme,
     onAcceptEarly,
     onCancel,
     rerender: (theme: ThemeId, snapshot = over.snapshot ?? snap(), fontPx: ReaderFontSize = over.fontPx ?? 18) =>
@@ -244,19 +248,21 @@ describe("EpubReaderScreen", () => {
     it("el libro no se reabre al ocultar o mostrar la interfaz", async () => {
       const { root, fake } = await mount();
       click(button(root, "Ocultar interfaz"));
+      click(button(root, "Abrir menú"));
       click(button(root, "Mostrar interfaz"));
       expect(root.querySelector(".epub-reader--immersive")).toBeNull();
       expect(fake.open).toHaveBeenCalledTimes(1);
     });
 
-    it("el tercio central con la interfaz visible no hace nada; oculta, la devuelve", async () => {
+    it("el tercio central con la interfaz visible no hace nada; oculta, abre el menu", async () => {
       const { root, fake } = await mount();
       act(() => fake.inputs[0]?.onCenterTap?.());
       expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+      expect(root.querySelector(".reader-menu")).toBeNull();
       click(button(root, "Ocultar interfaz"));
       act(() => fake.inputs[0]?.onCenterTap?.());
-      expect(root.querySelector(".epub-reader--immersive")).toBeNull();
-      expect(root.querySelector(".epub-reader__header")).not.toBeNull();
+      expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+      expect(root.querySelector(".reader-menu")).not.toBeNull();
     });
 
     it("el aviso de gracia se ve tambien con la interfaz oculta", async () => {
@@ -264,6 +270,121 @@ describe("EpubReaderScreen", () => {
       click(button(root, "Ocultar interfaz"));
       rerender("light", snap({ phase: "grace", graceRemainingMs: 9_100 }));
       expect(root.querySelector(".epub-reader--immersive .epub-reader__grace .grace-banner")).not.toBeNull();
+    });
+  });
+
+  describe("menu flotante", () => {
+    const labels = (root: ParentNode) =>
+      [...root.querySelectorAll(".reader-menu__item")].map((item) => item.textContent?.trim());
+
+    async function hidden(over: Parameters<typeof mount>[0] = {}) {
+      const ctx = await mount(over);
+      click(button(ctx.root, "Ocultar interfaz"));
+      return ctx;
+    }
+
+    it("el boton flotante lo abre y se vuelve la X que lo cierra", async () => {
+      const { root } = await hidden();
+      expect(root.querySelector(".reader-menu")).toBeNull();
+      const float = button(root, "Abrir menú");
+      expect(float?.getAttribute("aria-expanded")).toBe("false");
+      click(float);
+      expect(root.querySelector(".reader-menu")).not.toBeNull();
+      expect(button(root, "Cerrar menú")?.getAttribute("aria-expanded")).toBe("true");
+      click(button(root, "Cerrar menú"));
+      expect(root.querySelector(".reader-menu")).toBeNull();
+      expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+    });
+
+    it("tiene exactamente las cinco acciones, en orden", async () => {
+      const { root } = await hidden();
+      click(button(root, "Abrir menú"));
+      expect(labels(root)).toEqual([
+        "Hablar con Komi",
+        "Terminar sesión",
+        "Tamaño de letra",
+        "Modo noche",
+        "Mostrar interfaz",
+      ]);
+    });
+
+    it("en oscuro la tercera accion de tema dice Modo dia", async () => {
+      const { root } = await hidden({ theme: "dark" });
+      click(button(root, "Abrir menú"));
+      expect(labels(root)).toContain("Modo día");
+      expect(labels(root)).not.toContain("Modo noche");
+    });
+
+    it("tocar la veladura cierra el menu y no pasa de pagina", async () => {
+      const { root, fake } = await hidden();
+      click(button(root, "Abrir menú"));
+      click(root.querySelector(".reader-menu__veil"));
+      expect(root.querySelector(".reader-menu")).toBeNull();
+      expect(fake.handle.next).not.toHaveBeenCalled();
+      expect(fake.handle.prev).not.toHaveBeenCalled();
+    });
+
+    it("Escape cierra el menu", async () => {
+      const { root } = await hidden();
+      click(button(root, "Abrir menú"));
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      expect(root.querySelector(".reader-menu")).toBeNull();
+    });
+
+    it("al abrir el foco va a la primera accion y al cerrar vuelve al boton flotante", async () => {
+      const { root } = await hidden();
+      const float = button(root, "Abrir menú");
+      float?.focus();
+      click(float);
+      expect(document.activeElement?.textContent?.trim()).toBe("Hablar con Komi");
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      expect(document.activeElement).toBe(float);
+    });
+
+    it("Modo noche cambia el tema de la app y cierra el menu", async () => {
+      const { root, onToggleTheme } = await hidden();
+      click(button(root, "Abrir menú"));
+      click(button(root, "Modo noche"));
+      expect(onToggleTheme).toHaveBeenCalledTimes(1);
+      expect(root.querySelector(".reader-menu")).toBeNull();
+      expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+    });
+
+    it("Mostrar interfaz cierra el menu y devuelve la cabecera y el pie", async () => {
+      const { root } = await hidden();
+      click(button(root, "Abrir menú"));
+      click(button(root, "Mostrar interfaz"));
+      expect(root.querySelector(".reader-menu")).toBeNull();
+      expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+      expect(root.querySelector(".epub-reader__header")).not.toBeNull();
+      expect(root.querySelector(".epub-reader__footer")).not.toBeNull();
+    });
+
+    it("Terminar sesion usa la regla de siempre: con el tiempo cumplido acepta y sin el 50 % pide confirmacion", async () => {
+      const ok = await hidden({ early: { actualSec: 600, belowHalf: false } });
+      click(button(ok.root, "Abrir menú"));
+      click(button(ok.root, "Terminar sesión"));
+      expect(ok.onAcceptEarly).toHaveBeenCalledTimes(1);
+      unmountNow();
+      document.body.innerHTML = "";
+
+      const low = await hidden({ early: { actualSec: 100, belowHalf: true } });
+      click(button(low.root, "Abrir menú"));
+      click(button(low.root, "Terminar sesión"));
+      expect(low.onAcceptEarly).not.toHaveBeenCalled();
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("no se guarda ningún avance");
+    });
+
+    it("el aviso de gracia queda por encima de la veladura (capas del CSS)", () => {
+      const z = (selector: string, source: string) =>
+        Number(new RegExp(`${selector}\\s*\\{[^}]*?z-index:\\s*(\\d+)`).exec(source)?.[1]);
+      expect(z("\\.reader-menu__veil", menuCss)).toBeLessThan(z("\\.reader-menu", menuCss));
+      expect(z("\\.reader-menu", menuCss)).toBeLessThan(z("\\.epub-reader__grace", css));
+      expect(z("\\.epub-reader__grace", css)).toBeLessThan(z("\\.epub-reader__float", css));
     });
   });
 

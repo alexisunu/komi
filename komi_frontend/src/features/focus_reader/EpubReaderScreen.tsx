@@ -1,11 +1,12 @@
 // Lector ePub Zen (CU-03, paso 4). Tres bloques: encabezado (reloj sutil, avance y tamano de
 // letra), la pagina del libro y el pie (pagina anterior, "Terminé antes de tiempo", pagina
 // siguiente). Sin navegacion inferior. La interfaz se puede ocultar (SRS 10.8): queda el texto,
-// una linea de progreso de 2 px y un boton flotante; cada sesion empieza con la interfaz visible.
+// una linea de progreso de 2 px y un boton flotante que abre el menu (tambien el tercio central);
+// cada sesion empieza con la interfaz visible.
 // El tiempo lo lleva la misma maquina que el libro fisico: el aviso de gracia es una
 // superposicion flotante arriba, visible tambien con la interfaz oculta.
 
-import { AArrowDown, AArrowUp, ChevronLeft, ChevronRight, Ellipsis, EyeOff } from "lucide-react";
+import { AArrowDown, AArrowUp, ChevronLeft, ChevronRight, Ellipsis, EyeOff, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ZenSheet } from "../../core/components/ZenSheet";
@@ -23,6 +24,7 @@ import type { WakeLockService } from "../../services/wakeLockService";
 import { formatClock } from "./clockFormat";
 import "./EpubReaderScreen.css";
 import { GracePeriodBanner } from "./GracePeriodBanner";
+import { ReaderMenu } from "./ReaderMenu";
 import { useEpubReader, type EpubReaderDeps } from "./useEpubReader";
 import { useWakeLock } from "./useWakeLock";
 
@@ -33,6 +35,8 @@ export interface EpubReaderScreenProps {
   reader: EpubReaderDeps;
   wakeLock: WakeLockService;
   theme: ThemeId;
+  /** Cambia el tema de toda la app (Modo noche / Modo dia del menu). */
+  onToggleTheme: () => void;
   fontPx: ReaderFontSize;
   onFontPx: (size: ReaderFontSize) => void;
   peekEarlyFinish: FocusVisibilityService["peekEarlyFinish"];
@@ -52,6 +56,7 @@ export function EpubReaderScreen({
   reader,
   wakeLock,
   theme,
+  onToggleTheme,
   fontPx,
   onFontPx,
   peekEarlyFinish,
@@ -62,6 +67,7 @@ export function EpubReaderScreen({
   const [confirming, setConfirming] = useState(false);
   // Interfaz oculta: no se recuerda entre sesiones (la pantalla se monta con `key={sessionId}`).
   const [immersive, setImmersive] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const inGrace = snapshot.phase === "grace";
 
   useWakeLock(wakeLock, true);
@@ -72,10 +78,9 @@ export function EpubReaderScreen({
     sessionId: snapshot.sessionId,
     host,
     theme: { theme, fontPx, fontBaseUrl: fontBaseUrl() },
-    // Con la interfaz visible el tercio central no hace nada; oculta, lo atiende (por ahora
-    // devuelve la interfaz; el menu flotante lo sustituye).
+    // Con la interfaz visible el tercio central no hace nada; oculta, abre el menu.
     onCenterTap: () => {
-      if (immersive) setImmersive(false);
+      if (immersive) setMenuOpen(true);
     },
   });
 
@@ -89,6 +94,12 @@ export function EpubReaderScreen({
     setConfirming(false);
     if (earlyFinishAllowed(peekEarlyFinish(), view.currentPercentage())) onAcceptEarly();
     else void onCancel();
+  };
+
+  // Cada accion del menu lo cierra antes de ejecutarse.
+  const fromMenu = (action: () => void) => () => {
+    setMenuOpen(false);
+    action();
   };
 
   const unavailable = view.status === "missing" || view.status === "error";
@@ -209,11 +220,29 @@ export function EpubReaderScreen({
           <button
             type="button"
             className="epub-reader__float"
-            aria-label="Mostrar interfaz"
-            onClick={() => setImmersive(false)}
+            aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
           >
-            <Ellipsis size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+            {menuOpen ? (
+              <X size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+            ) : (
+              <Ellipsis size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+            )}
           </button>
+          {menuOpen && (
+            <ReaderMenu
+              theme={theme}
+              onClose={() => setMenuOpen(false)}
+              // Provisional (unidad 6): igual que Terminar sesion; la charla se ofrece al guardar.
+              onTalk={fromMenu(finishEarly)}
+              onFinish={fromMenu(finishEarly)}
+              // Provisional (unidad 3): muestra la interfaz, donde estan los botones de tamano.
+              onFontSize={fromMenu(() => setImmersive(false))}
+              onToggleTheme={fromMenu(onToggleTheme)}
+              onShowInterface={fromMenu(() => setImmersive(false))}
+            />
+          )}
         </>
       )}
 

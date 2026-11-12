@@ -152,7 +152,7 @@
   top: calc(env(safe-area-inset-top) + var(--space-1));
   right: var(--screen-margin);
   left: var(--screen-margin);
-  z-index: 5;
+  z-index: 8;
 }
 
 /* Interfaz oculta: solo el texto, una linea de progreso y un boton flotante. */
@@ -191,6 +191,7 @@
   padding: 0;
   border: 0;
   border-radius: var(--radius-pill);
+  z-index: 9;
   background: var(--color-bg-surface);
   color: var(--color-text-primary);
   cursor: pointer;

@@ -509,6 +509,43 @@ describe("posicion de lectura aparte del avance validado", () => {
   });
 });
 
+describe("menu del lector en la app", () => {
+  it("Modo noche cambia el tema de toda la app, se guarda y el lector no se reabre", async () => {
+    const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+
+    await tap(root.querySelector('button[aria-label="Ocultar interfaz"]'));
+    await tap(root.querySelector('button[aria-label="Abrir menú"]'));
+    await tap(byText(root, "button", "Modo noche"));
+    await settle();
+
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(fake.handle.setTheme).toHaveBeenLastCalledWith(expect.objectContaining({ theme: "dark" }));
+    expect(fake.open).toHaveBeenCalledTimes(1);
+    const profile = await createLocalProfileRepository(db, fakeClock(), undefined).getProfile();
+    expect(profile?.theme_mode).toBe("dark");
+
+    // La misma accion ahora ofrece volver al dia.
+    await tap(root.querySelector('button[aria-label="Abrir menú"]'));
+    expect(byText(root, "button", "Modo día")).not.toBeNull();
+  });
+
+  it("Terminar sesion desde el menu cierra la sesion igual que el boton del pie", async () => {
+    const { root, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    env.advance(500_000); // mas del 50 % de los 900 s
+    await tap(root.querySelector('button[aria-label="Ocultar interfaz"]'));
+    await tap(root.querySelector('button[aria-label="Abrir menú"]'));
+    await tap(byText(root, "button", "Terminar sesión"));
+    await settle(200);
+    expect(sheetTitle()).toBe("Lectura guardada");
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
+  });
+});
+
 describe("gracia y tamano de letra en el lector", () => {
   it("al salir muestra el aviso flotante; pasados 15 s se invalida y vuelve al Dashboard", async () => {
     const { root, env, gate } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });

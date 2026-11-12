@@ -203,7 +203,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   // Avance (0 a 1) de "Preparando tu libro" antes de abrir un EPUB sin `locations`; null = no aplica.
   const [preparing, setPreparing] = useState<number | null>(null);
   const [fontPx, setFontPx] = useState<ReaderFontSize>(DEFAULT_FONT_SIZE);
-  const { theme } = useTheme();
+  const { theme, toggleTheme } = useTheme();
   // Racha del Dashboard: parte de lo guardado y sube al cerrar una sesion, sin esperar a la red.
   const [streakDays, setStreakDays] = useState(initial?.streakDays ?? 0);
   // Sesion que se esta cerrando. Se fija al terminar y sobrevive a `focus.leave()`: la hoja sigue
@@ -379,6 +379,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
               reader={deps.epubReader}
               wakeLock={deps.wakeLock}
               theme={theme}
+              onToggleTheme={toggleTheme}
               fontPx={fontPx}
               onFontPx={changeFontPx}
               peekEarlyFinish={focus.peekEarlyFinish}

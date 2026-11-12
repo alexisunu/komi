@@ -1,0 +1,105 @@
+/* Menu flotante del lector (SRS 10.8). Solo tokens de core/theme. Capas dentro de .epub-reader:
+   veladura 6, menu 7, aviso de gracia 8, boton flotante 9. */
+
+.reader-menu__veil {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: var(--color-bg-primary);
+  opacity: 0.78;
+  animation: reader-menu-fade var(--transition-ui) both;
+}
+
+.reader-menu {
+  position: absolute;
+  right: var(--screen-margin);
+  bottom: calc(env(safe-area-inset-bottom) + var(--touch-target) + var(--space-3));
+  z-index: 7;
+  min-width: 240px;
+  max-width: calc(100% - 2 * var(--screen-margin));
+  padding: var(--space-1);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  box-shadow: var(--shadow-modal);
+  animation: reader-menu-rise var(--transition-ui) both;
+}
+
+.reader-menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reader-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 52px;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.reader-menu__item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: calc(var(--focus-offset) * -1);
+}
+
+.reader-menu__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+}
+
+.reader-menu__icon--accent {
+  background: var(--color-accent-primary);
+  color: var(--color-derived-text-on-accent);
+}
+
+.reader-menu__label {
+  font-size: var(--font-body-size);
+  line-height: var(--font-body-line);
+}
+
+@keyframes reader-menu-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.78;
+  }
+}
+
+@keyframes reader-menu-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-1));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-menu__veil,
+  .reader-menu {
+    animation: none;
+  }
+}
