@@ -175,7 +175,7 @@
 /* Interfaz oculta: solo el texto, una linea de progreso y un boton flotante. */
 .epub-reader--immersive .epub-reader__page {
   padding-top: var(--space-3);
-  padding-bottom: calc(var(--touch-target) + var(--space-2));
+  padding-bottom: var(--touch-target);
 }
 
 .epub-reader__progress {

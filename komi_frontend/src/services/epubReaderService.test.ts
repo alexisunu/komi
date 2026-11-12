@@ -85,6 +85,12 @@ describe("epubReaderService.open", () => {
     });
   });
 
+  it("pide gap 0 a epubjs: el unico margen lateral es el del contenedor (24 px)", async () => {
+    const fake = fakeBook({ locations: true });
+    await open(fake);
+    expect(fake.book.renderTo.mock.calls[0]?.[1]).toMatchObject({ gap: 0 });
+  });
+
   it("carga las locations guardadas", async () => {
     const fake = fakeBook({ locations: true });
     await open(fake, { locations: '["a"]' });

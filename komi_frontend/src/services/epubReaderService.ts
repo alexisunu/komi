@@ -122,13 +122,19 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       const bookLanguage = (book as { packaging?: { metadata?: { language?: string } } }).packaging?.metadata
         ?.language;
 
+      // `gap: 0`: epubjs, por defecto, anade a cada lado y arriba/abajo la mitad de un hueco de
+      // columnas (ancho/12, unos 14 px) DENTRO del iframe, que se sumaba a los 24 px de margen del
+      // contenedor (medido: 38 px por lado, 9,7 %; el SRS 10.8 pide 24). Con un solo margen, el del
+      // contenedor, el texto queda como en el mockup. Las columnas no necesitan hueco: la pagina
+      // avanza por el ancho del contenedor.
       const rendition = book.renderTo(input.host, {
         width: Math.max(input.host.clientWidth, 1),
         height: Math.max(input.host.clientHeight, 1),
         flow: "paginated",
         spread: "none",
+        gap: 0,
         allowScriptedContent: false,
-      });
+      } as Parameters<Book["renderTo"]>[1] & { gap: number });
 
       // Punto de lectura que se conserva mientras se cambia el tamano de letra. Con otra letra la
       // paginacion cambia y `display(cfi)` cae en la pagina que CONTIENE ese punto, que empieza en
