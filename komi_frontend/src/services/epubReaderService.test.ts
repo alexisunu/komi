@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { createEpubReaderService, type ReaderPosition } from "./epubReaderService";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createEpubReaderService, FONT_WAIT_MS, type ReaderPosition } from "./epubReaderService";
 
 // epubjs no dibuja paginas en jsdom: aqui se prueba la traduccion hacia y desde epubjs con un
 // libro falso. El motor real se verifica a mano con libros reales (SRS 19.16).
@@ -7,7 +7,9 @@ import { createEpubReaderService, type ReaderPosition } from "./epubReaderServic
 type Handler = (...args: never[]) => void;
 type Relocate = (location: { start: { cfi: string }; end: { cfi: string } }) => void;
 
-function fakeBook(options: { locations: boolean; displayFails?: boolean }) {
+type FakeFonts = { status: string; ready: Promise<unknown> };
+
+function fakeBook(options: { locations: boolean; displayFails?: boolean; fonts?: FakeFonts[] }) {
   const handlers = new Map<string, Handler>();
   const contentHooks: Array<(contents: unknown) => void> = [];
   const rendition = {
@@ -17,6 +19,7 @@ function fakeBook(options: { locations: boolean; displayFails?: boolean }) {
     display: vi.fn(async (target?: string) => {
       if (options.displayFails && target) throw new Error("cfi invalido");
     }),
+    getContents: vi.fn(() => (options.fonts ?? []).map((fonts) => ({ document: { fonts } }))),
     next: vi.fn(async () => {}),
     prev: vi.fn(async () => {}),
     resize: vi.fn(),
@@ -110,6 +113,57 @@ describe("epubReaderService.open", () => {
     const bad = fakeBook({ locations: true, displayFails: true });
     await open(bad, { startCfi: "viejo" });
     expect(bad.rendition.display).toHaveBeenLastCalledWith();
+  });
+
+  describe("al reabrir espera a las fuentes (Lora, font-display swap)", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("fuentes aun cargando: espera y repite display con el mismo CFI", async () => {
+      let done: () => void = () => {};
+      const ready = new Promise<void>((resolve) => (done = resolve));
+      const fake = fakeBook({ locations: true, fonts: [{ status: "loading", ready }] });
+      const pending = open(fake, { startCfi: "epubcfi(/6/4)" });
+      await Promise.resolve();
+      expect(fake.rendition.display).toHaveBeenCalledTimes(1);
+      done();
+      await pending;
+      expect(fake.rendition.display).toHaveBeenCalledTimes(2);
+      expect(fake.rendition.display).toHaveBeenLastCalledWith("epubcfi(/6/4)");
+    });
+
+    it("fuentes ya cargadas: no repite display", async () => {
+      const fake = fakeBook({ locations: true, fonts: [{ status: "loaded", ready: Promise.resolve() }] });
+      await open(fake, { startCfi: "epubcfi(/6/4)" });
+      expect(fake.rendition.display).toHaveBeenCalledTimes(1);
+    });
+
+    it("sin CFI (primera lectura) no espera ni repite", async () => {
+      const fake = fakeBook({ locations: true, fonts: [{ status: "loading", ready: new Promise(() => {}) }] });
+      await open(fake);
+      expect(fake.rendition.display).toHaveBeenCalledTimes(1);
+    });
+
+    it("si las fuentes no llegan, sigue a los 2 s y repite display una vez", async () => {
+      vi.useFakeTimers();
+      const fake = fakeBook({ locations: true, fonts: [{ status: "loading", ready: new Promise(() => {}) }] });
+      const pending = open(fake, { startCfi: "epubcfi(/6/4)" });
+      await vi.advanceTimersByTimeAsync(FONT_WAIT_MS - 1);
+      expect(fake.rendition.display).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2);
+      await pending;
+      expect(fake.rendition.display).toHaveBeenCalledTimes(2);
+    });
+
+    it("con un CFI invalido (se abre desde el principio) no repite", async () => {
+      const fake = fakeBook({
+        locations: true,
+        displayFails: true,
+        fonts: [{ status: "loading", ready: Promise.resolve() }],
+      });
+      await open(fake, { startCfi: "viejo" });
+      expect(fake.rendition.display).toHaveBeenCalledTimes(2);
+      expect(fake.rendition.display).toHaveBeenLastCalledWith();
+    });
   });
 
   it("relocated avisa el CFI del inicio, el texto visible y el porcentaje del FINAL de la pagina (truncado)", async () => {

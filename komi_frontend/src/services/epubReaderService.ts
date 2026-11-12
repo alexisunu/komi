@@ -63,6 +63,32 @@ function visibleText(rendition: Rendition, location: Location): string {
 
 const THEME_KEY = "komi";
 
+/** Tope de espera a las fuentes al reabrir: pasado el, se lee con lo que haya. */
+export const FONT_WAIT_MS = 2_000;
+
+/** Si alguna fuente del capitulo aun carga, espera (hasta `FONT_WAIT_MS`) y repite `display(cfi)`. */
+async function redisplayAfterFonts(rendition: Rendition, cfi: string): Promise<void> {
+  const contents = rendition.getContents() as unknown as Array<{ document?: Document }>;
+  const loading = contents
+    .map((content) => content.document?.fonts)
+    .filter((fonts): fonts is FontFaceSet => fonts !== undefined && fonts.status !== "loaded");
+  if (loading.length === 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.all(loading.map((fonts) => fonts.ready)),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, FONT_WAIT_MS);
+      }),
+    ]);
+    await rendition.display(cfi);
+  } catch {
+    // La posicion ya estaba puesta: repetirla es solo un ajuste, nunca un motivo para fallar.
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function createEpubReaderService(epub: Pick<EpubService, "openBook">): EpubReaderService {
   return {
     async open(input) {
@@ -151,12 +177,18 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       };
       applyTheme(input.theme);
 
+      let reopened = false;
       try {
         await rendition.display(input.startCfi ?? undefined);
+        reopened = input.startCfi !== null;
       } catch {
         // CFI viejo o de otra edicion del archivo: se abre desde el principio.
         await rendition.display();
       }
+      // Lora se carga con `font-display: swap`: `display(cfi)` calcula la pagina con la fuente de
+      // reserva y, al llegar Lora, el texto se reacomoda y la posicion queda una pagina antes. Solo
+      // al reabrir (con CFI): se espera a las fuentes y se vuelve a ir al mismo CFI.
+      if (reopened && input.startCfi) await redisplayAfterFonts(rendition, input.startCfi);
 
       return {
         next: () => rendition.next(),
