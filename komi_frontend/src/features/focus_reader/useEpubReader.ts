@@ -59,11 +59,15 @@ export function useEpubReader(args: {
   const latestTheme = useRef(theme);
   const latestPercentage = useRef<number | null>(null);
 
-  // Cambio de tema o de tamano: se reaplica al iframe ya abierto.
+  // Cambio de tema o de tamano: se reaplica al iframe ya abierto. Se compara por valor: el
+  // llamador arma un objeto nuevo en cada render y, por identidad, se reinyectaria el CSS en
+  // cada cambio de pagina (reflujo).
+  const { theme: themeId, fontPx, fontBaseUrl } = theme;
   useEffect(() => {
-    latestTheme.current = theme;
-    handle.current?.setTheme(theme);
-  }, [theme]);
+    const next = { theme: themeId, fontPx, fontBaseUrl };
+    latestTheme.current = next;
+    handle.current?.setTheme(next);
+  }, [themeId, fontPx, fontBaseUrl]);
 
   useEffect(() => {
     const container = host.current;

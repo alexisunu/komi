@@ -61,6 +61,8 @@ function visibleText(rendition: Rendition, location: Location): string {
   }
 }
 
+const THEME_KEY = "komi";
+
 export function createEpubReaderService(epub: Pick<EpubService, "openBook">): EpubReaderService {
   return {
     async open(input) {
@@ -92,7 +94,14 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         else if (action === "prev") void rendition.prev();
       };
 
-      rendition.hooks.content.register((contents: { document: Document; window: Window }) => {
+      // CSS vigente del tema. epubjs NO inyecta en los capitulos nuevos los temas registrados con
+      // `registerCss` (solo `rules` y `url`): sin esto cada capitulo nace con los estilos del libro
+      // (fondo blanco, otra fuente) y recibe los de Komi despues, con un destello y un reflujo.
+      let themeCss = buildReaderCss(input.theme);
+
+      rendition.hooks.content.register(
+        (contents: { document: Document; window: Window; addStylesheetCss(css: string, key: string): boolean }) => {
+        contents.addStylesheetCss(themeCss, THEME_KEY);
         const doc = contents.document;
         // Sin `lang` el navegador no separa en silabas (`hyphens:auto`). Se respeta el del capitulo.
         const root = doc.documentElement;
@@ -136,8 +145,9 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       });
 
       const applyTheme = (theme: ReaderThemeInput) => {
-        rendition.themes.registerCss("komi", buildReaderCss(theme));
-        rendition.themes.select("komi");
+        themeCss = buildReaderCss(theme);
+        rendition.themes.registerCss(THEME_KEY, themeCss);
+        rendition.themes.select(THEME_KEY);
       };
       applyTheme(input.theme);
 

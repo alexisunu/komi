@@ -161,6 +161,36 @@ describe("epubReaderService.open", () => {
   });
 });
 
+describe("tema en cada capitulo nuevo", () => {
+  function chapterContents() {
+    const doc = document.implementation.createHTMLDocument("capitulo");
+    return {
+      document: doc,
+      window: { frameElement: { getBoundingClientRect: () => ({ left: 0 }) } },
+      addStylesheetCss: vi.fn((css: string, key: string) => css !== "" && key !== ""),
+    };
+  }
+
+  it("inyecta el CSS de Komi al crear el capitulo, antes de mostrarlo (sin destello ni reflujo)", async () => {
+    const fake = fakeBook({ locations: true });
+    await open(fake);
+    const first = chapterContents();
+    fake.contentHooks.forEach((hook) => hook(first));
+    expect(first.addStylesheetCss).toHaveBeenCalledWith(expect.stringContaining("#F7F5F0"), "komi");
+  });
+
+  it("tras cambiar el tema, los capitulos siguientes nacen con el tema nuevo", async () => {
+    const fake = fakeBook({ locations: true });
+    const { handle } = await open(fake);
+    handle.setTheme({ theme: "dark", fontPx: 22, fontBaseUrl: "https://komi.test/" });
+    const next = chapterContents();
+    fake.contentHooks.forEach((hook) => hook(next));
+    const css = next.addStylesheetCss.mock.calls[0]?.[0] as string;
+    expect(css).toContain("#181A18");
+    expect(css).toContain("font-size:22px");
+  });
+});
+
 describe("idioma del capitulo (separacion silabica)", () => {
   async function chapter(bookLanguage: string | undefined, chapterLang?: string) {
     const fake = fakeBook({ locations: true });
@@ -169,7 +199,11 @@ describe("idioma del capitulo (separacion silabica)", () => {
     const doc = document.implementation.createHTMLDocument("capitulo");
     if (chapterLang) doc.documentElement.setAttribute("lang", chapterLang);
     fake.contentHooks.forEach((hook) =>
-      hook({ document: doc, window: { frameElement: { getBoundingClientRect: () => ({ left: 0 }) } } }),
+      hook({
+        document: doc,
+        window: { frameElement: { getBoundingClientRect: () => ({ left: 0 }) } },
+        addStylesheetCss: () => true,
+      }),
     );
     return doc.documentElement.getAttribute("lang");
   }
@@ -189,6 +223,7 @@ describe("gestos dentro del iframe", () => {
     const contents = {
       document: doc,
       window: { frameElement: { getBoundingClientRect: () => ({ left: frameLeft }) } },
+      addStylesheetCss: vi.fn(() => true),
     };
     fake.contentHooks.forEach((hook) => hook(contents));
     return { fake, doc };

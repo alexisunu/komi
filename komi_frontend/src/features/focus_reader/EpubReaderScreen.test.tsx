@@ -152,6 +152,14 @@ describe("EpubReaderScreen", () => {
     expect(fake.open).toHaveBeenCalledTimes(1);
   });
 
+  it("un re-render con el mismo tema NO reinyecta el CSS (evita reflujo en cada pagina)", async () => {
+    const { fake, rerender } = await mount({ theme: "dark", fontPx: 18 });
+    const before = fake.handle.setTheme.mock.calls.length;
+    rerender("dark", snap(), 18);
+    rerender("dark", snap(), 18);
+    expect(fake.handle.setTheme.mock.calls.length).toBe(before);
+  });
+
   it("el tamano de letra tambien se reaplica", async () => {
     const { fake, rerender } = await mount();
     rerender("light", snap(), 22);
