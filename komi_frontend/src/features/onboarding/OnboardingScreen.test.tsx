@@ -6,7 +6,6 @@ import type { KomiDatabase } from "../../data/local_db/dexieDatabase";
 import { StorageUnavailableError } from "../../data/local_db/errors";
 import { createLocalMetaRepository, META_KEYS } from "../../data/local_db/localMetaRepository";
 import { createLocalProfileRepository } from "../../data/local_db/localProfileRepository";
-import { REMINDER_FILENAME } from "../../services/calendarReminderService";
 import {
   createOnboardingService,
   type CompleteOnboardingResult,
@@ -41,7 +40,6 @@ interface Harness {
   root: HTMLElement;
   onProfileCreated: ReturnType<typeof vi.fn>;
   onFinish: ReturnType<typeof vi.fn>;
-  downloadIcs: ReturnType<typeof vi.fn>;
   newId: ReturnType<typeof vi.fn>;
   service: Pick<OnboardingService, "completeOnboarding">;
 }
@@ -52,7 +50,6 @@ function mountScreen(overrides: Partial<{ service: Pick<OnboardingService, "comp
   const service = overrides.service ?? createOnboardingService(db, clock, profiles);
   const onProfileCreated = vi.fn();
   const onFinish = vi.fn();
-  const downloadIcs = vi.fn();
   const newId = vi.fn(() => uuid(1));
   mounted = render(
     <ThemeProvider>
@@ -60,13 +57,11 @@ function mountScreen(overrides: Partial<{ service: Pick<OnboardingService, "comp
         service={service}
         onProfileCreated={onProfileCreated}
         onFinish={onFinish}
-        downloadIcs={downloadIcs}
         newId={newId}
-        now={() => new Date(2026, 10, 5, 10, 0, 0)}
       />
     </ThemeProvider>,
   );
-  return { root: mounted.container, onProfileCreated, onFinish, downloadIcs, newId, service };
+  return { root: mounted.container, onProfileCreated, onFinish, newId, service };
 }
 
 async function tap(element: Element | null | undefined) {
@@ -143,10 +138,10 @@ describe("cuestionario", () => {
         "45 minutos o más (Lectura profunda)",
       ],
       [
-        "Al despertar (07:30 AM)",
-        "En la pausa de la tarde (03:00 PM)",
-        "Antes de dormir (09:30 PM)",
-        "En trayectos o tiempos libres (12:30 PM)",
+        "Al despertar",
+        "En la pausa de la tarde",
+        "Antes de dormir",
+        "En trayectos o tiempos libres",
       ],
       [
         "Las notificaciones y distracciones del celular",
@@ -324,37 +319,38 @@ function planOf() {
 }
 
 describe("confirmacion del plan", () => {
-  it("resume la meta, la hora y el estilo, con 4 bloques como maximo", async () => {
+  it("resume la meta y el estilo, sin recordatorio, con 3 bloques", async () => {
     const h = mountScreen();
     await completeQuiz(h, ["B", "C", "A", "A", "C"]);
     const summary = h.root.querySelector('[data-block="summary"]');
     expect(text(h.root)).toContain("Tu plan Zen está listo");
     expect(summary?.textContent).toContain("Meta diaria30 minutos");
-    expect(summary?.textContent).toContain("Recordatorio07:30");
+    expect(summary?.textContent).not.toContain("Recordatorio");
+    expect(text(h.root)).not.toMatch(/recordatorio|calendario|\.ics/i);
     expect(summary?.textContent).toContain("Reflexión con KomiResumen con ideas clave");
-    expect(blocks(h.root)).toBe(4);
+    expect(blocks(h.root)).toBe(3);
     expect([...h.root.querySelectorAll("[data-block]")].map((b) => b.getAttribute("data-block"))).toEqual([
       "hero",
       "summary",
-      "reminder",
       "actions",
     ]);
   });
 
-  it.each([
-    ["A", "07:30"],
-    ["B", "15:00"],
-    ["C", "21:30"],
-    ["D", "12:30"],
-  ])("la opcion %s de la pregunta 3 ofrece el recordatorio a las %s", async (q3, time) => {
-    const h = mountScreen();
-    await completeQuiz(h, ["B", "B", q3, "A", "B"]);
-    expect(h.root.querySelector('[data-block="reminder"]')?.textContent).toContain(`a las ${time}.`);
-    mounted?.unmount();
-    mounted = null;
-    db.close();
-    db = createTestDb();
-  });
+  it.each(["A", "B", "C", "D"])(
+    "la opcion %s de la pregunta 3 sigue guardando su momento, sin ofrecer ningun recordatorio",
+    async (q3) => {
+      const h = mountScreen();
+      await completeQuiz(h, ["B", "B", q3, "A", "B"]);
+      const expected = { A: "MORNING", B: "AFTERNOON", C: "NIGHT", D: "COMMUTE" }[q3];
+      expect((await db.profile.toCollection().first())?.preferred_moment).toBe(expected);
+      expect(h.root.querySelector('[data-block="reminder"]')).toBeNull();
+      expect(button(h.root, "Añadir al calendario")).toBeNull();
+      mounted?.unmount();
+      mounted = null;
+      db.close();
+      db = createTestDb();
+    },
+  );
 
   it("Ir al Dashboard avisa a la app", async () => {
     const h = mountScreen();
@@ -377,7 +373,7 @@ describe("confirmacion del plan", () => {
     const trial = button(h.root, "Probar modo oscuro");
     expect(trial).not.toBeNull();
     expect(trial?.closest('[data-block="summary"]')).not.toBeNull();
-    expect(blocks(h.root)).toBe(4); // no es un quinto bloque
+    expect(blocks(h.root)).toBe(3); // la sugerencia va dentro del resumen: no es un bloque mas
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     await tap(trial);
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
@@ -389,47 +385,6 @@ describe("confirmacion del plan", () => {
     await completeQuiz(h, ["B", "B", "B", "A", "B"]);
     expect(button(h.root, "Probar modo oscuro")).toBeNull();
     expect(text(h.root)).not.toContain("Tsukimi");
-  });
-});
-
-describe("banner del recordatorio y .ics", () => {
-  it("Añadir al calendario descarga un .ics con la hora y la meta del plan", async () => {
-    const h = mountScreen();
-    await completeQuiz(h, ["B", "C", "C", "A", "B"]); // 30 min, noche
-    await tap(button(h.root, "Añadir al calendario"));
-    expect(h.downloadIcs).toHaveBeenCalledOnce();
-    const [ics, filename] = h.downloadIcs.mock.calls[0] as [string, string];
-    expect(filename).toBe(REMINDER_FILENAME);
-    expect(ics).toContain("\r\nDTSTART:20261105T213000\r\n");
-    expect(ics).toContain("\r\nDURATION:PT30M\r\n");
-    expect(ics.startsWith("BEGIN:VCALENDAR\r\n")).toBe(true);
-    expect(h.root.querySelector('[role="status"]')?.textContent).toContain("Abre el archivo descargado");
-    expect(button(h.root, "Añadir al calendario")).toBeNull();
-  });
-
-  it("Ahora no retira el banner sin descargar nada", async () => {
-    const h = mountScreen();
-    await completeQuiz(h, ["B", "B", "A", "A", "B"]);
-    await tap(button(h.root, "Ahora no"));
-    expect(h.root.querySelector('[data-block="reminder"]')).toBeNull();
-    expect(h.downloadIcs).not.toHaveBeenCalled();
-    expect(blocks(h.root)).toBe(3);
-  });
-
-  it("si la descarga falla avisa y deja intentarlo de nuevo", async () => {
-    const h = mountScreen();
-    h.downloadIcs.mockImplementationOnce(() => {
-      throw new Error("sin descargas");
-    });
-    await completeQuiz(h, ["B", "B", "A", "A", "B"]);
-    await tap(button(h.root, "Añadir al calendario"));
-    expect(h.root.querySelector('[role="alert"]')?.textContent).toBe(
-      "No pudimos preparar el recordatorio. Inténtalo de nuevo.",
-    );
-    await tap(button(h.root, "Añadir al calendario"));
-    expect(h.downloadIcs).toHaveBeenCalledTimes(2);
-    expect(h.root.querySelector('[role="alert"]')).toBeNull();
-    expect(h.root.querySelector('[role="status"]')).not.toBeNull();
   });
 });
 
@@ -449,8 +404,6 @@ describe("textos", () => {
     await tap(radio(h.root, "B"));
     await tap(button(h.root, "Generar Plan de Hábito"));
     texts.push(text(h.root));
-    await tap(button(h.root, "Añadir al calendario"));
-    texts.push(text(h.root));
     return texts;
   }
 
@@ -468,7 +421,6 @@ describe("textos", () => {
       "Generar Plan de Hábito",
       "está listo",
       "Reflexión con Komi",
-      "Añadir al calendario",
       "Inmersión media",
       "Análisis de trasfondo",
     ]) {

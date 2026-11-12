@@ -13,6 +13,9 @@ import { InvalidatedSessionSheet } from "../features/focus_reader/InvalidatedSes
 import { PhysicalTimerScreen } from "../features/focus_reader/PhysicalTimerScreen";
 import type { FocusSnapshot } from "../services/focusVisibilityService";
 import type { WakeLockService } from "../services/wakeLockService";
+import { OnboardingScreen } from "../features/onboarding/OnboardingScreen";
+import { calculateHabitPlan, type OnboardingAnswers } from "../services/habitPlan";
+import type { CompleteOnboardingResult } from "../services/onboardingService";
 import { MyGardenScreen } from "../features/garden_library/MyGardenScreen";
 import "../App.css";
 
@@ -31,6 +34,7 @@ export type PreviewScreen =
   | "timer-grace"
   | "timer-free"
   | "dashboard-invalidated"
+  | "onboarding"
   | "timer-confirm";
 
 function book(over: Partial<LocalBook> & Pick<LocalBook, "id" | "title" | "author">): LocalBook {
@@ -131,8 +135,34 @@ function snapshot(phase: "running" | "grace", timerType: "TIMER" | "FREE" = "TIM
   };
 }
 
+/** Servicio falso del onboarding: calcula el plan real y no toca Dexie ni la red. */
+const FAKE_ONBOARDING = {
+  completeOnboarding: async (input: { profile_id: string; answers: OnboardingAnswers }): Promise<CompleteOnboardingResult> => {
+    const plan = calculateHabitPlan(input.answers);
+    return {
+      created: true,
+      plan,
+      profile: {
+        id: "local",
+        profile_id: input.profile_id,
+        daily_goal_minutes: plan.daily_goal_minutes,
+        preferred_moment: plan.preferred_moment,
+        ai_reflection_style: plan.ai_reflection_style,
+        theme_mode: null,
+        preconfigure_tsukimi: plan.preconfigure_tsukimi,
+        onboarding_synced: false,
+        created_at: "2026-11-01T00:00:00.000Z",
+        updated_at: "2026-11-01T00:00:00.000Z",
+      },
+    };
+  },
+};
+
 function PreviewBody({ screen }: { screen: PreviewScreen }) {
   const kokoro = BOOKS[0] as LocalBook;
+  if (screen === "onboarding") {
+    return <OnboardingScreen service={FAKE_ONBOARDING} onProfileCreated={() => {}} onFinish={() => {}} />;
+  }
   if (screen === "dashboard") {
     return <DashboardScreen streakDays={4} book={kokoro} dailyGoalMinutes={15} canStart onStart={() => {}} />;
   }
@@ -168,7 +198,7 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
     <ThemeProvider storedMode={theme}>
       <div className="app-shell" data-preview={SCREEN_PREVIEW_MARKER}>
         <div className="app-shell__screen">
-          {["dashboard", "dashboard-invalidated", "timer", "timer-grace", "timer-confirm", "timer-free"].includes(screen) ? (
+          {["dashboard", "dashboard-invalidated", "onboarding", "timer", "timer-grace", "timer-confirm", "timer-free"].includes(screen) ? (
             <PreviewBody screen={screen} />
           ) : (
           <MyGardenScreen
@@ -183,7 +213,7 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
           />
           )}
         </div>
-        {["timer", "timer-grace", "timer-confirm"].includes(screen) ? null : (
+        {["timer", "timer-grace", "timer-confirm", "timer-free", "onboarding"].includes(screen) ? null : (
           <div data-block="nav">
             <BottomNavZen active={screen === "dashboard" ? "lectura" : "jardin"} onSelect={() => {}} />
           </div>

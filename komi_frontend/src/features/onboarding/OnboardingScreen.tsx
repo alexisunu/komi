@@ -1,4 +1,4 @@
-// Onboarding (CU-01): bienvenida, 5 preguntas, y confirmacion del plan con el recordatorio.
+// Onboarding (CU-01): bienvenida, 5 preguntas y confirmacion del plan.
 // El estado de la pantalla es local y minimo; el plan lo calcula onboardingService con el
 // algoritmo compartido y se guarda en Dexie ANTES de tocar la red (SRS 18, punto 11).
 
@@ -7,11 +7,6 @@ import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { useTheme } from "../../core/theme/ThemeContext";
 import { newProfileId } from "../../data/uuid";
 import { KomiLocalError } from "../../data/local_db/errors";
-import {
-  buildReminderIcs,
-  downloadReminderIcs,
-  REMINDER_FILENAME,
-} from "../../services/calendarReminderService";
 import type { RestoreOutcome } from "../../data/network/restoreService";
 import { isCompleteAnswers, type OnboardingAnswers } from "../../services/habitPlan";
 import {
@@ -27,7 +22,6 @@ import {
   REFLECTION_STYLE_LABELS,
 } from "./onboardingQuestions";
 import { QuizOptionCard } from "./QuizOptionCard";
-import { formatReminderTime, ReminderBanner, type ReminderState } from "./ReminderBanner";
 import "./OnboardingScreen.css";
 
 type Phase = "welcome" | "quiz" | "plan" | "recover";
@@ -47,12 +41,9 @@ export interface OnboardingScreenProps {
   waking?: boolean;
   service?: Pick<OnboardingService, "completeOnboarding">;
   newId?: () => string;
-  now?: () => Date;
-  downloadIcs?: (ics: string, filename?: string) => void;
 }
 
 const SAVE_ERROR = "No pudimos guardar tu plan. Inténtalo de nuevo.";
-const ICS_ERROR = "No pudimos preparar el recordatorio. Inténtalo de nuevo.";
 
 export function OnboardingScreen({
   onProfileCreated,
@@ -62,8 +53,6 @@ export function OnboardingScreen({
   waking = false,
   service,
   newId = newProfileId,
-  now = () => new Date(),
-  downloadIcs = downloadReminderIcs,
 }: OnboardingScreenProps) {
   const { theme, setTheme } = useTheme();
   const defaultService = useMemo(() => createOnboardingService(), []);
@@ -75,8 +64,6 @@ export function OnboardingScreen({
   const [result, setResult] = useState<CompleteOnboardingResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [reminder, setReminder] = useState<ReminderState>("offer");
-  const [reminderError, setReminderError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [recovering, setRecovering] = useState(false);
   const [recoverError, setRecoverError] = useState<string | null>(null);
@@ -142,24 +129,6 @@ export function OnboardingScreen({
   function next() {
     if (isLast) void generate();
     else setStep((value) => value + 1);
-  }
-
-  function addReminder() {
-    if (!result) return;
-    try {
-      const date = now();
-      const ics = buildReminderIcs({
-        moment: result.plan.preferred_moment,
-        durationMinutes: result.plan.daily_goal_minutes,
-        startDate: date,
-        now: date,
-      });
-      downloadIcs(ics, REMINDER_FILENAME);
-      setReminderError(null);
-      setReminder("added");
-    } catch {
-      setReminderError(ICS_ERROR);
-    }
   }
 
   if (phase === "welcome") {
@@ -315,7 +284,6 @@ export function OnboardingScreen({
 
   if (phase === "plan" && result) {
     const { plan } = result;
-    const timeLabel = formatReminderTime(plan.preferred_moment);
     const suggestDark =
       plan.preferred_moment === "NIGHT" && !plan.preconfigure_tsukimi && theme === "light";
     return (
@@ -337,10 +305,6 @@ export function OnboardingScreen({
               <dd className="tabular">{plan.daily_goal_minutes} minutos</dd>
             </div>
             <div className="onboarding__row">
-              <dt>Recordatorio</dt>
-              <dd className="tabular">{timeLabel}</dd>
-            </div>
-            <div className="onboarding__row">
               <dt>Reflexión con Komi</dt>
               <dd>{REFLECTION_STYLE_LABELS[plan.ai_reflection_style]}</dd>
             </div>
@@ -359,14 +323,6 @@ export function OnboardingScreen({
             </p>
           )}
         </section>
-
-        <ReminderBanner
-          timeLabel={timeLabel}
-          state={reminder}
-          error={reminderError}
-          onAdd={addReminder}
-          onDismiss={() => setReminder("dismissed")}
-        />
 
         <div className="onboarding__actions" data-block="actions">
           <ZenPrimaryButton onClick={onFinish}>Ir al Dashboard</ZenPrimaryButton>
