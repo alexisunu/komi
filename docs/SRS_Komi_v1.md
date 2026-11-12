@@ -1207,3 +1207,9 @@ Alcance, reglas por componente y mockups: `docs/V2_Diseno_Lector.md` y `docs/v2_
     * **Dashboard.** Selector "Temporizador | Libre" (mockup 07), recordado en `meta.timer_mode` (local, no se sincroniza; un valor inválido cae a Temporizador). Botón "Comenzar lectura" también para EPUB.
     * **Despliegue.** Backend antes que frontend; una PWA v1 cacheada reintentaría sin fin las sesiones cortas rechazadas.
     * **Pruebas.** 510 en backend y 1526 en frontend.
+
+5. **Bloque 5: aviso de gracia como ventana emergente (pendiente A4 de Android).**
+    * **Aviso al volver (FA-3.2).** Deja de ir en el flujo encima del Dashboard, donde lo comprimía, y pasa a una `ZenSheet` (`InvalidatedSessionSheet`) con el título "Sesión no válida", el texto de siempre y "Entendido". Escape, el velo, la X y "Entendido" cierran igual y sueltan la sesión. Se conserva `data-testid="session-invalidated"`. El título no dice "no guardada" porque con 5 minutos o más la sesión invalidada sí se registra (`INVALIDATED_GRACE_EXPIRED`); con menos no se guarda nada.
+    * **Cuenta de los 15 s del libro físico.** Medido en Edge a 390 px, entraba en el flujo y empujaba el reloj 98 px y el girasol 49 px. Ahora flota arriba (como en el lector EPUB) y no mueve nada. `GracePeriodBanner` conserva solo la variante de la cuenta.
+    * **Verificación.** Capturas en claro y oscuro a 390 px; el Dashboard de detrás no cambia de tamaño con la hoja abierta. Falta comprobarlo en el Android del autor.
+    * **Pruebas.** 1532 en el frontend.
