@@ -217,7 +217,12 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   const [streakDays, setStreakDays] = useState(initial?.streakDays ?? 0);
   // Sesion que se esta cerrando. Se fija al terminar y sobrevive a `focus.leave()`: la hoja sigue
   // en pantalla (Paso 2) aunque el registro de la sesion ya se haya borrado.
-  const [closing, setClosing] = useState<{ sessionId: string; actualSec: number | null; autoChat: boolean } | null>(
+  const [closing, setClosing] = useState<{
+    sessionId: string;
+    actualSec: number | null;
+    autoChat: boolean;
+    timeUp: boolean;
+  } | null>(
     null,
   );
   // "Hablar con Komi" del lector: la proxima hoja de cierre abre la charla sola al guardar.
@@ -341,8 +346,19 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   );
 
   const snapshot = focus.snapshot;
+  // Fin de tiempo del temporizador de un libro fisico (no del modo libre ni del lector EPUB; un
+  // "Terminar sesion" antes de cero es `early`, no `completed`): suena el carillon y la hoja de
+  // cierre lo avisa por escrito.
+  const timeUp =
+    snapshot?.phase === "completed" &&
+    snapshot.timerType === "TIMER" &&
+    library.books.find((candidate) => candidate.id === snapshot.bookId)?.format_type === "PHYSICAL";
+  const timeUpSession = timeUp ? snapshot.sessionId : null;
+  useEffect(() => {
+    if (timeUpSession !== null) deps.endChime.play();
+  }, [timeUpSession, deps]);
   if (closing === null && snapshot && (snapshot.phase === "completed" || snapshot.phase === "early")) {
-    setClosing({ sessionId: snapshot.sessionId, actualSec: snapshot.actualSec, autoChat: talkNext });
+    setClosing({ sessionId: snapshot.sessionId, actualSec: snapshot.actualSec, autoChat: talkNext, timeUp: timeUp });
     if (talkNext) setTalkNext(false);
   }
 
@@ -373,6 +389,8 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
 
   const startReading = async (minutes: number, timerType: TimerType = "TIMER") => {
     if (!activeBook || !canReadBook(activeBook)) return;
+    // Antes de cualquier `await`: Safari solo activa el audio dentro del gesto del usuario.
+    if (timerType === "TIMER" && activeBook.format_type === "PHYSICAL") deps.endChime.unlock();
     setStarting(true);
     setStartError(null);
     try {
@@ -479,6 +497,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             sessionId={closing.sessionId}
             actualSec={closing.actualSec}
             autoChat={closing.autoChat}
+            timeUp={closing.timeUp}
             service={deps.postReading}
             onSaved={onReadingSaved}
             onDiscard={focus.leave}

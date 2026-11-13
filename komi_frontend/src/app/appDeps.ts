@@ -31,6 +31,7 @@ import { createPlantBookService } from "../services/plantBookService";
 import { createSeedService } from "../services/seedService";
 import { createCompanionService } from "../services/companionService";
 import { createPostReadingService } from "../services/postReadingService";
+import { createEndChimeService, type EndChimeService } from "../services/endChime";
 
 export interface AppOptions {
   db?: KomiDatabase;
@@ -43,6 +44,8 @@ export interface AppOptions {
   focusEnv?: { now: () => number; doc: FocusDocument; win: FocusWindow };
   /** Solo para pruebas: pantalla encendida y puerta de recarga propios. */
   wakeLock?: WakeLockService;
+  /** Solo para pruebas: sonido de fin de tiempo propio (en jsdom no hay Web Audio). */
+  endChime?: EndChimeService;
   gate?: ReloadGate;
   /** Solo para pruebas: despertar del servidor propio (por defecto sondea GET /health/). */
   wake?: WakeService;
@@ -146,6 +149,8 @@ export function createAppDeps(options: AppOptions = {}) {
     restore: createRestoreService({ db, api, wake }),
     /** Pantalla encendida durante la sesion (SRS 19.12). */
     wakeLock: options.wakeLock ?? createWakeLockService(navigator, document),
+    /** Sonido de fin de tiempo del libro fisico con temporizador (se desbloquea al comenzar la lectura). */
+    endChime: options.endChime ?? createEndChimeService(),
     /** Puerta de recarga del Service Worker: se bloquea mientras dura la sesion. */
     gate: options.gate ?? reloadGate,
     books,

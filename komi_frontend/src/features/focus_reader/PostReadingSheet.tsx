@@ -35,6 +35,8 @@ export interface PostReadingSheetProps {
    * vez. Si el servidor no la acepta, la hoja muestra el motivo de siempre.
    */
   autoChat?: boolean;
+  /** El temporizador de un libro fisico llego a cero: se avisa por escrito (respaldo del sonido). */
+  timeUp?: boolean;
   service: PostReadingService;
   /** El guardado termino bien: borrar los registros de la sesion y soltar la recarga. */
   onSaved: (result: SavedReading) => void | Promise<void>;
@@ -70,6 +72,7 @@ export function PostReadingSheet({
   sessionId,
   actualSec = null,
   autoChat = false,
+  timeUp = false,
   service,
   onSaved,
   onDiscard,
@@ -293,6 +296,11 @@ export function PostReadingSheet({
                 submitPage();
               }}
             >
+              {timeUp && (
+                <p className="post-reading__text" role="status">
+                  El tiempo terminó.
+                </p>
+              )}
               {prepared?.short && (
                 <p className="post-reading__text">
                   Llevas menos de 5 minutos. La sesión solo se guarda si llegaste a la última página

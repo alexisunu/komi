@@ -88,6 +88,7 @@ async function storedProgress() {
 }
 
 interface MountOptions {
+  endChime?: { unlock: () => void; play: () => boolean };
   files?: Array<{ bookId: string; locations?: string | null }>;
   env?: FocusEnv;
   reader?: FakeReader;
@@ -122,6 +123,7 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
         gate,
         wakeLock: wakeLock as unknown as WakeLockService,
         epubReader: fake.reader,
+        ...(options.endChime ? { endChime: options.endChime as never } : {}),
         ...(options.epub ? { epub: options.epub as never } : {}),
       }}
     />,
@@ -638,5 +640,14 @@ describe("gracia y tamano de letra en el lector", () => {
     await tap(openButton(root));
     await settle();
     expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+  });
+
+  it("un EPUB con temporizador no desbloquea el sonido de fin de tiempo (solo el libro fisico)", async () => {
+    const chime = { unlock: vi.fn(), play: vi.fn(() => true) };
+    const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }], endChime: chime });
+    await tap(openButton(root));
+    await settle();
+    expect(chime.unlock).not.toHaveBeenCalled();
+    expect(chime.play).not.toHaveBeenCalled();
   });
 });
