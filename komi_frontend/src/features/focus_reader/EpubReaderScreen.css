@@ -227,14 +227,40 @@
   }
 }
 
-/* Giro de pagina (mockup 06): velo del color de fondo que viaja con la pagina que sale y la deja
-   al 60 % de opacidad. Solo transform y opacity (los anima el servicio, 320 ms ease-out). */
-.epub-reader__turn-veil {
+/* Giro de pagina (mockup 06). La capa recorta (overflow hidden) y no recibe toques. Dentro: un velo del
+   color de fondo que viaja con la pagina que sale y la deja al 60 % de opacidad, y un borde con sombra
+   suave (texto al 14 %, via opacity: sin rgba ni hex) en el canto de la pagina que entra. Solo se animan
+   transform y opacity (los anima el servicio, 320 ms ease-out); la sombra es estatica. */
+.epub-reader__turn-layer {
   position: absolute;
   inset: 0;
   z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.epub-reader__turn-veil {
+  position: absolute;
+  inset: 0;
   background: var(--color-bg-primary);
   opacity: 0;
-  pointer-events: none;
   will-change: transform, opacity;
+}
+
+.epub-reader__turn-edge {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  box-shadow: 0 0 20px var(--color-text-primary);
+  opacity: 0.14;
+  will-change: transform;
+}
+
+.epub-reader__turn-edge--after {
+  left: 100%;
+}
+
+.epub-reader__turn-edge--before {
+  right: 100%;
 }

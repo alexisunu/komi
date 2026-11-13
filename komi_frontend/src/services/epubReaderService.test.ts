@@ -3,6 +3,7 @@ import {
   createEpubReaderService,
   FONT_WAIT_MS,
   PAGE_TURN_MS,
+  TURN_VEIL_DIM_MS,
   SETTLE_MS,
   TURN_COMMIT_TIMEOUT_MS,
   type ReaderPosition,
@@ -442,6 +443,8 @@ describe("giro de pagina animado", () => {
   let frames: Array<FrameRequestCallback | null> = [];
   let animate: ReturnType<typeof vi.fn>;
   let reduced = false;
+  /** Animaciones por giro: vista, velo (movimiento), velo (atenuacion) y borde con sombra. */
+  const PER_TURN = 4;
 
   beforeEach(() => {
     anims = [];
@@ -505,16 +508,24 @@ describe("giro de pagina animado", () => {
     const t = await openTurn();
     const done = t.handle.next();
     await flush();
-    expect(animate).toHaveBeenCalledTimes(2);
+    expect(animate).toHaveBeenCalledTimes(PER_TURN);
+    const slide = [{ transform: "translateX(0)" }, { transform: `translateX(${-W}px)` }];
     const [viewKeys, viewTiming] = animate.mock.calls[0] as [Keyframe[], KeyframeAnimationOptions];
-    expect(viewKeys).toEqual([{ transform: "translateX(0)" }, { transform: `translateX(${-W}px)` }]);
+    expect(viewKeys).toEqual(slide);
     expect(viewTiming).toMatchObject({ duration: 320, easing: "ease-out" });
-    const [veilKeys] = animate.mock.calls[1] as [Keyframe[]];
-    expect(veilKeys).toEqual([
-      { transform: "translateX(0)", opacity: 0 },
-      { transform: `translateX(${-W}px)`, opacity: 0.4 },
-    ]);
+    // El velo viaja con la pagina que sale y su atenuacion llega al maximo en el 40 % del giro.
+    expect((animate.mock.calls[1] as [Keyframe[]])[0]).toEqual(slide);
+    const [dimKeys, dimTiming] = animate.mock.calls[2] as [Keyframe[], KeyframeAnimationOptions];
+    expect(dimKeys).toEqual([{ opacity: 0 }, { opacity: 0.4 }]);
+    expect(dimTiming).toMatchObject({ duration: TURN_VEIL_DIM_MS, easing: "ease-out" });
+    expect(TURN_VEIL_DIM_MS).toBe(128);
+    // El borde con sombra de la pagina que entra viaja igual; solo transform y opacity.
+    expect((animate.mock.calls[3] as [Keyframe[]])[0]).toEqual(slide);
+    for (const [keys] of animate.mock.calls as Array<[Array<Record<string, unknown>>]>) {
+      for (const frame of keys) expect(Object.keys(frame).every((k) => k === "transform" || k === "opacity")).toBe(true);
+    }
     expect(t.veil()).not.toBeNull();
+    expect(t.container.parentElement?.querySelector(".epub-reader__turn-layer .epub-reader__turn-edge--after")).not.toBeNull();
     // Mientras dura el movimiento no se pide el giro: el progreso aun no cambia.
     expect(t.fake.rendition.next).not.toHaveBeenCalled();
     anims[0]?.resolve();
@@ -533,6 +544,8 @@ describe("giro de pagina animado", () => {
     await flush();
     const [viewKeys] = animate.mock.calls[0] as [Keyframe[]];
     expect(viewKeys[1]).toEqual({ transform: `translateX(${W}px)` });
+    // La pagina que entra viene por la izquierda: su borde con sombra va antes de la pagina.
+    expect(t.container.parentElement?.querySelector(".epub-reader__turn-edge--before")).not.toBeNull();
     anims[0]?.resolve();
     await flush();
     expect(t.fake.rendition.prev).toHaveBeenCalledTimes(1);
@@ -574,18 +587,18 @@ describe("giro de pagina animado", () => {
       );
       const first = t.handle.next();
       await flush();
-      expect(animate).toHaveBeenCalledTimes(2); // vista y velo del primero
+      expect(animate).toHaveBeenCalledTimes(PER_TURN); // vista, velo (2) y borde del primero
       const second = t.handle.next(); // toque durante el movimiento
       await flush();
       expect(anims[0]?.finish).toHaveBeenCalled(); // completa la actual
       expect(t.fake.rendition.next).toHaveBeenCalledTimes(1);
       // El giro pendiente aun no se aplico: el segundo espera, no predice ni anima.
-      expect(animate).toHaveBeenCalledTimes(2);
+      expect(animate).toHaveBeenCalledTimes(PER_TURN);
       applyFirst();
       await flush();
       await first;
       await second;
-      expect(animate).toHaveBeenCalledTimes(2); // el segundo fue instantaneo
+      expect(animate).toHaveBeenCalledTimes(PER_TURN); // el segundo fue instantaneo
       expect(t.fake.rendition.next).toHaveBeenCalledTimes(2);
       expect(t.state.left).toBe(3 * W); // ni una pagina saltada ni repetida
       expect(t.veil()).toBeNull();
@@ -601,7 +614,7 @@ describe("giro de pagina animado", () => {
       }
       runFrame();
       await Promise.all(turns);
-      expect(animate).toHaveBeenCalledTimes(2); // una sola animacion (vista y velo)
+      expect(animate).toHaveBeenCalledTimes(PER_TURN); // una sola animacion
       expect(t.fake.rendition.next).toHaveBeenCalledTimes(4);
       expect(t.state.left).toBe(5 * W);
       expect(t.veil()).toBeNull();
@@ -633,7 +646,7 @@ describe("giro de pagina animado", () => {
       const calls = animate.mock.calls.length;
       const third = t.handle.next(); // con el segundo en curso
       await flush();
-      anims[2]?.resolve();
+      anims[PER_TURN]?.resolve();
       await flush();
       applySecond();
       await flush();
@@ -652,7 +665,7 @@ describe("giro de pagina animado", () => {
       await flush();
       runFrame();
       await Promise.all([first, second, third]);
-      expect(animate).toHaveBeenCalledTimes(2); // solo el primero se animo
+      expect(animate).toHaveBeenCalledTimes(PER_TURN); // solo el primero se animo
       expect(t.state.left).toBe(4 * W);
     });
 
@@ -662,12 +675,12 @@ describe("giro de pagina animado", () => {
       await flush();
       runFrame();
       await Promise.all(turns);
-      expect(animate).toHaveBeenCalledTimes(2);
+      expect(animate).toHaveBeenCalledTimes(PER_TURN);
       await vi.advanceTimersByTimeAsync(PAGE_TURN_MS); // pasada la rafaga
       const next = t.handle.next(); // aislado otra vez
       await flush();
-      expect(animate).toHaveBeenCalledTimes(4);
-      anims[2]?.resolve();
+      expect(animate).toHaveBeenCalledTimes(2 * PER_TURN);
+      anims[PER_TURN]?.resolve();
       await flush();
       runFrame();
       await next;

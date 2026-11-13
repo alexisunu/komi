@@ -108,6 +108,12 @@ async function redisplayAfterFonts(rendition: Rendition, cfi: string): Promise<v
 export const PAGE_TURN_MS = 320;
 /** Opacidad maxima del velo que atenua la pagina que sale (la pagina queda al 60 %). */
 export const TURN_VEIL_OPACITY = 0.4;
+/**
+ * La atenuacion de la pagina que sale llega a su maximo en el 40 % del giro (mockup 06: a los 160 ms
+ * ya esta al 60 %). Con `ease-out` el movimiento va por delante, y un velo uniforme en los 320 ms
+ * llegaba tarde: casi no se notaba.
+ */
+export const TURN_VEIL_DIM_MS = Math.round(PAGE_TURN_MS * 0.4);
 /** Si el giro no se confirma en este plazo, se limpia igual: nunca queda una pagina retenida. */
 export const TURN_COMMIT_TIMEOUT_MS = 1000;
 /** Margen tras los 320 ms por si la pestana no avanza las animaciones (segundo plano). */
@@ -206,19 +212,26 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
 
         return new Promise<void>((resolve) => {
           const sign = action === "next" ? -1 : 1;
+          // Capa fija con `overflow: hidden` (la sombra no se sale del area del texto) que lleva el
+          // velo de la pagina que sale y el borde con sombra de la que entra; ambos viajan con la vista.
+          const layer = document.createElement("div");
+          layer.className = "epub-reader__turn-layer";
           const veil = document.createElement("div");
           veil.className = "epub-reader__turn-veil";
-          input.host.appendChild(veil);
+          const edge = document.createElement("div");
+          edge.className = `epub-reader__turn-edge epub-reader__turn-edge--${action === "next" ? "after" : "before"}`;
+          layer.append(veil, edge);
+          input.host.appendChild(layer);
           const timing = { duration: PAGE_TURN_MS, easing: "ease-out", fill: "forwards" } as const;
           const shift = `translateX(${sign * width}px)`;
-          const viewAnim = view.animate([{ transform: "translateX(0)" }, { transform: shift }], timing);
-          const veilAnim = veil.animate(
-            [
-              { transform: "translateX(0)", opacity: 0 },
-              { transform: shift, opacity: TURN_VEIL_OPACITY },
-            ],
-            timing,
-          );
+          const slide = [{ transform: "translateX(0)" }, { transform: shift }];
+          const viewAnim = view.animate(slide, timing);
+          const turnAnims = [
+            viewAnim,
+            veil.animate(slide, timing),
+            veil.animate([{ opacity: 0 }, { opacity: TURN_VEIL_OPACITY }], { ...timing, duration: TURN_VEIL_DIM_MS }),
+            edge.animate(slide, timing),
+          ];
 
           let phase: "animating" | "committing" | "done" = "animating";
           let frame = 0;
@@ -231,9 +244,8 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
             clearTimeout(animTimer);
             clearTimeout(commitTimer);
             if (frame) cancelAnimationFrame(frame);
-            viewAnim.cancel();
-            veilAnim.cancel();
-            veil.remove();
+            turnAnims.forEach((anim) => anim.cancel());
+            layer.remove();
             if (turning === running) turning = null;
             resolve();
           };
