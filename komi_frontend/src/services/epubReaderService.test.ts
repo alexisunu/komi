@@ -1,5 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEpubReaderService, FONT_WAIT_MS, SETTLE_MS, type ReaderPosition } from "./epubReaderService";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createEpubReaderService,
+  FONT_WAIT_MS,
+  PAGE_TURN_MS,
+  SETTLE_MS,
+  TURN_COMMIT_TIMEOUT_MS,
+  type ReaderPosition,
+} from "./epubReaderService";
 
 // epubjs no dibuja paginas en jsdom: aqui se prueba la traduccion hacia y desde epubjs con un
 // libro falso. El motor real se verifica a mano con libros reales (SRS 19.16).
@@ -64,13 +71,14 @@ async function open(
     startCfi?: string | null;
     onCenterTap?: () => void;
     size?: { width: number; height: number };
+    host?: HTMLElement;
   } = {},
 ) {
   const positions: ReaderPosition[] = [];
   const service = createEpubReaderService({ openBook: async () => fake.book as never });
   const handle = await service.open({
     data: new ArrayBuffer(4),
-    host: host(over.size),
+    host: over.host ?? host(over.size),
     locations: over.locations === undefined ? "[]" : over.locations,
     startCfi: over.startCfi ?? null,
     theme: THEME,
@@ -427,6 +435,322 @@ describe("cambio de tamano del contenedor (ocultar o mostrar la interfaz)", () =
   });
 });
 
+describe("giro de pagina animado", () => {
+  const W = 312;
+  type Anim = { finished: Promise<void>; resolve: () => void; finish: ReturnType<typeof vi.fn>; cancel: ReturnType<typeof vi.fn> };
+  let anims: Anim[] = [];
+  let frames: Array<FrameRequestCallback | null> = [];
+  let animate: ReturnType<typeof vi.fn>;
+  let reduced = false;
+
+  beforeEach(() => {
+    anims = [];
+    frames = [];
+    reduced = false;
+    animate = vi.fn(() => {
+      let resolve = () => {};
+      const finished = new Promise<void>((r) => (resolve = r));
+      const anim: Anim = { finished, resolve, finish: vi.fn(() => resolve()), cancel: vi.fn() };
+      anims.push(anim);
+      return anim;
+    });
+    (HTMLElement.prototype as unknown as { animate: unknown }).animate = animate;
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      frames[id - 1] = null;
+    });
+    window.matchMedia = vi.fn(() => ({ matches: reduced })) as unknown as typeof window.matchMedia;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    delete (HTMLElement.prototype as unknown as { animate?: unknown }).animate;
+  });
+
+  const flush = () => vi.advanceTimersByTimeAsync(0);
+  const runFrame = () => {
+    const list = frames;
+    frames = [];
+    list.forEach((cb) => cb?.(0));
+  };
+
+  /** Contenedor de epubjs falso: `left` es el scrollLeft, que el giro cambia con retraso. */
+  async function openTurn(over: { left?: number; total?: number } = {}) {
+    const fake = fakeBook({ locations: true });
+    const hostEl = host({ width: W, height: 560 });
+    const container = document.createElement("div");
+    container.className = "epub-container";
+    container.appendChild(Object.assign(document.createElement("div"), { className: "epub-view" }));
+    hostEl.appendChild(container);
+    const state = { left: over.left ?? W, total: over.total ?? 5 * W };
+    Object.defineProperty(container, "offsetWidth", { get: () => W });
+    Object.defineProperty(container, "scrollWidth", { get: () => state.total });
+    Object.defineProperty(container, "scrollLeft", { get: () => state.left, set: (v: number) => (state.left = v) });
+    // epubjs aplica el scroll despues de la llamada (cola interna), no en el mismo turno.
+    const turnBy = (delta: number) => async () => {
+      await Promise.resolve();
+      state.left += delta;
+    };
+    fake.rendition.next.mockImplementation(turnBy(W));
+    fake.rendition.prev.mockImplementation(turnBy(-W));
+    const { handle, positions } = await open(fake, { host: hostEl });
+    fake.rendition.display.mockClear();
+    const veil = () => hostEl.querySelector(".epub-reader__turn-veil");
+    return { fake, handle, positions, state, veil, container };
+  }
+
+  it("avanzar dentro del capitulo anima 320 ms ease-out solo con transform y opacity, y pide el giro al terminar", async () => {
+    const t = await openTurn();
+    const done = t.handle.next();
+    await flush();
+    expect(animate).toHaveBeenCalledTimes(2);
+    const [viewKeys, viewTiming] = animate.mock.calls[0] as [Keyframe[], KeyframeAnimationOptions];
+    expect(viewKeys).toEqual([{ transform: "translateX(0)" }, { transform: `translateX(${-W}px)` }]);
+    expect(viewTiming).toMatchObject({ duration: 320, easing: "ease-out" });
+    const [veilKeys] = animate.mock.calls[1] as [Keyframe[]];
+    expect(veilKeys).toEqual([
+      { transform: "translateX(0)", opacity: 0 },
+      { transform: `translateX(${-W}px)`, opacity: 0.4 },
+    ]);
+    expect(t.veil()).not.toBeNull();
+    // Mientras dura el movimiento no se pide el giro: el progreso aun no cambia.
+    expect(t.fake.rendition.next).not.toHaveBeenCalled();
+    anims[0]?.resolve();
+    await flush();
+    expect(t.fake.rendition.next).toHaveBeenCalledTimes(1);
+    runFrame(); // el rAF ve el cambio de scroll y limpia antes de pintar
+    await done;
+    expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+    expect(t.veil()).toBeNull();
+    expect(t.state.left).toBe(2 * W);
+  });
+
+  it("retroceder desliza en sentido contrario", async () => {
+    const t = await openTurn({ left: 2 * W });
+    const done = t.handle.prev();
+    await flush();
+    const [viewKeys] = animate.mock.calls[0] as [Keyframe[]];
+    expect(viewKeys[1]).toEqual({ transform: `translateX(${W}px)` });
+    anims[0]?.resolve();
+    await flush();
+    expect(t.fake.rendition.prev).toHaveBeenCalledTimes(1);
+    runFrame();
+    await done;
+    expect(t.state.left).toBe(W);
+  });
+
+  it("limpia animacion, velo y transform en el fotograma que ve el cambio, sin esperar a la promesa", async () => {
+    const t = await openTurn();
+    t.fake.rendition.next.mockImplementation(async () => {
+      t.state.left += W;
+      await new Promise(() => {}); // la promesa nunca se resuelve
+    });
+    const done = t.handle.next();
+    await flush();
+    anims[0]?.resolve();
+    await flush();
+    expect(t.veil()).not.toBeNull(); // aun retenido: el scroll no se ha visto
+    t.state.left = 2 * W; // (ya aplicado por epubjs)
+    runFrame();
+    await done;
+    expect(t.veil()).toBeNull();
+    expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+  });
+
+  describe("toques seguidos", () => {
+    it("el segundo toque completa el giro en curso y predice con el scroll ya aplicado", async () => {
+      const t = await openTurn({ left: W, total: 5 * W });
+      let applyFirst = () => {};
+      t.fake.rendition.next.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            applyFirst = () => {
+              t.state.left += W;
+              resolve();
+            };
+          }),
+      );
+      const first = t.handle.next();
+      await flush();
+      expect(animate).toHaveBeenCalledTimes(2);
+      const second = t.handle.next(); // toque durante el movimiento
+      await flush();
+      expect(anims[0]?.finish).toHaveBeenCalled(); // completa la actual
+      expect(t.fake.rendition.next).toHaveBeenCalledTimes(1);
+      // El giro pendiente aun no se aplico: el segundo NO predice ni anima todavia.
+      expect(animate).toHaveBeenCalledTimes(2);
+      applyFirst();
+      await flush();
+      await first;
+      await flush(); // arranca el segundo con scrollLeft ya en 2W
+      expect(animate).toHaveBeenCalledTimes(4);
+      anims[2]?.resolve();
+      await flush();
+      runFrame();
+      await second;
+      expect(t.fake.rendition.next).toHaveBeenCalledTimes(2);
+      expect(t.state.left).toBe(3 * W); // ni una pagina saltada ni repetida
+    });
+
+    it("si el segundo toque cae en el limite del capitulo, no se anima", async () => {
+      // 3 columnas: de la 2.a (left = W) se pasa a la 3.a, que es la ultima del capitulo.
+      const t = await openTurn({ left: W, total: 3 * W });
+      const first = t.handle.next();
+      await flush();
+      const second = t.handle.next();
+      await flush();
+      runFrame();
+      await first;
+      await flush();
+      await second;
+      // El segundo giro parte de left = 2W: 2W + 2W > 3W, cruzaria de capitulo, asi que no se anima.
+      expect(animate).toHaveBeenCalledTimes(2);
+      expect(t.fake.rendition.next).toHaveBeenCalledTimes(2);
+      expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+    });
+
+    it("pasar de pagina tambien apaga el ancla del reflujo con toques seguidos", async () => {
+      const t = await openTurn();
+      t.handle.setTheme({ theme: "light", fontPx: 22, fontBaseUrl: "https://komi.test/" });
+      await flush();
+      const done = t.handle.next();
+      await flush();
+      t.fake.relocate({ start: { cfi: "pagina-siguiente" }, end: { cfi: "fin" } });
+      expect(t.positions.at(-1)?.cfi).toBe("pagina-siguiente");
+      anims[0]?.resolve();
+      await flush();
+      runFrame();
+      await done;
+    });
+  });
+
+  describe("primera y ultima pagina", () => {
+    it("retroceder en la primera pagina no anima ni deja transform", async () => {
+      const t = await openTurn({ left: 0 });
+      t.fake.rendition.prev.mockImplementation(async () => {}); // epubjs: no hay nada atras
+      await t.handle.prev();
+      expect(animate).not.toHaveBeenCalled();
+      expect(t.veil()).toBeNull();
+      expect(t.fake.rendition.prev).toHaveBeenCalledTimes(1);
+    });
+
+    it("avanzar en la ultima pagina no anima ni deja transform", async () => {
+      const t = await openTurn({ left: 4 * W, total: 5 * W });
+      t.fake.rendition.next.mockImplementation(async () => {});
+      await t.handle.next();
+      expect(animate).not.toHaveBeenCalled();
+      expect(t.veil()).toBeNull();
+    });
+  });
+
+  describe("prediccion equivocada", () => {
+    it("si el giro cruza de capitulo, limpia en cuanto el scroll vuelve a 0, sin esperar el respaldo", async () => {
+      const t = await openTurn();
+      t.fake.rendition.next.mockImplementation(async () => {
+        t.state.left = 0; // epubjs cambio de capitulo
+        t.state.total = 3 * W;
+        await new Promise(() => {});
+      });
+      const done = t.handle.next();
+      await flush();
+      anims[0]?.resolve();
+      await flush();
+      expect(t.veil()).not.toBeNull();
+      runFrame();
+      await done; // se resuelve sin avanzar el reloj hasta el respaldo
+      expect(t.veil()).toBeNull();
+      expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+    });
+
+    it("si el cambio nunca se ve, el respaldo de 1 s limpia: nunca queda una pagina retenida", async () => {
+      const t = await openTurn();
+      t.fake.rendition.next.mockImplementation(() => new Promise(() => {}));
+      const done = t.handle.next();
+      await flush();
+      anims[0]?.resolve();
+      await flush();
+      await vi.advanceTimersByTimeAsync(TURN_COMMIT_TIMEOUT_MS);
+      await done;
+      expect(t.veil()).toBeNull();
+    });
+
+    it("si la pestana no avanza las animaciones, el respaldo tras los 320 ms pide el giro igual", async () => {
+      const t = await openTurn();
+      const done = t.handle.next();
+      await flush();
+      await vi.advanceTimersByTimeAsync(PAGE_TURN_MS + 250); // `finished` nunca se resolvio
+      expect(t.fake.rendition.next).toHaveBeenCalledTimes(1);
+      runFrame();
+      await done;
+    });
+  });
+
+  it("con movimiento reducido el cambio es instantaneo", async () => {
+    reduced = true;
+    const t = await openTurn();
+    await t.handle.next();
+    expect(animate).not.toHaveBeenCalled();
+    expect(t.fake.rendition.next).toHaveBeenCalledTimes(1);
+  });
+
+  it("sin API de animaciones (o sin contenedor de epubjs) el cambio es instantaneo", async () => {
+    delete (HTMLElement.prototype as unknown as { animate?: unknown }).animate;
+    const t = await openTurn();
+    await t.handle.next();
+    expect(t.fake.rendition.next).toHaveBeenCalledTimes(1);
+    const bare = fakeBook({ locations: true });
+    const { handle } = await open(bare); // host sin .epub-container
+    await handle.next();
+    expect(bare.rendition.next).toHaveBeenCalledTimes(1);
+  });
+
+  it("cambiar la letra a mitad de giro limpia el transform ANTES de anotar el punto y descarta el giro", async () => {
+    const t = await openTurn();
+    void t.handle.next();
+    await flush();
+    t.fake.rendition.display.mockClear();
+    t.handle.setTheme({ theme: "light", fontPx: 22, fontBaseUrl: "https://komi.test/" });
+    expect(t.veil()).toBeNull();
+    expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+    const cancelOrder = anims[0]?.cancel.mock.invocationCallOrder[0] ?? Infinity;
+    const lookOrder = t.fake.rendition.currentLocation.mock.invocationCallOrder[0] ?? 0;
+    expect(cancelOrder).toBeLessThan(lookOrder);
+    anims[0]?.resolve();
+    await vi.advanceTimersByTimeAsync(PAGE_TURN_MS * 2);
+    expect(t.fake.rendition.next).not.toHaveBeenCalled(); // el giro descartado no se pide despues
+  });
+
+  it("cambiar el alto a mitad de giro tambien lo descarta y limpia", async () => {
+    const fake = fakeBook({ locations: true });
+    const size = { width: W, height: 560 };
+    const hostEl = host(size);
+    const container = document.createElement("div");
+    container.className = "epub-container";
+    container.appendChild(Object.assign(document.createElement("div"), { className: "epub-view" }));
+    hostEl.appendChild(container);
+    Object.defineProperty(container, "offsetWidth", { get: () => W });
+    Object.defineProperty(container, "scrollWidth", { get: () => 5 * W });
+    Object.defineProperty(container, "scrollLeft", { get: () => W });
+    const { handle } = await open(fake, { host: hostEl, size });
+    void handle.next();
+    await flush();
+    size.height = 640;
+    handle.resize();
+    expect(hostEl.querySelector(".epub-reader__turn-veil")).toBeNull();
+    expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("destruir el lector limpia un giro en curso", async () => {
+    const t = await openTurn();
+    void t.handle.next();
+    await flush();
+    t.handle.destroy();
+    expect(t.veil()).toBeNull();
+  });
+});
+
 describe("tema en cada capitulo nuevo", () => {
   function chapterContents() {
     const doc = document.implementation.createHTMLDocument("capitulo");
@@ -528,6 +852,7 @@ describe("gestos dentro del iframe", () => {
     expect(fake.rendition.next).not.toHaveBeenCalled();
     expect(fake.rendition.prev).not.toHaveBeenCalled();
     doc.body.dispatchEvent(new MouseEvent("click", { clientX: 20, bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0)); // los giros se encadenan: el segundo espera al primero
     doc.body.dispatchEvent(new MouseEvent("click", { clientX: 330, bubbles: true }));
     expect(onCenterTap).toHaveBeenCalledTimes(1);
     expect(fake.rendition.prev).toHaveBeenCalledTimes(1);
@@ -559,6 +884,7 @@ describe("gestos dentro del iframe", () => {
   it("las flechas del teclado pasan de pagina", async () => {
     const { fake, doc } = await withContents(24);
     doc.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+    await new Promise((r) => setTimeout(r, 0)); // los giros se encadenan: el segundo espera al primero
     doc.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
     doc.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
     expect(fake.rendition.next).toHaveBeenCalledTimes(1);

@@ -104,6 +104,29 @@ async function redisplayAfterFonts(rendition: Rendition, cfi: string): Promise<v
   }
 }
 
+/** Duracion del giro de pagina (mockup 06, SRS 10.8). */
+export const PAGE_TURN_MS = 320;
+/** Opacidad maxima del velo que atenua la pagina que sale (la pagina queda al 60 %). */
+export const TURN_VEIL_OPACITY = 0.4;
+/** Si el giro no se confirma en este plazo, se limpia igual: nunca queda una pagina retenida. */
+export const TURN_COMMIT_TIMEOUT_MS = 1000;
+/** Margen tras los 320 ms por si la pestana no avanza las animaciones (segundo plano). */
+const TURN_SLACK_MS = 250;
+
+/** Un giro animado en curso: `skip` lo completa ya (con el giro); `abort` lo descarta y limpia. */
+interface RunningTurn {
+  skip(): void;
+  abort(): void;
+}
+
+function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+  } catch {
+    return false;
+  }
+}
+
 export function createEpubReaderService(epub: Pick<EpubService, "openBook">): EpubReaderService {
   return {
     async open(input) {
@@ -144,14 +167,136 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       // lector (pasar pagina, enlace del libro). No depende de ningun plazo.
       let anchorCfi: string | null = null;
       let reflowActive = false;
+      // El libro ya se mostro (primer `display` hecho): antes no se anima ni se conserva el punto.
+      let shown = false;
       const userNavigated = () => {
         reflowActive = false;
       };
 
-      const turn = (action: TurnAction) => {
+      // Giro de pagina (mockup 06). epubjs no anima y `next()`/`prev()` pasan por una cola: el scroll
+      // se aplica de 2 a 12 ms despues (medido en Edge), no en el mismo turno. Por eso se anima
+      // PRIMERO (la pagina vecina ya esta en el mismo iframe: columnas CSS adyacentes), se mantiene el
+      // estado final, se pide el giro y se limpia todo en el `requestAnimationFrame` que ve el
+      // cambio de scroll, antes de pintar: sin fotograma intermedio. Los giros se encadenan, asi que
+      // cada prediccion lee un `scrollLeft` ya aplicado. En el limite de capitulo, en la primera o
+      // ultima pagina, con movimiento reducido o sin API de animaciones el cambio es instantaneo.
+      // Solo se animan `transform` (de la vista) y `opacity` (de un velo del color de fondo).
+      let turning: RunningTurn | null = null;
+      let turnChain: Promise<void> = Promise.resolve();
+      let pendingTurns = 0;
+
+      const plainTurn = (action: TurnAction): Promise<void> =>
+        Promise.resolve(action === "next" ? rendition.next() : rendition.prev()).then(
+          () => {},
+          () => {},
+        );
+
+      const animatedTurn = (action: TurnAction): Promise<void> | null => {
+        const container = input.host.querySelector<HTMLElement>(".epub-container");
+        const view = container?.querySelector<HTMLElement>(".epub-view") ?? null;
+        if (!container || !view || typeof view.animate !== "function" || !shown || prefersReducedMotion()) {
+          return null;
+        }
+        const width = container.offsetWidth;
+        const left = container.scrollLeft;
+        const total = container.scrollWidth;
+        // Misma condicion que epubjs: si el giro cruzaria de capitulo (o no hay pagina), no se anima.
+        const inside = action === "next" ? left + 2 * width <= total : left > 0.5;
+        if (width <= 0 || !inside) return null;
+
+        return new Promise<void>((resolve) => {
+          const sign = action === "next" ? -1 : 1;
+          const veil = document.createElement("div");
+          veil.className = "epub-reader__turn-veil";
+          input.host.appendChild(veil);
+          const timing = { duration: PAGE_TURN_MS, easing: "ease-out", fill: "forwards" } as const;
+          const shift = `translateX(${sign * width}px)`;
+          const viewAnim = view.animate([{ transform: "translateX(0)" }, { transform: shift }], timing);
+          const veilAnim = veil.animate(
+            [
+              { transform: "translateX(0)", opacity: 0 },
+              { transform: shift, opacity: TURN_VEIL_OPACITY },
+            ],
+            timing,
+          );
+
+          let phase: "animating" | "committing" | "done" = "animating";
+          let frame = 0;
+          let commitTimer: ReturnType<typeof setTimeout> | undefined;
+
+          // Quita animacion, velo y transform. Idempotente.
+          const finish = () => {
+            if (phase === "done") return;
+            phase = "done";
+            clearTimeout(animTimer);
+            clearTimeout(commitTimer);
+            if (frame) cancelAnimationFrame(frame);
+            viewAnim.cancel();
+            veilAnim.cancel();
+            veil.remove();
+            if (turning === running) turning = null;
+            resolve();
+          };
+
+          const commit = () => {
+            if (phase !== "animating") return;
+            phase = "committing";
+            clearTimeout(animTimer);
+            let request: Promise<void>;
+            try {
+              request = Promise.resolve(action === "next" ? rendition.next() : rendition.prev());
+            } catch {
+              finish();
+              return;
+            }
+            // El cambio de scroll (o de capitulo: otra vista u otro ancho) se ve en el rAF previo al
+            // pintado: se limpia ahi mismo. Si la prediccion fallo y cruzo de capitulo, tambien.
+            const watch = () => {
+              if (phase !== "committing") return;
+              const moved =
+                container.scrollLeft !== left ||
+                container.scrollWidth !== total ||
+                container.querySelector(".epub-view") !== view;
+              if (moved) finish();
+              else frame = requestAnimationFrame(watch);
+            };
+            frame = requestAnimationFrame(watch);
+            // Al resolverse la promesa el giro ya se aplico: lo que quede retenido sobra.
+            void request.then(finish, finish);
+            commitTimer = setTimeout(finish, TURN_COMMIT_TIMEOUT_MS);
+          };
+
+          const running: RunningTurn = {
+            skip() {
+              if (phase !== "animating") return;
+              viewAnim.finish();
+              commit();
+            },
+            abort: finish,
+          };
+          turning = running;
+          viewAnim.finished.then(commit, () => {});
+          const animTimer = setTimeout(commit, PAGE_TURN_MS + TURN_SLACK_MS);
+        });
+      };
+
+      // Un toque durante el giro lo completa al instante y espera a que se aplique antes de
+      // predecir el siguiente: no se saltan paginas ni se anima un limite de capitulo por error.
+      const requestTurn = (action: TurnAction): Promise<void> => {
         userNavigated();
-        if (action === "next") void rendition.next();
-        else if (action === "prev") void rendition.prev();
+        turning?.skip();
+        const run = () => animatedTurn(action) ?? plainTurn(action);
+        // Sin giro pendiente arranca en el mismo turno; con uno pendiente, espera a que se aplique.
+        const result = pendingTurns === 0 ? run() : turnChain.then(run, run);
+        pendingTurns += 1;
+        turnChain = result.then(() => {
+          pendingTurns -= 1;
+        });
+        return turnChain;
+      };
+
+      const turn = (action: TurnAction) => {
+        void requestTurn(action);
       };
 
       // CSS vigente del tema. epubjs NO inyecta en los capitulos nuevos los temas registrados con
@@ -233,7 +378,9 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         // Con otro tamano de letra cambia la paginacion y la pagina vigente se desplaza: se anota
         // el CFI de inicio y se vuelve a el al reacomodar el texto (medido: sin esto, agrandar la
         // letra perdia la pagina). Cambiar solo el color no mueve nada.
-        const resumeAt = theme.fontPx !== currentFontPx ? holdPoint() : null;
+        const fontChanged = theme.fontPx !== currentFontPx;
+        if (fontChanged) turning?.abort(); // limpia el transform antes de anotar el punto
+        const resumeAt = fontChanged ? holdPoint() : null;
         currentFontPx = theme.fontPx;
         themeCss = buildReaderCss(theme);
         rendition.themes.registerCss(THEME_KEY, themeCss);
@@ -247,8 +394,6 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       // con el mismo tamano, no compite con la espera a las fuentes del reabrir).
       let lastWidth = Math.max(input.host.clientWidth, 1);
       let lastHeight = Math.max(input.host.clientHeight, 1);
-      let shown = false;
-
       let reopened = false;
       try {
         await rendition.display(input.startCfi ?? undefined);
@@ -265,14 +410,8 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       shown = true;
 
       return {
-        next: () => {
-          userNavigated();
-          return rendition.next();
-        },
-        prev: () => {
-          userNavigated();
-          return rendition.prev();
-        },
+        next: () => requestTurn("next"),
+        prev: () => requestTurn("prev"),
         setTheme: applyTheme,
         resize() {
           const width = Math.max(input.host.clientWidth, 1);
@@ -280,11 +419,13 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
           const changed = width !== lastWidth || height !== lastHeight;
           lastWidth = width;
           lastHeight = height;
+          if (changed) turning?.abort(); // limpia el transform antes de anotar el punto
           const resumeAt = changed && shown ? holdPoint() : null;
           rendition.resize(width, height);
           restorePoint(resumeAt);
         },
         destroy() {
+          turning?.abort();
           try {
             rendition.destroy();
           } finally {
