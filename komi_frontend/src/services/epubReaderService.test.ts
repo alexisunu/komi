@@ -460,7 +460,7 @@ describe("giro de pagina animado", () => {
       frames[id - 1] = null;
     });
     window.matchMedia = vi.fn(() => ({ matches: reduced })) as unknown as typeof window.matchMedia;
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   });
 
   afterEach(() => {
@@ -559,9 +559,9 @@ describe("giro de pagina animado", () => {
     expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
   });
 
-  describe("toques seguidos", () => {
-    it("el segundo toque completa el giro en curso y predice con el scroll ya aplicado", async () => {
-      const t = await openTurn({ left: W, total: 5 * W });
+  describe("toques seguidos (solo un toque aislado se anima)", () => {
+    it("un toque durante el giro lo completa al instante y es instantaneo; no se salta ninguna pagina", async () => {
+      const t = await openTurn({ left: W, total: 8 * W });
       let applyFirst = () => {};
       t.fake.rendition.next.mockImplementationOnce(
         () =>
@@ -574,41 +574,104 @@ describe("giro de pagina animado", () => {
       );
       const first = t.handle.next();
       await flush();
-      expect(animate).toHaveBeenCalledTimes(2);
+      expect(animate).toHaveBeenCalledTimes(2); // vista y velo del primero
       const second = t.handle.next(); // toque durante el movimiento
       await flush();
       expect(anims[0]?.finish).toHaveBeenCalled(); // completa la actual
       expect(t.fake.rendition.next).toHaveBeenCalledTimes(1);
-      // El giro pendiente aun no se aplico: el segundo NO predice ni anima todavia.
+      // El giro pendiente aun no se aplico: el segundo espera, no predice ni anima.
       expect(animate).toHaveBeenCalledTimes(2);
       applyFirst();
       await flush();
       await first;
-      await flush(); // arranca el segundo con scrollLeft ya en 2W
+      await second;
+      expect(animate).toHaveBeenCalledTimes(2); // el segundo fue instantaneo
+      expect(t.fake.rendition.next).toHaveBeenCalledTimes(2);
+      expect(t.state.left).toBe(3 * W); // ni una pagina saltada ni repetida
+      expect(t.veil()).toBeNull();
+    });
+
+    it("una rafaga de 4 toques anima solo el primero y avanza 4 paginas", async () => {
+      const t = await openTurn({ left: W, total: 9 * W });
+      const turns = [t.handle.next()];
+      await flush();
+      for (let i = 0; i < 3; i++) {
+        turns.push(t.handle.next());
+        await vi.advanceTimersByTimeAsync(80);
+      }
+      runFrame();
+      await Promise.all(turns);
+      expect(animate).toHaveBeenCalledTimes(2); // una sola animacion (vista y velo)
+      expect(t.fake.rendition.next).toHaveBeenCalledTimes(4);
+      expect(t.state.left).toBe(5 * W);
+      expect(t.veil()).toBeNull();
+      expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+    });
+
+    it("los toques de una rafaga que llegan con un giro instantaneo pendiente tambien son instantaneos", async () => {
+      const t = await openTurn({ left: W, total: 9 * W });
+      let applySecond = () => {};
+      const first = t.handle.next();
+      await flush();
+      anims[0]?.resolve();
+      await flush();
+      runFrame();
+      await first;
+      await vi.advanceTimersByTimeAsync(PAGE_TURN_MS); // pasada la rafaga: el siguiente toque es aislado
+      // Giro pendiente (aun sin aplicar): lo que llegue ahora no se anima.
+      t.fake.rendition.next.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            applySecond = () => {
+              t.state.left += W;
+              resolve();
+            };
+          }),
+      );
+      const second = t.handle.next(); // aislado: se anima
+      await flush();
+      const calls = animate.mock.calls.length;
+      const third = t.handle.next(); // con el segundo en curso
+      await flush();
+      anims[2]?.resolve();
+      await flush();
+      applySecond();
+      await flush();
+      runFrame();
+      await Promise.all([second, third]);
+      expect(animate.mock.calls.length).toBe(calls); // el tercero no animo
+    });
+
+    it("un toque a menos de un giro del anterior sigue en la rafaga aunque el giro previo ya se aplico", async () => {
+      const t = await openTurn({ left: W, total: 9 * W });
+      const first = t.handle.next();
+      await flush();
+      const second = t.handle.next(); // corta al primero: ambos se aplican en pocos ms
+      await vi.advanceTimersByTimeAsync(100); // la cola ya esta vacia, pero no paso un giro
+      const third = t.handle.next();
+      await flush();
+      runFrame();
+      await Promise.all([first, second, third]);
+      expect(animate).toHaveBeenCalledTimes(2); // solo el primero se animo
+      expect(t.state.left).toBe(4 * W);
+    });
+
+    it("con la rafaga agotada, el siguiente toque vuelve a animarse", async () => {
+      const t = await openTurn({ left: W, total: 9 * W });
+      const turns = [t.handle.next(), t.handle.next()];
+      await flush();
+      runFrame();
+      await Promise.all(turns);
+      expect(animate).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(PAGE_TURN_MS); // pasada la rafaga
+      const next = t.handle.next(); // aislado otra vez
+      await flush();
       expect(animate).toHaveBeenCalledTimes(4);
       anims[2]?.resolve();
       await flush();
       runFrame();
-      await second;
-      expect(t.fake.rendition.next).toHaveBeenCalledTimes(2);
-      expect(t.state.left).toBe(3 * W); // ni una pagina saltada ni repetida
-    });
-
-    it("si el segundo toque cae en el limite del capitulo, no se anima", async () => {
-      // 3 columnas: de la 2.a (left = W) se pasa a la 3.a, que es la ultima del capitulo.
-      const t = await openTurn({ left: W, total: 3 * W });
-      const first = t.handle.next();
-      await flush();
-      const second = t.handle.next();
-      await flush();
-      runFrame();
-      await first;
-      await flush();
-      await second;
-      // El segundo giro parte de left = 2W: 2W + 2W > 3W, cruzaria de capitulo, asi que no se anima.
-      expect(animate).toHaveBeenCalledTimes(2);
-      expect(t.fake.rendition.next).toHaveBeenCalledTimes(2);
-      expect(anims.every((a) => a.cancel.mock.calls.length === 1)).toBe(true);
+      await next;
+      expect(t.state.left).toBe(4 * W);
     });
 
     it("pasar de pagina tambien apaga el ancla del reflujo con toques seguidos", async () => {
@@ -854,6 +917,7 @@ describe("gestos dentro del iframe", () => {
     doc.body.dispatchEvent(new MouseEvent("click", { clientX: 20, bubbles: true }));
     await new Promise((r) => setTimeout(r, 0)); // los giros se encadenan: el segundo espera al primero
     doc.body.dispatchEvent(new MouseEvent("click", { clientX: 330, bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0)); // dentro de una rafaga el giro espera a la cola
     expect(onCenterTap).toHaveBeenCalledTimes(1);
     expect(fake.rendition.prev).toHaveBeenCalledTimes(1);
     expect(fake.rendition.next).toHaveBeenCalledTimes(1);
@@ -887,6 +951,7 @@ describe("gestos dentro del iframe", () => {
     await new Promise((r) => setTimeout(r, 0)); // los giros se encadenan: el segundo espera al primero
     doc.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" }));
     doc.dispatchEvent(new KeyboardEvent("keydown", { key: "x" }));
+    await new Promise((r) => setTimeout(r, 0));
     expect(fake.rendition.next).toHaveBeenCalledTimes(1);
     expect(fake.rendition.prev).toHaveBeenCalledTimes(1);
   });

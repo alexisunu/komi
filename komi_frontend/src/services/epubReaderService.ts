@@ -280,14 +280,25 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
         });
       };
 
-      // Un toque durante el giro lo completa al instante y espera a que se aplique antes de
-      // predecir el siguiente: no se saltan paginas ni se anima un limite de capitulo por error.
+      // Solo un toque aislado se anima. Un toque esta en una rafaga si hay un giro en curso
+      // (animacion activa o `next()`/`prev()` aun por aplicarse: `pendingTurns`) o si llega antes de
+      // que pase lo que dura un giro desde el toque anterior: un giro instantaneo se aplica en pocos
+      // ms y, sin esa segunda condicion, el toque siguiente se animaria de nuevo y la rafaga
+      // alternaria animar y cortar. En una rafaga el giro en curso se completa al instante y los
+      // toques son instantaneos: cortar una animacion con un salto y reiniciar otra desde cero a cada
+      // toque se veia entrecortado (medido en Edge: saltos de 190 a 260 px en un fotograma a 60 a
+      // 100 ms entre toques). Los giros se encadenan, asi que cada uno predice con un scroll ya
+      // aplicado: no se saltan paginas. Pasada la rafaga, el siguiente toque vuelve a animarse.
+      let lastTurnAt = -Infinity;
       const requestTurn = (action: TurnAction): Promise<void> => {
         userNavigated();
+        const now = Date.now();
+        const inProgress = pendingTurns > 0 || now - lastTurnAt < PAGE_TURN_MS;
+        lastTurnAt = now;
         turning?.skip();
-        const run = () => animatedTurn(action) ?? plainTurn(action);
+        const run = () => (inProgress ? plainTurn(action) : (animatedTurn(action) ?? plainTurn(action)));
         // Sin giro pendiente arranca en el mismo turno; con uno pendiente, espera a que se aplique.
-        const result = pendingTurns === 0 ? run() : turnChain.then(run, run);
+        const result = inProgress ? turnChain.then(run, run) : run();
         pendingTurns += 1;
         turnChain = result.then(() => {
           pendingTurns -= 1;
@@ -296,7 +307,8 @@ export function createEpubReaderService(epub: Pick<EpubService, "openBook">): Ep
       };
 
       const turn = (action: TurnAction) => {
-        void requestTurn(action);
+        // Una tecla o gesto que no es de giro (`null`) no pasa de pagina: sin esto, cualquier tecla retrocedia.
+        if (action) void requestTurn(action);
       };
 
       // CSS vigente del tema. epubjs NO inyecta en los capitulos nuevos los temas registrados con
