@@ -23,7 +23,8 @@ Reunida el 11 de noviembre de 2026 al cerrar el bloque 5.5. Todo lo de esta list
 - **Recuperación de datos:** el servidor no devuelve página, CFI ni extracto por sesión; tampoco las charlas abiertas ni los mensajes (en el dispositivo solo se guarda la semilla). No se valida que el `.epub` que se vuelve a elegir sea el mismo libro. La respuesta llega en una sola petición, sin paginar.
 - **Charla con Komi:** no hay cierre anticipado (SRS 19.18). Salir antes del turno 5 pierde la charla.
 - **Gemini en el plan gratuito:** Google puede hacer que personas revisen lo enviado. Hoy se avisa en la app. La alternativa es activar facturación (plan de pago), con costo y tarjeta; decisión abierta del autor.
-- **Animación de deslizamiento al pasar página en el lector EPUB:** no existe (no se consideró fallo).
+- **Animación de deslizamiento al pasar página en el lector EPUB:** hecha en la rama `v2` (SRS §20, punto 8); falta repetirla en el Android y el iPhone. Sin animación en el cambio de capítulo (decisión del autor) y sin arrastre que siga al dedo.
+- **Sonido de fin de tiempo del libro físico:** hecho en la rama `v2` (SRS §20, punto 8); el volumen (`CHIME_PEAK_GAIN` en `services/endChime.ts`) se ajusta tras probarlo en un teléfono real. Opción para desactivarlo en Ajustes: no, por ahora.
 
 ## 4. Verificaciones que quedaron sin hacer
 
