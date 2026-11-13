@@ -8,7 +8,6 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { PreparationProgress } from "../../core/components/PreparationProgress";
-import { streakLabel } from "../../core/components/StreakBadge";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ZenSheet } from "../../core/components/ZenSheet";
 import { KomiLocalError } from "../../data/local_db/errors";
@@ -21,6 +20,7 @@ import {
 import type { SessionGate } from "../../data/network/syncService";
 import { canRetryGate, GATE_MESSAGES, type GateBlock } from "../ai_companion/chatGateMessages";
 import { SunflowerStageWidget } from "../dashboard/SunflowerStageWidget";
+import { formatClock } from "./clockFormat";
 import "./PostReadingSheet.css";
 
 export type SavedReading = Extract<SaveResult, { kind: "saved" }>;
@@ -30,6 +30,13 @@ export interface PostReadingSheetProps {
   sessionId: string;
   /** Segundos finales que vio la pantalla: respaldo si el registro aun no los trae. */
   actualSec?: number | null;
+  /**
+   * "Hablar con Komi": al guardarse la lectura y aceptarla el servidor, abre la charla sin pedir otra
+   * vez. Si el servidor no la acepta, la hoja muestra el motivo de siempre.
+   */
+  autoChat?: boolean;
+  /** El temporizador de un libro fisico llego a cero: se avisa por escrito (respaldo del sonido). */
+  timeUp?: boolean;
   service: PostReadingService;
   /** El guardado termino bien: borrar los registros de la sesion y soltar la recarga. */
   onSaved: (result: SavedReading) => void | Promise<void>;
@@ -56,11 +63,6 @@ type Stage =
   | { kind: "discarded" }
   | { kind: "saved"; result: SavedReading };
 
-function minutesText(actualSec: number): string {
-  const minutes = Math.floor(actualSec / 60);
-  return `${minutes} ${minutes === 1 ? "minuto" : "minutos"}`;
-}
-
 function errorText(error: unknown): string {
   if (error instanceof KomiLocalError) return `${error.message} Tu sesión sigue a salvo.`;
   return "No pudimos guardar tu lectura. Tu sesión sigue a salvo; inténtalo de nuevo.";
@@ -69,6 +71,8 @@ function errorText(error: unknown): string {
 export function PostReadingSheet({
   sessionId,
   actualSec = null,
+  autoChat = false,
+  timeUp = false,
   service,
   onSaved,
   onDiscard,
@@ -85,6 +89,7 @@ export function PostReadingSheet({
   const [gateAttempt, setGateAttempt] = useState(0);
   const mounted = useRef(false);
   const started = useRef(false);
+  const autoOpened = useRef(false);
   const pageId = useId();
   const noticeId = useId();
 
@@ -198,47 +203,83 @@ export function PostReadingSheet({
     };
   }, [saved, sessionId, checkChat, gateAttempt]);
 
+  // Con "Hablar con Komi", la charla se abre en cuanto el servidor acepta la sesion (una sola vez).
+  useEffect(() => {
+    if (!autoChat || autoOpened.current || saved === null || chatGate.kind !== "ready") return;
+    autoOpened.current = true;
+    onChat(saved);
+  }, [autoChat, saved, chatGate, onChat]);
+
   const retryGate = () => {
     setChatGate({ kind: "checking" });
     setGateAttempt((value) => value + 1);
   };
   const percentage = saved ? saved.book.progress_percentage : (book?.progress_percentage ?? 0);
   const fallow = saved === null && book?.status === "FALLOW";
+  // El girasol solo acompana al resumen en los dos momentos de celebracion (bono solar y florecer).
   const showAura = saved !== null && (saved.solarBonus || saved.bloomed);
 
   let title = "Tu lectura de hoy";
   if (stage.kind === "page") title = "¿Hasta qué página llegaste?";
   else if (stage.kind === "saving") title = "Guardando tu lectura";
-  else if (saved) title = saved.bloomed ? "Tu girasol floreció" : "Lectura guardada";
+  else if (saved) title = saved.bloomed ? "Tu girasol floreció" : "Sesión terminada";
   else if (stage.kind === "discarded") title = "Sesión sin guardar";
   else if (stage.kind === "missing") title = "No encontramos esta sesión";
   else if (stage.kind === "error") title = "No se pudo guardar";
 
-  let summary: string | null = null;
-  if (saved) {
-    const parts = [`Leíste ${minutesText(saved.session.actual_duration_sec)}.`, `${streakLabel(saved.streak)}.`];
-    if (saved.bloomed) parts.unshift("Terminaste el libro y tu girasol floreció.");
-    else if (saved.solarBonus) {
-      parts.unshift("Bono de Vitalidad Solar: tu constancia cuenta aunque el avance sea pequeño.");
-    }
-    summary = parts.join(" ");
-  }
+  // Resumen de la sesion guardada (mockup 05): tiempo leido y avance del libro, "del X % al Y %".
+  const from = saved ? Math.floor(saved.before) : 0;
+  const to = saved ? Math.floor(saved.book.progress_percentage) : 0;
+  const rangeText = from === to ? `Sigues en el ${to} % del libro` : `Del ${from} % al ${to} % del libro`;
 
   const dismissible = saved !== null;
 
   return (
-    <ZenSheet title={title} dismissible={dismissible} onClose={dismissible ? onDone : () => {}}>
+    <ZenSheet
+      title={title}
+      titleVariant={saved ? "label" : "heading"}
+      dismissible={dismissible}
+      onClose={dismissible ? onDone : () => {}}
+    >
       <div className="post-reading">
-        <section className="post-reading__canvas" data-block="canvas" aria-label="Tu girasol">
-          <div aria-hidden="true">
-            <SunflowerStageWidget percentage={percentage} fallow={fallow} solarBonus={showAura} size={140} />
-          </div>
-          {summary && (
-            <p className="post-reading__summary" role="status">
-              {summary}
+        {(saved === null || showAura) && (
+          <section className="post-reading__canvas" data-block="canvas" aria-label="Tu girasol">
+            <div aria-hidden="true">
+              <SunflowerStageWidget
+                percentage={percentage}
+                fallow={fallow}
+                solarBonus={showAura}
+                size={showAura ? 120 : 140}
+              />
+            </div>
+          </section>
+        )}
+
+        {saved && (
+          <section className="post-reading__result" data-block="result" aria-label="Resumen de la sesión" role="status">
+            <p className="post-reading__time">
+              <span className="post-reading__clock tabular">{formatClock(saved.session.actual_duration_sec * 1000)}</span>
+              <span className="post-reading__time-label">de lectura</span>
             </p>
-          )}
-        </section>
+            <div
+              className="post-reading__bar"
+              role="progressbar"
+              aria-label="Avance del libro"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={to}
+            >
+              <div className="post-reading__bar-fill" style={{ width: `${to}%` }} />
+            </div>
+            <p className="post-reading__range tabular">{rangeText}</p>
+            {saved.bloomed && <p className="post-reading__text">Terminaste el libro y tu girasol floreció.</p>}
+            {saved.solarBonus && (
+              <p className="post-reading__text">
+                Bono de Vitalidad Solar: tu constancia cuenta aunque el avance sea pequeño.
+              </p>
+            )}
+          </section>
+        )}
 
         <div className="post-reading__body" data-block="body">
           {stage.kind === "loading" && (
@@ -255,10 +296,15 @@ export function PostReadingSheet({
                 submitPage();
               }}
             >
-              {prepared?.belowHalf && (
+              {timeUp && (
+                <p className="post-reading__text" role="status">
+                  El tiempo terminó.
+                </p>
+              )}
+              {prepared?.short && (
                 <p className="post-reading__text">
-                  Llevas menos de la mitad del tiempo. La sesión solo se guarda si llegaste a la última
-                  página{total ? ` (${total})` : ""}.
+                  Llevas menos de 5 minutos. La sesión solo se guarda si llegaste a la última página
+                  {total ? ` (${total})` : ""}.
                 </p>
               )}
               <div className="post-reading__field">
@@ -306,12 +352,14 @@ export function PostReadingSheet({
 
           {stage.kind === "discarded" && (
             <p className="post-reading__text">
-              Leíste menos de la mitad del tiempo y no llegaste a la última página, así que esta sesión
+              Leíste menos de 5 minutos y no llegaste a la última página, así que esta sesión
               no se guardó. Tu avance anterior sigue intacto.
             </p>
           )}
 
-          {saved && <p className="post-reading__question">¿Quieres charlar un poco sobre lo que acabas de leer?</p>}
+          {saved && !(autoChat && chatGate.kind !== "blocked") && (
+            <p className="post-reading__question">¿Quieres charlar un poco sobre lo que acabas de leer?</p>
+          )}
           {saved && chatGate.kind === "checking" && (
             <p className="post-reading__text" role="status">
               {waking ? "Despertando a Komi" : "Sincronizando tu sesión"}

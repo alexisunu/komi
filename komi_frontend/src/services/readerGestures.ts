@@ -1,16 +1,18 @@
 // Gestos del lector EPUB (funciones puras). Toque: tercio izquierdo = atras, tercio derecho =
-// adelante, centro = nada (queda libre para mostrar controles en el futuro). Deslizar: horizontal
+// adelante, centro = menu (la pantalla decide si lo atiende). Deslizar: horizontal
 // y claramente mas ancho que alto.
 
 export type TurnAction = "prev" | "next" | null;
+/** Un toque tambien puede pedir el menu (tercio central). */
+export type TapAction = TurnAction | "menu";
 
 /** Un toque: `x` y `width` en la misma unidad (coordenadas del iframe). */
-export function tapAction(x: number, width: number): TurnAction {
+export function tapAction(x: number, width: number): TapAction {
   if (!(width > 0) || !Number.isFinite(x)) return null;
   const ratio = x / width;
   if (ratio < 1 / 3) return "prev";
   if (ratio > 2 / 3) return "next";
-  return null;
+  return "menu";
 }
 
 /**

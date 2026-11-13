@@ -9,7 +9,7 @@ import type { LocalBook } from "../../data/local_db/types";
 import type { FocusSnapshot, FocusVisibilityService } from "../../services/focusVisibilityService";
 import type { WakeLockService } from "../../services/wakeLockService";
 import { SunflowerStageWidget } from "../dashboard/SunflowerStageWidget";
-import { formatClock } from "./clockFormat";
+import { sessionClock, sessionSubtitle } from "./clockFormat";
 import { GracePeriodBanner } from "./GracePeriodBanner";
 import "./PhysicalTimerScreen.css";
 import { useWakeLock } from "./useWakeLock";
@@ -19,10 +19,10 @@ export interface PhysicalTimerScreenProps {
   /** Solo se muestra en las fases `running` y `grace`. */
   snapshot: FocusSnapshot;
   wakeLock: WakeLockService;
-  peekEarlyFinish: FocusVisibilityService["peekEarlyFinish"];
-  /** El 50 % o mas: la sesion queda como terminada antes de tiempo, valida. */
-  onAcceptEarly: () => void;
-  /** Cancelar sin guardar nada (menos del 50 %, ya confirmado). */
+  peekFinish: FocusVisibilityService["peekFinish"];
+  /** Cierra la sesion con el tiempo leido (5 minutos o mas, o el lector dice que termino el libro). */
+  onFinish: () => void;
+  /** Descartar sin guardar nada. */
   onCancel: () => void | Promise<void>;
 }
 
@@ -30,8 +30,8 @@ export function PhysicalTimerScreen({
   book,
   snapshot,
   wakeLock,
-  peekEarlyFinish,
-  onAcceptEarly,
+  peekFinish,
+  onFinish,
   onCancel,
 }: PhysicalTimerScreenProps) {
   const [confirming, setConfirming] = useState(false);
@@ -39,28 +39,32 @@ export function PhysicalTimerScreen({
 
   useWakeLock(wakeLock, true);
 
-  const finishEarly = () => {
-    const early = peekEarlyFinish();
-    if (early && !early.belowHalf) onAcceptEarly();
+  // Regla unica (FA-3.3): con 5 minutos se guarda directo; con menos, aviso.
+  const finishSession = () => {
+    if (peekFinish()?.enough) onFinish();
     else setConfirming(true);
   };
 
-  // El tiempo siguio corriendo con la hoja abierta: si ya se paso del 50 %, es una sesion valida.
-  const confirmCancel = () => {
+  // Descartar es explicito: no guarda nada aunque el tiempo siga corriendo con el aviso abierto.
+  const discard = () => {
     setConfirming(false);
-    const early = peekEarlyFinish();
-    if (early && !early.belowHalf) onAcceptEarly();
-    else void onCancel();
+    void onCancel();
   };
 
-  // Con menos del 50 % solo vale si el libro se termino: la hoja pide la pagina y exige la ultima.
+  // En un libro fisico no se sabe si se termino hasta pedir la pagina: la hoja de cierre la pide y
+  // solo guarda si es la ultima.
   const finishBook = () => {
     setConfirming(false);
-    onAcceptEarly();
+    onFinish();
   };
 
   return (
     <div className="focus-timer">
+      {inGrace && (
+        <div className="focus-timer__grace">
+          <GracePeriodBanner variant="grace" graceRemainingMs={snapshot.graceRemainingMs} />
+        </div>
+      )}
       <section className="focus-timer__canvas" data-block="canvas" aria-label="Libro en lectura">
         <SunflowerStageWidget
           percentage={book?.progress_percentage ?? 0}
@@ -72,32 +76,38 @@ export function PhysicalTimerScreen({
       </section>
 
       <div className="focus-timer__middle" data-block="clock">
-        <output className="focus-timer__clock tabular" role="timer" aria-label="Tiempo restante">
-          {formatClock(snapshot.remainingMs)}
+        <output
+          className="focus-timer__clock tabular"
+          role="timer"
+          aria-label={snapshot.timerType === "FREE" ? "Tiempo leído" : "Tiempo restante"}
+        >
+          {sessionClock(snapshot)}
         </output>
-        {inGrace && <GracePeriodBanner variant="grace" graceRemainingMs={snapshot.graceRemainingMs} />}
+        <p className="focus-timer__mode tabular">
+          {sessionSubtitle(snapshot.timerType, book ? book.progress_percentage : null)}
+        </p>
       </div>
 
       <div className="focus-timer__actions" data-block="actions">
-        <ZenPrimaryButton variant="secondary" onClick={finishEarly}>
-          Terminé antes de tiempo
+        <ZenPrimaryButton variant="secondary" onClick={finishSession}>
+          Terminar sesión
         </ZenPrimaryButton>
       </div>
 
       {confirming && (
         <ZenSheet title="¿Terminar sin guardar?" onClose={() => setConfirming(false)}>
           <p className="focus-timer__confirm-text">
-            Llevas menos de la mitad del tiempo que programaste. Si terminas ahora, la sesión se
-            cancela y no se guarda ningún avance, salvo que hayas terminado el libro: en ese caso se
-            guarda si indicas la última página.
+            El tiempo mínimo es 5 min. Si terminas ahora, la sesión no se guarda y no se registra
+            ningún avance, salvo que hayas terminado el libro: en ese caso se guarda si indicas la
+            última página.
           </p>
           <div className="focus-timer__confirm-actions">
             <ZenPrimaryButton onClick={() => setConfirming(false)}>Seguir leyendo</ZenPrimaryButton>
             <ZenPrimaryButton variant="secondary" onClick={finishBook}>
               Terminé el libro
             </ZenPrimaryButton>
-            <ZenPrimaryButton variant="secondary" onClick={confirmCancel}>
-              Cancelar sesión
+            <ZenPrimaryButton variant="secondary" onClick={discard}>
+              Descartar
             </ZenPrimaryButton>
           </div>
         </ZenSheet>

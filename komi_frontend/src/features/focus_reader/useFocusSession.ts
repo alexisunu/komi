@@ -17,9 +17,9 @@ export const REPAINT_MS = 250;
 export interface UseFocusSession {
   snapshot: FocusSnapshot | null;
   start(input: StartInput): Promise<void>;
-  /** "Terminé antes de tiempo": segundos y si queda bajo el 50 %. */
-  peekEarlyFinish: FocusVisibilityService["peekEarlyFinish"];
-  acceptEarlyFinish(): void;
+  /** "Terminar sesión": segundos y si ya hay 5 minutos. */
+  peekFinish: FocusVisibilityService["peekFinish"];
+  acceptFinish(): void;
   /** Sale de la sesion (guardada, cancelada o descartada): borra el registro y suelta la recarga. */
   leave(): Promise<void>;
 }
@@ -91,9 +91,9 @@ export function useFocusSession(service: FocusVisibilityService, gate: ReloadGat
   return {
     snapshot,
     start,
-    peekEarlyFinish: () => service.peekEarlyFinish(),
-    acceptEarlyFinish: () => {
-      service.acceptEarlyFinish();
+    peekFinish: () => service.peekFinish(),
+    acceptFinish: () => {
+      service.acceptFinish();
     },
     leave,
   };

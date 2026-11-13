@@ -47,10 +47,10 @@ export const QUESTIONS: readonly QuizQuestion[] = [
     category: "Momento ideal",
     question: "¿En qué momento del día tu mente se siente más despejada para leer?",
     options: [
-      { value: "A", label: "Al despertar (07:30 AM)" },
-      { value: "B", label: "En la pausa de la tarde (03:00 PM)" },
-      { value: "C", label: "Antes de dormir (09:30 PM)" },
-      { value: "D", label: "En trayectos o tiempos libres (12:30 PM)" },
+      { value: "A", label: "Al despertar" },
+      { value: "B", label: "En la pausa de la tarde" },
+      { value: "C", label: "Antes de dormir" },
+      { value: "D", label: "En trayectos o tiempos libres" },
     ],
   },
   {

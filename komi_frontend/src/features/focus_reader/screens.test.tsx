@@ -3,7 +3,7 @@ import type { LocalBook } from "../../data/local_db/types";
 import type { FocusSnapshot } from "../../services/focusVisibilityService";
 import type { WakeLockService } from "../../services/wakeLockService";
 import { click, render } from "../../test/render";
-import { formatClock } from "./clockFormat";
+import { formatClock, formatElapsed, sessionClock, sessionSubtitle } from "./clockFormat";
 import css from "./PhysicalTimerScreen.css?raw";
 import { PhysicalTimerScreen } from "./PhysicalTimerScreen";
 
@@ -37,6 +37,7 @@ function snap(over: Partial<FocusSnapshot> = {}): FocusSnapshot {
     remainingMs: 754_200,
     elapsedMs: 145_800,
     plannedSec: 900,
+    timerType: "TIMER",
     graceRemainingMs: 0,
     actualSec: null,
     sessionId: "s",
@@ -52,22 +53,22 @@ function wakeLock() {
   };
 }
 
-function timer(over: { snapshot?: FocusSnapshot; early?: { actualSec: number; belowHalf: boolean } | null } = {}) {
+function timer(over: { snapshot?: FocusSnapshot; early?: { actualSec: number; enough: boolean } | null } = {}) {
   const lock = wakeLock();
-  const onAcceptEarly = vi.fn();
+  const onFinish = vi.fn();
   const onCancel = vi.fn();
-  const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, belowHalf: false } : over.early));
+  const peek = vi.fn(() => (over.early === undefined ? { actualSec: 600, enough: true } : over.early));
   mounted = render(
     <PhysicalTimerScreen
       book={BOOK}
       snapshot={over.snapshot ?? snap()}
       wakeLock={lock}
-      peekEarlyFinish={peek}
-      onAcceptEarly={onAcceptEarly}
+      peekFinish={peek}
+      onFinish={onFinish}
       onCancel={onCancel}
     />,
   );
-  return { root: mounted.container, lock, onAcceptEarly, onCancel, peek };
+  return { root: mounted.container, lock, onFinish, onCancel, peek };
 }
 
 const button = (root: ParentNode, text: string) =>
@@ -81,6 +82,41 @@ describe("formatClock", () => {
     expect(formatClock(0)).toBe("00:00");
     expect(formatClock(7_200_000)).toBe("120:00");
     expect(formatClock(-5_000)).toBe("00:00");
+  });
+});
+
+describe("formatElapsed (cronometro del modo libre)", () => {
+  it("empieza en 00:00 y trunca: los segundos ya cumplidos", () => {
+    expect(formatElapsed(0)).toBe("00:00");
+    expect(formatElapsed(999)).toBe("00:00");
+    expect(formatElapsed(1_000)).toBe("00:01");
+    expect(formatElapsed(59_999)).toBe("00:59");
+    expect(formatElapsed(60_000)).toBe("01:00");
+    expect(formatElapsed(299_000)).toBe("04:59");
+    expect(formatElapsed(3_599_000)).toBe("59:59");
+  });
+
+  it("pasada la hora usa h:mm:ss", () => {
+    expect(formatElapsed(3_600_000)).toBe("1:00:00");
+    expect(formatElapsed(3_661_000)).toBe("1:01:01");
+    expect(formatElapsed(7_200_000)).toBe("2:00:00");
+  });
+
+  it("nunca es negativo", () => {
+    expect(formatElapsed(-5_000)).toBe("00:00");
+  });
+
+  it("sessionClock elige el restante o el transcurrido segun el modo", () => {
+    const base = { remainingMs: 754_200, elapsedMs: 145_800 };
+    expect(sessionClock({ ...base, timerType: "TIMER" })).toBe("12:35");
+    expect(sessionClock({ ...base, timerType: "FREE" })).toBe("02:25");
+  });
+
+  it("sessionSubtitle: Modo libre o Temporizador, con el avance si se conoce", () => {
+    expect(sessionSubtitle("FREE", 12.9)).toBe("Modo libre · 12 %");
+    expect(sessionSubtitle("TIMER", 40)).toBe("Temporizador · 40 %");
+    expect(sessionSubtitle("FREE", null)).toBe("Modo libre");
+    expect(sessionSubtitle("TIMER", null)).toBe("Temporizador");
   });
 });
 
@@ -113,8 +149,8 @@ describe("PhysicalTimerScreen", () => {
         book={BOOK}
         snapshot={snap({ phase: "grace", graceRemainingMs: 9_100 })}
         wakeLock={wakeLock()}
-        peekEarlyFinish={() => null}
-        onAcceptEarly={() => {}}
+        peekFinish={() => null}
+        onFinish={() => {}}
         onCancel={() => {}}
       />,
     );
@@ -122,33 +158,140 @@ describe("PhysicalTimerScreen", () => {
     expect(root.querySelector(".grace-banner")?.textContent).toContain("10 s");
   });
 
-  it("con el 50 % o mas, Terminé antes de tiempo acepta sin preguntar", () => {
-    const { root, onAcceptEarly, onCancel } = timer({ early: { actualSec: 450, belowHalf: false } });
-    click(button(root, "Terminé antes de tiempo"));
-    expect(onAcceptEarly).toHaveBeenCalledTimes(1);
+  it("en temporizador muestra Temporizador · N % y el reloj de lo que resta", () => {
+    const { root } = timer();
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Temporizador · 32 %");
+    expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo restante");
+  });
+
+  describe("modo libre", () => {
+    const FREE = snap({ timerType: "FREE", plannedSec: 7200, elapsedMs: 3_725_000, remainingMs: 3_475_000 });
+
+    it("el reloj cuenta hacia arriba con h:mm:ss y el subtitulo dice Modo libre", () => {
+      const { root } = timer({ snapshot: FREE });
+      expect(root.querySelector("[role=timer]")?.textContent).toBe("1:02:05");
+      expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo leído");
+      expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Modo libre · 32 %");
+      expect(root.querySelector("[role=timer]")?.className).toContain("tabular");
+    });
+
+    it("bajo la hora usa mm:ss", () => {
+      const { root } = timer({ snapshot: snap({ timerType: "FREE", elapsedMs: 145_800 }) });
+      expect(root.querySelector("[role=timer]")?.textContent).toBe("02:25");
+    });
+
+    it("el aviso, Seguir leyendo, Descartar y Terminé el libro funcionan igual", () => {
+      const a = timer({ snapshot: FREE, early: { actualSec: 299, enough: false } });
+      click(button(a.root, "Terminar sesión"));
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("El tiempo mínimo es 5 min");
+      click(button(document.body, "Seguir leyendo"));
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      click(button(a.root, "Terminar sesión"));
+      click(button(document.body, "Descartar"));
+      expect(a.onCancel).toHaveBeenCalledTimes(1);
+      expect(a.onFinish).not.toHaveBeenCalled();
+      click(button(a.root, "Terminar sesión"));
+      click(button(document.body, "Terminé el libro"));
+      expect(a.onFinish).toHaveBeenCalledTimes(1);
+    });
+
+    it("con 5 minutos o mas termina directo", () => {
+      const { root, onFinish } = timer({ snapshot: FREE, early: { actualSec: 300, enough: true } });
+      click(button(root, "Terminar sesión"));
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    });
+  });
+
+  it("Terminar sesion con 5 minutos o mas termina directo, sin confirmacion", () => {
+    const { root, onFinish, onCancel } = timer({ early: { actualSec: 300, enough: true } });
+    click(button(root, "Terminar sesión"));
+    expect(onFinish).toHaveBeenCalledTimes(1);
     expect(onCancel).not.toHaveBeenCalled();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("con menos del 50 % abre la confirmacion y no cancela hasta confirmar", () => {
-    const { onAcceptEarly, onCancel, root } = timer({ early: { actualSec: 449, belowHalf: true } });
-    click(button(root, "Terminé antes de tiempo"));
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("no se guarda ningún avance");
-    expect(onAcceptEarly).not.toHaveBeenCalled();
-    expect(onCancel).not.toHaveBeenCalled();
-    click(button(document.body, "Cancelar sesión"));
-    expect(onCancel).toHaveBeenCalledTimes(1);
-    expect(onAcceptEarly).not.toHaveBeenCalled();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  it("ya no existe el boton Terminé antes de tiempo", () => {
+    const { root } = timer();
+    expect(button(root, "Terminé antes de tiempo")).toBeUndefined();
+    expect(button(root, "Terminar sesión")).toBeDefined();
   });
 
-  it("Seguir leyendo cierra la hoja sin cancelar ni aceptar", () => {
-    const { onAcceptEarly, onCancel, root } = timer({ early: { actualSec: 10, belowHalf: true } });
-    click(button(root, "Terminé antes de tiempo"));
-    click(button(document.body, "Seguir leyendo"));
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(onAcceptEarly).not.toHaveBeenCalled();
-    expect(onCancel).not.toHaveBeenCalled();
+  describe("aviso de menos de 5 minutos", () => {
+    const SHORT = { early: { actualSec: 299, enough: false } };
+    const dialog = () => document.querySelector('[role="dialog"]');
+
+    it("aparece con el motivo claro y no termina ni descarta nada", () => {
+      const { onFinish, onCancel, root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      expect(dialog()?.textContent).toContain("El tiempo mínimo es 5 min");
+      expect(dialog()?.textContent).not.toContain("mitad");
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it("Seguir leyendo es la accion principal, Descartar la secundaria, y no hay Cancelar sesion", () => {
+      const { root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      expect((button(document.body, "Seguir leyendo") as HTMLButtonElement).className).not.toContain("secondary");
+      expect((button(document.body, "Descartar") as HTMLButtonElement).className).toContain("secondary");
+      expect(button(document.body, "Cancelar sesión")).toBeUndefined();
+    });
+
+    it("Seguir leyendo cierra la hoja sin descartar ni terminar", () => {
+      const { onFinish, onCancel, root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Seguir leyendo"));
+      expect(dialog()).toBeNull();
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it("Descartar sale sin guardar nada: onCancel una vez, onFinish nunca", () => {
+      const { onFinish, onCancel, root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Descartar"));
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onFinish).not.toHaveBeenCalled();
+      expect(dialog()).toBeNull();
+    });
+
+    it("aunque pasen los 5 minutos con el aviso abierto, Descartar no guarda", () => {
+      const ctx = timer(SHORT);
+      click(button(ctx.root, "Terminar sesión"));
+      ctx.peek.mockReturnValue({ actualSec: 301, enough: true });
+      click(button(document.body, "Descartar"));
+      expect(ctx.onCancel).toHaveBeenCalledTimes(1);
+      expect(ctx.onFinish).not.toHaveBeenCalled();
+    });
+
+    it("Terminé el libro (solo libro fisico) cierra el aviso y deja que la hoja de cierre pida la ultima pagina", () => {
+      const { onFinish, onCancel, root } = timer(SHORT);
+      click(button(root, "Terminar sesión"));
+      click(button(document.body, "Terminé el libro"));
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onCancel).not.toHaveBeenCalled();
+      expect(dialog()).toBeNull();
+    });
+  });
+
+  it("el aviso de gracia flota arriba y no entra en el flujo: el reloj no se mueve al aparecer (A4)", () => {
+    const rule = /\.focus-timer__grace \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toContain("position: absolute");
+    expect(/\.focus-timer \{([^}]*)\}/.exec(css)?.[1]).toContain("position: relative");
+  });
+
+  it("el aviso de gracia es hijo directo de la pantalla, no del bloque del reloj", () => {
+    const { root } = timer({ snapshot: snap({ phase: "grace", graceRemainingMs: 9_000 }) });
+    const banner = root.querySelector(".grace-banner");
+    expect(banner?.parentElement?.className).toBe("focus-timer__grace");
+    expect(root.querySelector('[data-block="clock"] .grace-banner')).toBeNull();
+  });
+
+  it("el subtitulo del modo usa text-primary (contraste del texto pequeno del lector)", () => {
+    const rule = /\.focus-timer__mode \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toContain("color: var(--color-text-primary)");
+    expect(rule).not.toContain("text-secondary");
   });
 
   it("solo usa tokens de color y no mueve nada que no sea decorativo", () => {

@@ -58,6 +58,13 @@ class LayerAssemblyTests(SimpleTestCase):
     def test_persona_receives_the_progress_for_the_no_spoilers_rule(self):
         self.assertIn("(45.5% del libro)", build())
 
+    def test_persona_asks_for_plain_text_without_markdown(self):
+        for turn in range(1, 6):
+            with self.subTest(turn=turn):
+                prompt = build(turn=turn)
+                self.assertIn("5. Texto Plano:", prompt)
+                self.assertIn("No uses Markdown", prompt)
+
     def test_no_unformatted_placeholders_are_left(self):
         for turn in range(1, 6):
             for fmt in ("EPUB", "PHYSICAL"):

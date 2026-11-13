@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   applyFinal,
   applyHidden,
-  earlyFinish,
+  peekFinish,
   elapsedMs,
   evaluate,
   foregroundSec,
+  FREE_CAP_SEC,
   GRACE_MS,
   heartbeatDue,
   parseActiveSession,
   remainingMs,
+  reportedPlannedSec,
   type ActiveSession,
 } from "./focusSessionMachine";
 
@@ -21,6 +23,7 @@ function session(over: Partial<ActiveSession> = {}): ActiveSession {
     sessionId: "s",
     bookId: "b",
     plannedSec: PLANNED,
+    timerType: "TIMER",
     startedAt: T0,
     startedAtLocal: "2026-11-05T10:00:00",
     hiddenAt: null,
@@ -151,15 +154,24 @@ describe("estado final guardado", () => {
   });
 });
 
-describe("Terminé antes de tiempo (FA-3.3)", () => {
-  it("50 % exacto es valido; un segundo menos pide confirmacion", () => {
-    expect(earlyFinish(session(), T0 + 300_000)).toEqual({ actualSec: 300, belowHalf: false });
-    expect(earlyFinish(session(), T0 + 299_000)).toEqual({ actualSec: 299, belowHalf: true });
+describe("Terminar sesion (FA-3.3, regla unica)", () => {
+  it("5:00 exactos bastan; un segundo menos no", () => {
+    expect(peekFinish(session(), T0 + 300_000)).toEqual({ actualSec: 300, enough: true });
+    expect(peekFinish(session(), T0 + 299_000)).toEqual({ actualSec: 299, enough: false });
+  });
+
+  it("los segundos se truncan hacia abajo: 4:59.9 todavia no es 5:00", () => {
+    expect(peekFinish(session(), T0 + 299_999)).toEqual({ actualSec: 299, enough: false });
+  });
+
+  it("ya no depende del tiempo programado: 5 minutos de un temporizador largo bastan", () => {
+    const hour = { ...session(), plannedSec: 3600 };
+    expect(peekFinish(hour, T0 + 300_000).enough).toBe(true);
   });
 
   it("no supera lo programado ni baja de cero con el reloj atras", () => {
-    expect(earlyFinish(session(), T0 + 99 * 60_000).actualSec).toBe(PLANNED);
-    expect(earlyFinish(session(), T0 - 5_000).actualSec).toBe(0);
+    expect(peekFinish(session(), T0 + 99 * 60_000).actualSec).toBe(PLANNED);
+    expect(peekFinish(session(), T0 - 5_000).actualSec).toBe(0);
   });
 });
 
@@ -178,5 +190,74 @@ describe("latido y lectura del registro", () => {
     expect(parseActiveSession(JSON.stringify({ ...a, plannedSec: "10" }))).toBeNull();
     expect(parseActiveSession(JSON.stringify({ ...a, plannedSec: 0 }))).toBeNull();
     expect(parseActiveSession(JSON.stringify({ ...a, hiddenAt: "x" }))).toBeNull();
+  });
+});
+
+describe("modo libre en la maquina", () => {
+  const free = (over: Partial<ActiveSession> = {}) =>
+    session({ timerType: "FREE", plannedSec: FREE_CAP_SEC, ...over });
+
+  it("el tope de una sesion libre es el del servidor: 7200 s", () => {
+    expect(FREE_CAP_SEC).toBe(7200);
+  });
+
+  it("cuenta con marcas de tiempo: un salto sin ticks da el transcurrido exacto", () => {
+    expect(elapsedMs(free(), T0 + 20 * 60_000)).toBe(20 * 60_000);
+  });
+
+  it("a las 2 horas exactas se completa sola, con 7200 s", () => {
+    expect(evaluate(free(), T0 + 7_200_000 - 1, { visible: true })).toEqual({ kind: "running" });
+    expect(evaluate(free(), T0 + 7_200_000, { visible: true })).toEqual({ kind: "completed", actualSec: 7200 });
+    expect(evaluate(free(), T0 + 9 * 3_600_000, { visible: true })).toEqual({ kind: "completed", actualSec: 7200 });
+  });
+
+  it("4:59 no alcanza y 5:00 si", () => {
+    expect(peekFinish(free(), T0 + 299_000)).toEqual({ actualSec: 299, enough: false });
+    expect(peekFinish(free(), T0 + 300_000)).toEqual({ actualSec: 300, enough: true });
+  });
+
+  it("la gracia no cambia: 15 000 ms siguen validos y mas de 15 000 invalidan con los segundos leidos", () => {
+    const out = applyHidden(free(), T0 + 400_000);
+    expect(evaluate(out, T0 + 415_000, { visible: true })).toEqual({ kind: "running" });
+    expect(evaluate(out, T0 + 415_001, { visible: true })).toEqual({ kind: "invalidated", actualSec: 400 });
+  });
+
+  it("planned que se envia: lo programado en TIMER; max(actual, 300) en libre, sin pasar de 7200", () => {
+    expect(reportedPlannedSec(session(), 450)).toBe(PLANNED);
+    expect(reportedPlannedSec(free(), 60)).toBe(300);
+    expect(reportedPlannedSec(free(), 299)).toBe(300);
+    expect(reportedPlannedSec(free(), 300)).toBe(300);
+    expect(reportedPlannedSec(free(), 1234)).toBe(1234);
+    expect(reportedPlannedSec(free(), 7200)).toBe(7200);
+    expect(reportedPlannedSec(free(), 9000)).toBe(7200);
+  });
+});
+
+describe("registro guardado con o sin timerType", () => {
+  const raw = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      sessionId: "s",
+      bookId: "b",
+      plannedSec: 900,
+      startedAt: T0,
+      startedAtLocal: "2026-11-05T10:00:00",
+      hiddenAt: null,
+      lastSeen: T0,
+      finalSec: null,
+      ...over,
+    });
+
+  it("un registro viejo, sin timerType, se lee como TIMER", () => {
+    expect(parseActiveSession(raw())?.timerType).toBe("TIMER");
+  });
+
+  it("conserva FREE y TIMER", () => {
+    expect(parseActiveSession(raw({ timerType: "FREE", plannedSec: 7200 }))?.timerType).toBe("FREE");
+    expect(parseActiveSession(raw({ timerType: "TIMER" }))?.timerType).toBe("TIMER");
+  });
+
+  it("un modo desconocido invalida el registro: no se adivina", () => {
+    expect(parseActiveSession(raw({ timerType: "OTRO" }))).toBeNull();
+    expect(parseActiveSession(raw({ timerType: null }))).toBeNull();
   });
 });

@@ -221,13 +221,13 @@ describe("flush: rechazos del servidor", () => {
     const b = await book();
     const good = await addSession(b.id, { started_at_local: "2026-11-04T21:00:00" });
     const bad = await addSession(b.id, { started_at_local: "2026-11-05T21:00:00" });
-    const server = fakeServer({ rejectSessions: { [bad.id]: "below_50_percent" } });
+    const server = fakeServer({ rejectSessions: { [bad.id]: "duration_out_of_range" } });
     const service = serviceWith(server.fetchFn);
     const result = await service.flush();
 
-    expect(result.rejectedSessions).toEqual([{ id: bad.id, code: "below_50_percent" }]);
+    expect(result.rejectedSessions).toEqual([{ id: bad.id, code: "duration_out_of_range" }]);
     const kept = await sessions.getSession(bad.id);
-    expect(kept).toMatchObject({ sync_rejection: "below_50_percent", pending_sync: 0 });
+    expect(kept).toMatchObject({ sync_rejection: "duration_out_of_range", pending_sync: 0 });
     expect(kept?.actual_duration_sec).toBe(900); // los datos del lector siguen ahi
     expect((await sessions.getSession(good.id))?.sync_rejection).toBeNull();
 
@@ -238,9 +238,46 @@ describe("flush: rechazos del servidor", () => {
     expect(server.calls()).toBe(1);
   });
 
+  it("duration_out_of_range no bloquea la cola: las demas del lote se sincronizan y la rechazada no se reintenta", async () => {
+    const b = await book();
+    const before = await addSession(b.id, { started_at_local: "2026-11-03T21:00:00" });
+    const short = await addSession(b.id, { started_at_local: "2026-11-04T21:00:00", actual_duration_sec: 120 });
+    const after = await addSession(b.id, { started_at_local: "2026-11-05T21:00:00" });
+    const server = fakeServer({ rejectSessions: { [short.id]: "duration_out_of_range" } });
+    const service = serviceWith(server.fetchFn);
+
+    const result = await service.flush();
+    expect(result.status).toBe("synced");
+    expect(result.rejectedSessions).toEqual([{ id: short.id, code: "duration_out_of_range" }]);
+    expect(await sessions.getSession(short.id)).toMatchObject({
+      sync_rejection: "duration_out_of_range",
+      pending_sync: 0,
+    });
+    expect((await sessions.getSession(before.id))?.pending_sync).toBe(0);
+    expect((await sessions.getSession(after.id))?.pending_sync).toBe(0);
+    expect((await sessions.listPendingSessions()).length).toBe(0);
+
+    const again = await service.flush(); // nada pendiente: no se reenvia la rechazada
+    expect(again.status).toBe("nothing");
+    expect(server.calls()).toBe(1);
+
+    const later = await addSession(b.id, { started_at_local: "2026-11-06T21:00:00" });
+    await service.flush(); // una sesion nueva se envia sin arrastrar a la rechazada
+    expect((await sessions.getSession(later.id))?.pending_sync).toBe(0);
+    expect(server.calls()).toBe(2);
+  });
+
   it("cada codigo permanente de la tabla marca la sesion", async () => {
     const b = await book();
-    const codes = ["validation_error", "future_start", "book_not_found", "id_conflict", "duplicate_in_batch"];
+    const codes = [
+      "validation_error",
+      "duration_out_of_range",
+      "below_50_percent",
+      "future_start",
+      "book_not_found",
+      "id_conflict",
+      "duplicate_in_batch",
+    ];
     const rows = await Promise.all(codes.map((_, i) => addSession(b.id, { started_at_local: `2026-11-0${i + 1}T10:00:00` })));
     const map = Object.fromEntries(rows.map((r, i) => [r.id, codes[i] as string]));
     await serviceWith(fakeServer({ rejectSessions: map }).fetchFn).flush();
@@ -538,13 +575,13 @@ describe("sessionGate (puerta del chat con motivo)", () => {
 
   it("rechazo permanente de la sesion: rejected con su codigo, que solo va al registro", async () => {
     const s = await pending();
-    const server = fakeServer({ rejectSessions: { [s.id]: "below_50_percent" } });
+    const server = fakeServer({ rejectSessions: { [s.id]: "duration_out_of_range" } });
     log.warn.mockClear();
     expect(await serviceWith(server.fetchFn).sessionGate(s.id)).toEqual({
       state: "rejected",
-      code: "below_50_percent",
+      code: "duration_out_of_range",
     });
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("below_50_percent"));
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("duration_out_of_range"));
   });
 
   it("rechazo reintentable del libro (updated_at_in_future): unsynced, la sesion sigue pendiente", async () => {

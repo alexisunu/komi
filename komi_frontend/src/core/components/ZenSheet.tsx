@@ -8,6 +8,8 @@ interface ZenSheetProps {
   onClose: () => void;
   /** Falso mientras hay trabajo en curso: ni Escape, ni el velo, ni la X cierran la hoja. */
   dismissible?: boolean;
+  /** `label`: titulo pequeno en sans y un asa arriba (hojas de resumen, como el fin de sesion). */
+  titleVariant?: "heading" | "label";
   children: ReactNode;
 }
 
@@ -17,7 +19,7 @@ const ICON_SIZE = 20;
  * Hoja inferior modal (SRS 10.5): dialogo con velo, foco al titulo, Escape para cerrar y retorno
  * del foco al elemento que la abrio. El contenido y los botones los pone quien la usa.
  */
-export function ZenSheet({ title, onClose, dismissible = true, children }: ZenSheetProps) {
+export function ZenSheet({ title, onClose, dismissible = true, titleVariant = "heading", children }: ZenSheetProps) {
   const titleId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const closeRef = useRef(onClose);
@@ -43,7 +45,7 @@ export function ZenSheet({ title, onClose, dismissible = true, children }: ZenSh
   return (
     <div className="zen-sheet-backdrop" onClick={dismissible ? onClose : undefined}>
       <section
-        className="zen-sheet"
+        className={titleVariant === "label" ? "zen-sheet zen-sheet--label" : "zen-sheet"}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

@@ -119,11 +119,11 @@ describe("useFocusSession y reloadGate", () => {
     view.unmount();
   });
 
-  it("cancelar (leave) con menos del 50 % libera el bloqueo y no guarda sesion", async () => {
+  it("descartar (leave) con menos de 5 minutos libera el bloqueo y no guarda sesion", async () => {
     const { env, gate, view } = setup();
     await act(async () => hook().start(input));
     env.advance(60_000);
-    expect(hook().peekEarlyFinish()?.belowHalf).toBe(true);
+    expect(hook().peekFinish()?.enough).toBe(false);
     await act(async () => hook().leave());
     expect(gate.isBlocked()).toBe(false);
     expect(env.invalidated).toHaveLength(0);
@@ -154,12 +154,14 @@ describe("useFocusSession y reloadGate", () => {
     const first = setup();
     await act(async () => hook().start(input));
     await first.env.settle();
-    const saved = first.env.stored as ActiveSession;
+    const stored = first.env.stored as ActiveSession;
+    // La pagina murio a los 5 minutos de lectura: es lo que se ve al reabrir 20 s despues.
+    const saved = { ...stored, lastSeen: stored.startedAt + 300_000 };
     first.view.unmount();
 
     const env = createFocusEnv();
     env.stored = saved;
-    env.advance(20_000);
+    env.advance(320_000);
     const gate = createReloadGate(vi.fn());
     const view = render(<Probe env={env} gate={gate} onSession={(s) => (holder.current = s)} />);
     await flush();
@@ -178,9 +180,4 @@ describe("GracePeriodBanner", () => {
     view.unmount();
   });
 
-  it("en la variante invalidada avisa con calma y como alerta", () => {
-    const view = render(<GracePeriodBanner variant="invalidated" />);
-    expect(view.container.querySelector("[role=alert]")?.textContent).toContain("15 segundos");
-    view.unmount();
-  });
 });

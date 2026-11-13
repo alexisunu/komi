@@ -157,11 +157,19 @@ class BloomTests(SessionTestCase):
         self.assertEqual(result["book"]["status"], "BLOOMED")
         self.assertIsNotNone(result["book"]["completed_at"])
 
-    def test_blooming_with_a_short_session_is_early_valid(self):
-        response = self.post(body(self.book, current_page=264, actual_duration_sec=60))
+    def test_a_short_session_that_finishes_the_book_is_accepted(self):
+        # El cliente envia planned = max(actual, 300) cuando la sesion dura menos de 5 minutos.
+        data = body(self.book, current_page=264, planned_duration_sec=300, actual_duration_sec=60)
+        response = self.post(data)
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["session"]["session_status"], "EARLY_VALID")
+        self.assertEqual(response.json()["session"]["session_status"], "COMPLETED")
+        self.assertTrue(response.json()["just_bloomed"])
         self.assertEqual(response.json()["streak"]["current"], 1)
+
+    def test_a_short_session_that_does_not_finish_the_book_is_rejected(self):
+        data = body(self.book, current_page=263, planned_duration_sec=300, actual_duration_sec=60)
+        self.assertEqual(self.post(data).status_code, 400)
+        self.assertEqual(ReadingSession.objects.count(), 0)
 
     def test_a_bloomed_book_rejects_new_valid_sessions(self):
         self.post(body(self.book, current_page=264))
@@ -268,24 +276,60 @@ class EpubProgressTests(SessionTestCase):
 
 
 class ValidityTests(SessionTestCase):
-    def test_exactly_half_the_planned_time_is_early_valid(self):
-        response = self.post(body(self.book, actual_duration_sec=PLANNED // 2))
-        self.assertEqual(response.json()["session"]["session_status"], "EARLY_VALID")
+    # Regla unica (FA-3.3): vale el tiempo real de 5:00 a 120:00, o la sesion que termina el libro.
+    def test_exactly_five_minutes_is_accepted(self):
+        response = self.post(body(self.book, planned_duration_sec=3600, actual_duration_sec=300))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["session"]["session_status"], "COMPLETED")
         self.assertEqual(response.json()["streak"]["current"], 1)
 
-    def test_less_than_half_is_rejected_and_saves_nothing(self):
-        response = self.post(body(self.book, actual_duration_sec=PLANNED // 2 - 1))
+    def test_four_fifty_nine_is_rejected_and_saves_nothing(self):
+        response = self.post(body(self.book, planned_duration_sec=3600, actual_duration_sec=299))
         self.assertEqual(response.status_code, 400)
+        self.assertIn("actual_duration_sec", response.json())
         self.assertEqual(ReadingSession.objects.count(), 0)
         self.reload()
         self.assertEqual(self.book.progress_percentage, 0)
         self.assertEqual(self.profile.current_streak, 0)
 
-    def test_the_server_derives_the_status_from_the_durations(self):
-        early = self.post(body(self.book, actual_duration_sec=600, session_status="COMPLETED"))
-        self.assertEqual(early.json()["session"]["session_status"], "EARLY_VALID")
-        full = self.post(body(self.book, session_status="EARLY_VALID"))
-        self.assertEqual(full.json()["session"]["session_status"], "COMPLETED")
+    def test_exactly_one_hundred_twenty_minutes_is_accepted(self):
+        data = body(self.book, planned_duration_sec=7200, actual_duration_sec=7200)
+        self.assertEqual(self.post(data).status_code, 201)
+
+    def test_more_than_one_hundred_twenty_minutes_is_rejected(self):
+        for extra in (
+            {"planned_duration_sec": 7201, "actual_duration_sec": 7201},
+            {"planned_duration_sec": 7200, "actual_duration_sec": 7201},
+        ):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.post(body(self.book, **extra)).status_code, 400)
+        self.assertEqual(ReadingSession.objects.count(), 0)
+
+    def test_a_short_timer_session_of_five_minutes_or_more_is_accepted(self):
+        # Un temporizador de 15 min cortado a los 6: ya no hay regla del 50 %.
+        response = self.post(body(self.book, actual_duration_sec=360))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["session"]["session_status"], "COMPLETED")
+
+    def test_the_planned_time_is_not_the_validity_rule(self):
+        # Ni el 50 % ni el tiempo completo: COMPLETED siempre que dure 5 min o mas.
+        for actual in (300, 600, PLANNED):
+            with self.subTest(actual=actual):
+                response = self.post(body(self.book, actual_duration_sec=actual))
+                self.assertEqual(response.json()["session"]["session_status"], "COMPLETED")
+
+    def test_the_server_ignores_the_status_the_client_claims(self):
+        data = body(self.book, actual_duration_sec=600, session_status="EARLY_VALID")
+        self.assertEqual(self.post(data).json()["session"]["session_status"], "COMPLETED")
+
+    def test_planned_out_of_range_is_rejected_on_its_field(self):
+        for planned in (299, 7201):
+            with self.subTest(planned=planned):
+                response = self.post(
+                    body(self.book, planned_duration_sec=planned, actual_duration_sec=300)
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("planned_duration_sec", response.json())
 
     def test_invalidated_sessions_are_stored_without_touching_progress_or_streak(self):
         data = body(self.book, session_status="INVALIDATED_GRACE_EXPIRED", current_page=200)

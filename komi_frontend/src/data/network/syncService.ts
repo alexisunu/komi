@@ -35,6 +35,9 @@ const RETRYABLE_CODES = new Set(["updated_at_in_future"]);
 /** Permanentes (SRS 17.18): reintentar tal cual fallaria igual. */
 const PERMANENT_CODES = new Set([
   "validation_error",
+  "duration_out_of_range",
+  // Lo emitia el servidor anterior a la regla unica de duracion; sigue siendo permanente si un
+  // cliente nuevo habla con un servidor aun sin actualizar.
   "below_50_percent",
   "future_start",
   "book_not_found",
@@ -152,7 +155,7 @@ export type SyncCause = "network" | "http";
 
 /**
  * Estado de una sesion para abrir el chat. `offline` y `unsynced` se pueden reintentar;
- * `rejected` es permanente (el servidor la invalida, por ejemplo `below_50_percent`).
+ * `rejected` es permanente (el servidor la invalida, por ejemplo `duration_out_of_range`).
  */
 export type SessionGate =
   | { state: "ready" }

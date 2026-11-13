@@ -200,37 +200,88 @@ describe("evaluateSession: EPUB", () => {
   });
 });
 
-describe("evaluateSession: estado derivado de las duraciones", () => {
+describe("evaluateSession: una sola regla de duracion (FA-3.3)", () => {
   const advance = { current_page: 30 };
+  // Un temporizador de 60 min: el tiempo programado ya no decide la validez.
+  const hour = { planned_duration_sec: 3600 };
+  const code = (run: () => unknown) => {
+    try {
+      run();
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidSessionError);
+      return (error as InvalidSessionError).code;
+    }
+  };
 
   it("tiempo completo es COMPLETED aunque el cliente diga otra cosa", () => {
     const outcome = evaluateSession(book(), input({ ...advance, session_status: "EARLY_VALID" }));
     expect(outcome.status).toBe("COMPLETED");
   });
 
-  it("exactamente el 50% es EARLY_VALID (al menos, no 'mas de')", () => {
+  it("4:59 se rechaza con duration_out_of_range", () => {
+    const run = () => evaluateSession(book(), input({ ...advance, ...hour, actual_duration_sec: 299 }));
+    expect(code(run)).toBe("duration_out_of_range");
+  });
+
+  it("5:00 exactos se aceptan y quedan COMPLETED", () => {
+    const outcome = evaluateSession(book(), input({ ...advance, ...hour, actual_duration_sec: 300 }));
+    expect(outcome.status).toBe("COMPLETED");
+    expect(outcome.valid).toBe(true);
+  });
+
+  it("120:00 exactos se aceptan", () => {
     const outcome = evaluateSession(
       book(),
-      input({ ...advance, actual_duration_sec: 450, session_status: "COMPLETED" }),
+      input({ ...advance, planned_duration_sec: 7200, actual_duration_sec: 7200 }),
     );
-    expect(outcome.status).toBe("EARLY_VALID");
+    expect(outcome.status).toBe("COMPLETED");
   });
 
-  it("menos del 50% se rechaza con below_50_percent", () => {
-    try {
-      evaluateSession(book(), input({ ...advance, actual_duration_sec: 449 }));
-      expect.unreachable();
-    } catch (error) {
-      expect(error).toBeInstanceOf(InvalidSessionError);
-      expect((error as InvalidSessionError).code).toBe("below_50_percent");
-    }
+  it("mas de 120 minutos se rechaza (la validacion estructural, antes de evaluar)", () => {
+    const longer = { planned_duration_sec: 7201, actual_duration_sec: 7201 };
+    expect(code(() => validateSessionInput(input({ ...advance, ...longer })))).toBe(
+      "duration_out_of_range",
+    );
+    const over = { planned_duration_sec: 7200, actual_duration_sec: 7201 };
+    expect(() => validateSessionInput(input({ ...advance, ...over }))).toThrow(InvalidSessionError);
   });
 
-  it("menos del 50% pero llegando al 100% del libro es EARLY_VALID", () => {
+  it("un temporizador cortado a los 6 minutos de 60 vale: ya no hay regla del 50 %", () => {
+    const outcome = evaluateSession(book(), input({ ...advance, ...hour, actual_duration_sec: 360 }));
+    expect(outcome.status).toBe("COMPLETED");
+  });
+
+  it("una sesion corta que lleva el libro al 100 % vale (planned = max(actual, 300))", () => {
     const nearEnd = book({ current_page: 250, progress_percentage: 94.69 });
-    const outcome = evaluateSession(nearEnd, input({ current_page: 264, actual_duration_sec: 100 }));
-    expect(outcome.status).toBe("EARLY_VALID");
+    const short = { planned_duration_sec: 300, actual_duration_sec: 60 };
+    const outcome = evaluateSession(nearEnd, input({ current_page: 264, ...short }));
+    expect(outcome.status).toBe("COMPLETED");
     expect(outcome.justBloomed).toBe(true);
+  });
+
+  it("una sesion corta que no llega al 100 % no vale, ni a una pagina del final", () => {
+    const nearEnd = book({ current_page: 250, progress_percentage: 94.69 });
+    const short = { planned_duration_sec: 300, actual_duration_sec: 60 };
+    expect(code(() => evaluateSession(nearEnd, input({ current_page: 263, ...short })))).toBe(
+      "duration_out_of_range",
+    );
+  });
+
+  it("un libro que ya estaba al 100 % no reabre la excepcion", () => {
+    const done = book({ status: "BLOOMED", progress_percentage: 100, current_page: 264 });
+    const short = { planned_duration_sec: 300, actual_duration_sec: 60, current_page: 264 };
+    expect(() => evaluateSession(done, input(short), { acceptInactiveBook: true })).toThrow(
+      InvalidSessionError,
+    );
+  });
+
+  it("planned fuera de 5 a 120 minutos usa el mismo codigo que el servidor", () => {
+    for (const planned of [299, 7201]) {
+      expect(
+        code(() => validateSessionInput(input({ planned_duration_sec: planned, actual_duration_sec: 0 }))),
+      ).toBe("duration_out_of_range");
+    }
   });
 });
 

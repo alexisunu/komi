@@ -6,12 +6,12 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { KomiDatabase } from "./data/local_db/dexieDatabase";
-import { META_KEYS } from "./data/local_db/localMetaRepository";
+import { META_KEYS, readerPositionKey } from "./data/local_db/localMetaRepository";
 import { createLocalProfileRepository } from "./data/local_db/localProfileRepository";
 import type { LocalBook } from "./data/local_db/types";
 import { createApiClient } from "./data/network/apiClient";
 import { createReloadGate } from "./pwa/reloadGate";
-import { parseReadingProgress, PROGRESS_WRITE_MS } from "./services/readingTracker";
+import { parseReaderPosition, parseReadingProgress, PROGRESS_WRITE_MS } from "./services/readingTracker";
 import type { WakeLockService } from "./services/wakeLockService";
 import { createTestDb, fakeClock, uuid } from "./test/db";
 import { createFocusEnv, type FocusEnv } from "./test/focusEnv";
@@ -71,7 +71,7 @@ const byText = (root: ParentNode, selector: string, text: string) =>
   [...root.querySelectorAll(selector)].find((el) => el.textContent?.trim().startsWith(text)) ?? null;
 const sheet = () => document.querySelector('[role="dialog"]');
 const sheetTitle = () => sheet()?.querySelector("h2")?.textContent;
-const openButton = (root: HTMLElement) => byText(root, "button", "Abrir lector") as HTMLButtonElement;
+const openButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
 
 async function putFile(bookId: string, locations: string | null = LOCATIONS) {
   await db.epub_files.put({
@@ -88,6 +88,7 @@ async function storedProgress() {
 }
 
 interface MountOptions {
+  endChime?: { unlock: () => void; play: () => boolean };
   files?: Array<{ bookId: string; locations?: string | null }>;
   env?: FocusEnv;
   reader?: FakeReader;
@@ -122,6 +123,7 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
         gate,
         wakeLock: wakeLock as unknown as WakeLockService,
         epubReader: fake.reader,
+        ...(options.endChime ? { endChime: options.endChime as never } : {}),
         ...(options.epub ? { epub: options.epub as never } : {}),
       }}
     />,
@@ -130,10 +132,10 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
   return { root: mounted.container, env, fake, gate, wakeLock };
 }
 
-describe("Abrir lector: precondiciones", () => {
-  it("con un EPUB y su archivo, el boton dice Abrir lector y esta activo", async () => {
+describe("Comenzar lectura con un EPUB: precondiciones", () => {
+  it("con un EPUB y su archivo, el boton dice Comenzar lectura (como con un libro fisico) y esta activo", async () => {
     const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
-    expect(byText(root, "button", "Comenzar Lectura")).toBeNull();
+    expect(byText(root, "button", "Abrir lector")).toBeNull();
     expect(openButton(root).disabled).toBe(false);
   });
 
@@ -207,7 +209,7 @@ describe("sesion EPUB", () => {
     expect(root.querySelector(".epub-reader")).not.toBeNull();
     expect(root.querySelector("[role=timer]")?.textContent).toBe("15:00");
     expect((await db.epub_files.get(uuid(1)))?.locations).toBe(LOCATIONS);
-    expect(fake.inputs[0]?.locations).toBe(LOCATIONS);
+    await vi.waitFor(() => expect(fake.inputs[0]?.locations).toBe(LOCATIONS));
   });
 
   it("si el archivo desaparece justo al abrir, avisa y no inicia la sesion", async () => {
@@ -237,7 +239,7 @@ describe("sesion EPUB", () => {
     expect(gate.isBlocked()).toBe(false);
   });
 
-  it("el avance se guarda al instante la primera vez y despues cada 10 s", async () => {
+  it("la posicion se guarda en cada cambio de pagina y el extracto cada 10 s", async () => {
     const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
@@ -248,31 +250,58 @@ describe("sesion EPUB", () => {
     env.advance(3_000);
     await act(async () => fake.see({ cfi: "cfi-2", percentage: 11, text: "Segunda pagina del libro leida con calma." }));
     await settle();
-    expect((await storedProgress())?.cfi).toBe("cfi-1"); // aun no pasaron 10 s
+    // Sin esperar los 10 s ni un pagehide: si Android mata la app aqui, no se pierde la pagina.
+    expect(await storedProgress()).toMatchObject({ cfi: "cfi-2", percentage: 11 });
 
+    // Mismo lugar, texto nuevo: solo cambia el extracto, que espera su intervalo.
+    env.advance(1_000);
+    await act(async () => fake.see({ cfi: "cfi-2", percentage: 11, text: "Un parrafo que aparece sin pasar de pagina." }));
+    await settle();
+    expect((await storedProgress())?.excerpt).not.toContain("sin pasar de pagina");
     env.advance(PROGRESS_WRITE_MS);
     await settle(2_200); // el revisor de escritura corre cada 2 s
-    expect(await storedProgress()).toMatchObject({ cfi: "cfi-2", percentage: 11 });
     expect((await storedProgress())?.excerpt).toBe(
-      "Primera pagina del libro leida con calma. Segunda pagina del libro leida con calma.",
+      "Primera pagina del libro leida con calma. Segunda pagina del libro leida con calma. Un parrafo que aparece sin pasar de pagina.",
     );
   }, 15_000);
 
-  it("pagehide escribe lo pendiente sin esperar los 10 s", async () => {
+  it("pagehide escribe el extracto pendiente sin esperar los 10 s", async () => {
     const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
     await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "" }));
     await settle();
     env.advance(1_000);
-    await act(async () => fake.see({ cfi: "cfi-9", percentage: 19.5, text: "" }));
+    await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "Texto nuevo en la misma pagina de la lectura." }));
     await settle();
-    expect((await storedProgress())?.cfi).toBe("cfi-1");
+    expect((await storedProgress())?.excerpt).toBe("");
     await act(async () => {
       window.dispatchEvent(new Event("pagehide"));
     });
     await settle();
-    expect(await storedProgress()).toMatchObject({ cfi: "cfi-9", percentage: 19.5 });
+    expect((await storedProgress())?.excerpt).toContain("Texto nuevo");
+  });
+
+  it("al ocultar la pestana (visibilitychange) tambien escribe lo pendiente", async () => {
+    const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "" }));
+    await settle();
+    env.advance(1_000);
+    await act(async () => fake.see({ cfi: "cfi-1", percentage: 10, text: "Texto nuevo en la misma pagina de la lectura." }));
+    await settle();
+    expect((await storedProgress())?.excerpt).toBe("");
+    const hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    try {
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await settle();
+    } finally {
+      hidden.mockRestore();
+    }
+    expect((await storedProgress())?.excerpt).toContain("Texto nuevo");
   });
 
   it("nunca guarda un porcentaje si el lector no lo tiene (sin locations)", async () => {
@@ -284,7 +313,7 @@ describe("sesion EPUB", () => {
     const saved = await storedProgress();
     expect(saved?.cfi).toBe("cfi-1");
     expect(saved?.percentage).toBeNull();
-    expect(root.querySelector(".epub-reader__percent")).toBeNull();
+    expect(root.querySelector(".epub-reader__percent")?.textContent).not.toContain("%");
   });
 
   it("al reabrir la app con la sesion en curso reanuda en el CFI guardado y conserva el extracto", async () => {
@@ -328,7 +357,7 @@ describe("sesion EPUB", () => {
     await settle(200);
     expect(fake.handle.destroy).toHaveBeenCalled();
     // EPUB: no hay Paso 1; guarda directo y ofrece la charla.
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(sheet()?.querySelector("input")).toBeNull();
     expect((await db.sessions.toArray())[0]).toMatchObject({
       session_status: "COMPLETED",
@@ -360,7 +389,7 @@ describe("sesion EPUB", () => {
   });
 });
 
-describe("Terminé antes de tiempo en el lector", () => {
+describe("Terminar sesión en el lector", () => {
   async function startAndRead(percentage: number | null) {
     const ctx = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(ctx.root));
@@ -372,30 +401,30 @@ describe("Terminé antes de tiempo en el lector", () => {
 
   it("con el 100 % exacto del libro vale aunque falte tiempo: se guarda y el girasol florece", async () => {
     const { root } = await startAndRead(100);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle(200);
     expect(sheetTitle()).toBe("Tu girasol floreció");
-    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID" });
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 100, status: "BLOOMED" });
   });
 
   it("con 99,99 % no cuenta como terminado: pide confirmacion", async () => {
     const { root } = await startAndRead(99.99);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("no se guarda ningún avance");
+    await tap(byText(root, "button", "Terminar sesión"));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("El tiempo mínimo es 5 min");
     expect(sheetTitle()).toBe("¿Terminar sin guardar?");
   });
 
   it("sin locations (porcentaje nulo) nunca se considera terminado", async () => {
     const { root } = await startAndRead(null);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   });
 
   it("confirmar la cancelacion no guarda nada y vuelve al Dashboard", async () => {
     const { root } = await startAndRead(40);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
-    await tap(byText(document.body, "button", "Cancelar sesión"));
+    await tap(byText(root, "button", "Terminar sesión"));
+    await tap(byText(document.body, "button", "Descartar"));
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(await db.sessions.count()).toBe(0);
     expect(await db.meta.get(META_KEYS.activeSession)).toBeUndefined();
@@ -404,20 +433,129 @@ describe("Terminé antes de tiempo en el lector", () => {
   it("con el 50 % del tiempo vale sin importar el porcentaje del libro", async () => {
     const { root, env } = await startAndRead(5);
     env.advance(250_000); // 450 s de 900
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle(200);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12 });
   });
 });
 
+describe("posicion de lectura aparte del avance validado", () => {
+  const position = async (bookId: string) => (await db.meta.get(readerPositionKey(bookId)))?.value;
+
+  it("cada pagina deja la posicion guardada, sin tocar el avance del libro", async () => {
+    const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    await act(async () => fake.see({ cfi: "cfi-3", percentage: 40, text: "" }));
+    await settle();
+    expect(parseReaderPosition(await position(uuid(1)))).toBe("cfi-3");
+    await act(async () => fake.see({ cfi: "cfi-4", percentage: 41, text: "" }));
+    await settle();
+    expect(parseReaderPosition(await position(uuid(1)))).toBe("cfi-4");
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12, last_epub_cfi: null });
+  });
+
+  it("una sesion cancelada no pierde el lugar: la siguiente abre ahi y el avance sigue igual", async () => {
+    const { root, fake, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    await act(async () => fake.see({ cfi: "cfi-9", percentage: 40, text: "" }));
+    env.advance(200_000); // bajo el 50 %: se cancela
+    await tap(byText(root, "button", "Terminar sesión"));
+    await tap(byText(document.body, "button", "Descartar"));
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12, last_epub_cfi: null });
+
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs.at(-1)?.startCfi).toBe("cfi-9");
+    expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 12, last_epub_cfi: null });
+  });
+
+  it("sin posicion guardada se usa el ultimo avance validado del libro", async () => {
+    const { root, fake } = await mountApp([epubBook(1, { last_epub_cfi: "cfi-libro" })], {
+      files: [{ bookId: uuid(1) }],
+    });
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs[0]?.startCfi).toBe("cfi-libro");
+  });
+
+  it("la posicion guardada manda sobre el ultimo avance validado", async () => {
+    await db.meta.put({ key: readerPositionKey(uuid(1)), value: JSON.stringify({ cfi: "cfi-pos", updatedAt: 1 }) });
+    const { root, fake } = await mountApp([epubBook(1, { last_epub_cfi: "cfi-libro" })], {
+      files: [{ bookId: uuid(1) }],
+    });
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs[0]?.startCfi).toBe("cfi-pos");
+  });
+
+  it("la posicion de un libro no se usa en otro", async () => {
+    await db.meta.put({ key: readerPositionKey(uuid(2)), value: JSON.stringify({ cfi: "cfi-otro", updatedAt: 1 }) });
+    const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs[0]?.startCfi).toBeNull();
+  });
+
+  it("una posicion danada se ignora", async () => {
+    await db.meta.put({ key: readerPositionKey(uuid(1)), value: "{{{" });
+    const { root, fake } = await mountApp([epubBook(1, { last_epub_cfi: "cfi-libro" })], {
+      files: [{ bookId: uuid(1) }],
+    });
+    await tap(openButton(root));
+    await settle();
+    expect(fake.inputs[0]?.startCfi).toBe("cfi-libro");
+  });
+});
+
+describe("menu del lector en la app", () => {
+  it("Modo noche cambia el tema de toda la app, se guarda y el lector no se reabre", async () => {
+    const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+
+    await tap(root.querySelector('button[aria-label="Ocultar interfaz"]'));
+    await tap(root.querySelector('button[aria-label="Abrir menú"]'));
+    await tap(byText(root, "button", "Modo noche"));
+    await settle();
+
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(fake.handle.setTheme).toHaveBeenLastCalledWith(expect.objectContaining({ theme: "dark" }));
+    expect(fake.open).toHaveBeenCalledTimes(1);
+    const profile = await createLocalProfileRepository(db, fakeClock(), undefined).getProfile();
+    expect(profile?.theme_mode).toBe("dark");
+
+    // La misma accion ahora ofrece volver al dia.
+    await tap(root.querySelector('button[aria-label="Abrir menú"]'));
+    expect(byText(root, "button", "Modo día")).not.toBeNull();
+  });
+
+  it("Terminar sesion desde el menu cierra la sesion igual que el boton del pie", async () => {
+    const { root, env } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    env.advance(500_000); // mas del 50 % de los 900 s
+    await tap(root.querySelector('button[aria-label="Ocultar interfaz"]'));
+    await tap(root.querySelector('button[aria-label="Abrir menú"]'));
+    await tap(byText(root, "button", "Terminar sesión"));
+    await settle(200);
+    expect(sheetTitle()).toBe("Sesión terminada");
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
+  });
+});
+
 describe("gracia y tamano de letra en el lector", () => {
-  it("al salir muestra el aviso en el encabezado; pasados 15 s se invalida y vuelve al Dashboard", async () => {
+  it("al salir muestra el aviso flotante; pasados 15 s se invalida y vuelve al Dashboard", async () => {
     const { root, env, gate } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
+    env.advance(300_000); // 5 minutos de lectura: la invalidada se guarda
     await act(async () => env.hide());
-    expect(root.querySelector(".epub-reader__header .grace-banner")?.textContent).toContain("15 s");
+    expect(root.querySelector(".epub-reader__grace .grace-banner")?.textContent).toContain("15 s");
     env.advance(15_001);
     await act(async () => env.show());
     await settle();
@@ -427,11 +565,28 @@ describe("gracia y tamano de letra en el lector", () => {
     expect(await db.sessions.count()).toBe(1);
   });
 
+  it("invalidada con menos de 5 minutos: se avisa y vuelve al Dashboard, pero no se guarda", async () => {
+    const { root, env, gate } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    env.advance(120_000);
+    await act(async () => env.hide());
+    env.advance(15_001);
+    await act(async () => env.show());
+    await settle();
+    expect(root.querySelector(".epub-reader")).toBeNull();
+    expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+    expect(await db.sessions.count()).toBe(0);
+    expect(await db.meta.get(META_KEYS.activeSession)).toBeUndefined();
+  });
+
   it("cambiar el tamano de letra se guarda en local y se reaplica al lector abierto", async () => {
     const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
     await tap(openButton(root));
     await settle();
-    await tap(root.querySelector('[aria-label="Letra más grande"]'));
+    await tap(root.querySelector('[aria-label="Tamaño de letra"]'));
+    await tap(document.querySelector('[aria-label="20 píxeles"]'));
     expect((await db.meta.get(META_KEYS.readerFontSize))?.value).toBe(20);
     expect(fake.handle.setTheme).toHaveBeenLastCalledWith(expect.objectContaining({ fontPx: 20, theme: "light" }));
     expect(fake.open).toHaveBeenCalledTimes(1); // no se reabre el libro
@@ -443,7 +598,8 @@ describe("gracia y tamano de letra en el lector", () => {
     await tap(openButton(root));
     await settle();
     expect(fake.inputs[0]?.theme.fontPx).toBe(22);
-    expect((root.querySelector('[aria-label="Letra más grande"]') as HTMLButtonElement).disabled).toBe(true);
+    await tap(root.querySelector('[aria-label="Tamaño de letra"]'));
+    expect(document.querySelector('[aria-label="22 píxeles"]')?.getAttribute("aria-checked")).toBe("true");
   });
 
   it("ignora un tamano guardado que no es valido", async () => {
@@ -452,5 +608,46 @@ describe("gracia y tamano de letra en el lector", () => {
     await tap(openButton(root));
     await settle();
     expect(fake.inputs[0]?.theme.fontPx).toBe(18);
+  });
+
+  it("sin preferencia guardada, la interfaz del lector empieza visible", async () => {
+    const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+  });
+
+  it("ocultar la interfaz se guarda en local", async () => {
+    const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    await tap(root.querySelector('[aria-label="Ocultar interfaz"]'));
+    expect((await db.meta.get(META_KEYS.readerImmersive))?.value).toBe(true);
+  });
+
+  it("recuerda la interfaz oculta: abre oculta y el libro se abre una sola vez", async () => {
+    await db.meta.put({ key: META_KEYS.readerImmersive, value: true });
+    const { root, fake } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(root.querySelector(".epub-reader--immersive")).not.toBeNull();
+    expect(fake.open).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignora una preferencia de interfaz que no es booleana", async () => {
+    await db.meta.put({ key: META_KEYS.readerImmersive, value: "si" });
+    const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }] });
+    await tap(openButton(root));
+    await settle();
+    expect(root.querySelector(".epub-reader--immersive")).toBeNull();
+  });
+
+  it("un EPUB con temporizador no desbloquea el sonido de fin de tiempo (solo el libro fisico)", async () => {
+    const chime = { unlock: vi.fn(), play: vi.fn(() => true) };
+    const { root } = await mountApp([epubBook(1)], { files: [{ bookId: uuid(1) }], endChime: chime });
+    await tap(openButton(root));
+    await settle();
+    expect(chime.unlock).not.toHaveBeenCalled();
+    expect(chime.play).not.toHaveBeenCalled();
   });
 });

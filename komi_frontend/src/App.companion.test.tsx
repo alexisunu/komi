@@ -77,6 +77,8 @@ interface MountOptions {
   env?: FocusEnv;
   fetchFn?: typeof fetch;
   wake?: WakeService;
+  /** Libros EPUB cuyo archivo esta en el dispositivo. */
+  files?: string[];
 }
 
 async function mountApp(books: LocalBook[], options: MountOptions = {}) {
@@ -93,6 +95,15 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
     await profiles.updateProfile({ onboarding_synced: true });
   }
   for (const b of books) await db.books.put(b);
+  for (const bookId of options.files ?? []) {
+    await db.epub_files.put({
+      book_id: bookId,
+      data: new Uint8Array([1, 2, 3, 4]).buffer,
+      size_bytes: 4,
+      locations: JSON.stringify(["epubcfi(/6/2!/4/2/1:0)", "epubcfi(/6/4!/4/2/1:0)"]),
+      created_at: "2026-11-01T00:00:00.000Z",
+    });
+  }
   const fetchFn = vi.fn<typeof fetch>(options.fetchFn ?? (async () => new Response("{}", { status: 500 })));
   const api = createApiClient({ baseUrl: "https://api.komi.test", fetchFn, getProfileId: () => PROFILE });
   const reload = vi.fn();
@@ -115,13 +126,13 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
   return { root: mounted.container, env, fake, gate, reload, fetchFn };
 }
 
-const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lectura") as HTMLButtonElement;
+const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
 
 /** Lee `minutes` y termina antes de tiempo; deja la hoja abierta en el Paso 1. */
 async function finishPhysical(ctx: Awaited<ReturnType<typeof mountApp>>, advanceMs: number) {
   await tap(startButton(ctx.root));
   ctx.env.advance(advanceMs);
-  await tap(byText(ctx.root, "button", "Terminé antes de tiempo"));
+  await tap(byText(ctx.root, "button", "Terminar sesión"));
   await settle();
 }
 
@@ -336,6 +347,69 @@ describe("de la hoja a la charla", () => {
     expect(server.chatOf((await db.sessions.toArray())[0]?.id ?? "")).toMatchObject({ turn_count: 1 });
     expect(await db.reflections.toCollection().first()).toMatchObject({ turn_count: 1, is_closed: false });
     expect(ctx.gate.isBlocked()).toBe(false);
+  });
+});
+
+describe("Hablar con Komi desde el lector EPUB", () => {
+  // Con un EPUB, la puerta de la charla no llega a resolverse en este arnes (tambien ocurre en la base
+  // de la v2, sin relacion con este cambio): aqui se comprueba el cableado del lector a la hoja; el
+  // abrir la charla al aceptar el servidor lo cubre PostReadingSheet.test.tsx.
+  const epub = () => book({ format_type: "EPUB", total_pages: null, current_page: 0, progress_percentage: 12 });
+
+  async function readEpub(percentage: number, advanceMs: number) {
+    const ctx = await mountApp([epub()], { fetchFn: server.fetchFn, files: [uuid(1)] });
+    await tap(byText(ctx.root, "button", "Comenzar lectura"));
+    await settle();
+    await act(async () => ctx.fake.see({ cfi: "cfi-1", percentage, text: "" }));
+    ctx.env.advance(advanceMs);
+    await tap(ctx.root.querySelector('button[aria-label="Ocultar interfaz"]'));
+    await tap(ctx.root.querySelector('button[aria-label="Abrir menú"]'));
+    return ctx;
+  }
+
+  it("con el 50 % cumplido guarda la lectura y no hace la pregunta: la charla ya se pidio", async () => {
+    await readEpub(40, 500_000);
+    await tap(byText(document.body, "button", "Hablar con Komi"));
+    await settle(200);
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
+    expect(sheet()?.textContent).toContain("Sesión terminada");
+    expect(sheet()?.textContent).not.toContain("¿Quieres charlar");
+  });
+
+  it("Terminar sesion del mismo menu guarda y si hace la pregunta de siempre", async () => {
+    await readEpub(40, 500_000);
+    await tap(byText(document.body, "button", "Terminar sesión"));
+    await settle(200);
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
+    expect(sheet()?.textContent).toContain("¿Quieres charlar un poco");
+  });
+
+  it("la peticion de hablar no se arrastra: la siguiente sesion cerrada con Terminar sesion pregunta", async () => {
+    const ctx = await readEpub(40, 500_000);
+    await tap(byText(document.body, "button", "Hablar con Komi"));
+    await settle(200);
+    await tap(sheetButton("Por hoy no, volver al jardín"));
+    expect(ctx.root.querySelector(".dashboard")).not.toBeNull();
+    await tap(byText(ctx.root, "button", "Comenzar lectura"));
+    await settle();
+    await act(async () => ctx.fake.see({ cfi: "cfi-2", percentage: 45, text: "" }));
+    ctx.env.advance(500_000);
+    // La interfaz oculta se recuerda: la segunda sesion ya abre oculta.
+    expect(ctx.root.querySelector(".epub-reader--immersive")).not.toBeNull();
+    await tap(ctx.root.querySelector('button[aria-label="Abrir menú"]'));
+    await tap(byText(document.body, "button", "Terminar sesión"));
+    await settle(200);
+    expect(sheet()?.textContent).toContain("¿Quieres charlar un poco");
+  });
+
+  it("con menos del 50 % pide la confirmacion de siempre y no hay charla; cancelar vuelve al Dashboard", async () => {
+    const ctx = await readEpub(40, 200_000);
+    await tap(byText(document.body, "button", "Hablar con Komi"));
+    expect(sheet()?.textContent).toContain("¿Terminar sin guardar?");
+    await tap(sheetButton("Descartar"));
+    expect(ctx.root.querySelector(".dashboard")).not.toBeNull();
+    expect(await db.sessions.count()).toBe(0);
+    expect(server.startCalls()).toHaveLength(0);
   });
 });
 

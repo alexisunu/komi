@@ -1,6 +1,7 @@
 /* Pantalla de concentracion del libro fisico (CU-03). Sin navegacion inferior. Solo tokens. */
 
 .focus-timer {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -10,6 +11,16 @@
     calc(var(--space-3) + env(safe-area-inset-bottom));
   color: var(--color-text-primary);
   font-family: var(--font-sans);
+}
+
+/* Aviso de gracia: superposicion flotante arriba, como en el lector EPUB. No entra en el flujo, asi
+   que el reloj y el girasol no se mueven cuando aparece. */
+.focus-timer__grace {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + var(--space-1));
+  right: var(--screen-margin);
+  left: var(--screen-margin);
+  z-index: 8;
 }
 
 .focus-timer__canvas {
@@ -42,6 +53,15 @@
   font-size: var(--font-display-timer-size);
   line-height: var(--font-display-timer-line);
   font-weight: var(--font-display-timer-weight);
+  text-align: center;
+}
+
+/* Modo y avance del libro bajo el reloj (como el subtitulo del lector EPUB). */
+.focus-timer__mode {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-caption-size);
+  line-height: var(--font-caption-line);
   text-align: center;
 }
 

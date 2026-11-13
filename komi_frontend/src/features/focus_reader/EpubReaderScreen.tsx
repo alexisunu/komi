@@ -1,9 +1,12 @@
-// Lector ePub Zen (CU-03, paso 4). Tres bloques: encabezado (reloj sutil y tamano de letra), la
-// pagina del libro y el pie (pagina anterior, "Terminé antes de tiempo", pagina siguiente). Sin
-// navegacion inferior. El tiempo lo lleva la misma maquina que el libro fisico: el aviso de gracia
-// aparece en el encabezado cuando la pagina esta en segundo plano.
+// Lector ePub Zen (CU-03, paso 4). Tres bloques: encabezado (reloj, avance, boton de tamano de
+// letra y de ocultar), la pagina del libro y el pie (pagina anterior, "Terminar sesion", pagina
+// siguiente). Sin navegacion inferior. La interfaz se puede ocultar (SRS 10.8): queda el texto,
+// una linea de progreso de 2 px y un boton flotante que abre el menu (tambien el tercio central);
+// la preferencia (oculta o visible) la guarda quien monta la pantalla, en local.
+// El tiempo lo lleva la misma maquina que el libro fisico: el aviso de gracia es una
+// superposicion flotante arriba, visible tambien con la interfaz oculta.
 
-import { AArrowDown, AArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Ellipsis, EyeOff, Type, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { ZenPrimaryButton } from "../../core/components/ZenPrimaryButton";
 import { ZenSheet } from "../../core/components/ZenSheet";
@@ -11,16 +14,14 @@ import type { ThemeId } from "../../core/theme/colorTokens";
 import { ICON_STROKE_WIDTH } from "../../core/theme/geometryTokens";
 import type { LocalBook } from "../../data/local_db/types";
 import type { FocusSnapshot, FocusVisibilityService } from "../../services/focusVisibilityService";
-import {
-  FONT_SIZES,
-  stepFontSize,
-  type ReaderFontSize,
-} from "../../services/readerTheme";
-import { earlyFinishAllowed } from "../../services/readingTracker";
+import type { ReaderFontSize } from "../../services/readerTheme";
+import { canFinishNow } from "../../services/readingTracker";
 import type { WakeLockService } from "../../services/wakeLockService";
-import { formatClock } from "./clockFormat";
+import { sessionClock, sessionSubtitle } from "./clockFormat";
 import "./EpubReaderScreen.css";
+import { FontSizeSheet } from "./FontSizeSheet";
 import { GracePeriodBanner } from "./GracePeriodBanner";
+import { ReaderMenu } from "./ReaderMenu";
 import { useEpubReader, type EpubReaderDeps } from "./useEpubReader";
 import { useWakeLock } from "./useWakeLock";
 
@@ -31,10 +32,20 @@ export interface EpubReaderScreenProps {
   reader: EpubReaderDeps;
   wakeLock: WakeLockService;
   theme: ThemeId;
+  /** Cambia el tema de toda la app (Modo noche / Modo dia del menu). */
+  onToggleTheme: () => void;
   fontPx: ReaderFontSize;
   onFontPx: (size: ReaderFontSize) => void;
-  peekEarlyFinish: FocusVisibilityService["peekEarlyFinish"];
-  onAcceptEarly: () => void;
+  /** Interfaz oculta (SRS 10.8). La preferencia se recuerda entre sesiones; la guarda el padre. */
+  immersive: boolean;
+  onImmersive: (hidden: boolean) => void;
+  peekFinish: FocusVisibilityService["peekFinish"];
+  onFinish: () => void;
+  /**
+   * "Hablar con Komi": se avisa justo antes de aceptar el cierre para que, al guardarse la lectura,
+   * la charla se abra sola. Con menos de 5 minutos (y el libro sin terminar) no se llama: aparece el aviso.
+   */
+  onTalkRequested?: () => void;
   onCancel: () => void | Promise<void>;
 }
 
@@ -50,14 +61,20 @@ export function EpubReaderScreen({
   reader,
   wakeLock,
   theme,
+  onToggleTheme,
   fontPx,
   onFontPx,
-  peekEarlyFinish,
-  onAcceptEarly,
+  immersive,
+  onImmersive,
+  peekFinish,
+  onFinish,
+  onTalkRequested,
   onCancel,
 }: EpubReaderScreenProps) {
   const host = useRef<HTMLDivElement>(null);
   const [confirming, setConfirming] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [fontSheet, setFontSheet] = useState(false);
   const inGrace = snapshot.phase === "grace";
 
   useWakeLock(wakeLock, true);
@@ -68,59 +85,84 @@ export function EpubReaderScreen({
     sessionId: snapshot.sessionId,
     host,
     theme: { theme, fontPx, fontBaseUrl: fontBaseUrl() },
+    // Con la interfaz visible el tercio central no hace nada; oculta, abre el menu.
+    onCenterTap: () => {
+      if (immersive) setMenuOpen(true);
+    },
   });
 
-  const finishEarly = () => {
-    if (earlyFinishAllowed(peekEarlyFinish(), view.currentPercentage())) onAcceptEarly();
+  // Regla unica (FA-3.3): con 5 minutos o con el libro terminado se guarda directo; con menos, aviso.
+  const finishSession = () => {
+    if (canFinishNow(peekFinish(), view.currentPercentage())) onFinish();
     else setConfirming(true);
   };
 
-  // El tiempo siguio corriendo con la hoja abierta: puede que ya se pase del 50 %.
-  const confirmCancel = () => {
+  // Igual que Terminar sesion, sin confirmacion extra: guarda y abre la charla; con menos de
+  // 5 minutos aparece el mismo aviso.
+  const talkToKomi = () => {
+    if (canFinishNow(peekFinish(), view.currentPercentage())) {
+      onTalkRequested?.();
+      onFinish();
+    } else setConfirming(true);
+  };
+
+  // Descartar es explicito: no guarda nada aunque el tiempo siga corriendo con el aviso abierto.
+  const discard = () => {
     setConfirming(false);
-    if (earlyFinishAllowed(peekEarlyFinish(), view.currentPercentage())) onAcceptEarly();
-    else void onCancel();
+    void onCancel();
+  };
+
+  // Cada accion del menu lo cierra antes de ejecutarse.
+  const fromMenu = (action: () => void) => () => {
+    setMenuOpen(false);
+    action();
   };
 
   const unavailable = view.status === "missing" || view.status === "error";
 
   return (
-    <div className="epub-reader">
-      <header className="epub-reader__header" data-block="header">
-        <div className="epub-reader__bar">
-          <div className="epub-reader__time">
-            <output className="epub-reader__clock tabular" role="timer" aria-label="Tiempo restante">
-              {formatClock(snapshot.remainingMs)}
-            </output>
-            {view.percentage !== null && (
-              <span className="epub-reader__percent tabular" aria-label="Avance del libro">
-                {Math.floor(view.percentage)} %
-              </span>
-            )}
-          </div>
-          <div className="epub-reader__fonts" role="group" aria-label="Tamaño de letra">
-            <button
-              type="button"
-              className="epub-reader__icon"
-              aria-label="Letra más pequeña"
-              disabled={fontPx === FONT_SIZES[0]}
-              onClick={() => onFontPx(stepFontSize(fontPx, "smaller"))}
-            >
-              <AArrowDown size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="epub-reader__icon"
-              aria-label="Letra más grande"
-              disabled={fontPx === FONT_SIZES[FONT_SIZES.length - 1]}
-              onClick={() => onFontPx(stepFontSize(fontPx, "larger"))}
-            >
-              <AArrowUp size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
-            </button>
-          </div>
+    <div className={`epub-reader${immersive ? " epub-reader--immersive" : ""}`}>
+      {inGrace && (
+        <div className="epub-reader__grace">
+          <GracePeriodBanner variant="grace" graceRemainingMs={snapshot.graceRemainingMs} />
         </div>
-        {inGrace && <GracePeriodBanner variant="grace" graceRemainingMs={snapshot.graceRemainingMs} />}
-      </header>
+      )}
+      {!immersive && (
+        <header className="epub-reader__header" data-block="header">
+          <div className="epub-reader__bar">
+            <div className="epub-reader__time">
+              <output
+                className="epub-reader__clock tabular"
+                role="timer"
+                aria-label={snapshot.timerType === "FREE" ? "Tiempo leído" : "Tiempo restante"}
+              >
+                {sessionClock(snapshot)}
+              </output>
+              <span className="epub-reader__percent tabular" aria-label="Modo y avance del libro">
+                {sessionSubtitle(snapshot.timerType, view.percentage)}
+              </span>
+            </div>
+            <div className="epub-reader__actions">
+              <button
+                type="button"
+                className="epub-reader__icon epub-reader__icon--filled"
+                aria-label="Tamaño de letra"
+                onClick={() => setFontSheet(true)}
+              >
+                <Type size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="epub-reader__icon epub-reader__icon--filled"
+                aria-label="Ocultar interfaz"
+                onClick={() => onImmersive(true)}
+              >
+                <EyeOff size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </header>
+      )}
 
       <section className="epub-reader__page" data-block="page" aria-label={book.title}>
         {/* El contenedor siempre existe para que epubjs lo mida; el aviso lo tapa si falta el archivo. */}
@@ -144,40 +186,85 @@ export function EpubReaderScreen({
         )}
       </section>
 
-      <footer className="epub-reader__footer" data-block="actions">
-        <button
-          type="button"
-          className="epub-reader__icon"
-          aria-label="Página anterior"
-          disabled={view.status !== "ready"}
-          onClick={view.prev}
-        >
-          <ChevronLeft size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
-        </button>
-        <ZenPrimaryButton variant="secondary" onClick={finishEarly}>
-          Terminé antes de tiempo
-        </ZenPrimaryButton>
-        <button
-          type="button"
-          className="epub-reader__icon"
-          aria-label="Página siguiente"
-          disabled={view.status !== "ready"}
-          onClick={view.next}
-        >
-          <ChevronRight size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
-        </button>
-      </footer>
+      {!immersive && (
+        <footer className="epub-reader__footer" data-block="actions">
+          <button
+            type="button"
+            className="epub-reader__icon epub-reader__icon--outlined"
+            aria-label="Página anterior"
+            disabled={view.status !== "ready"}
+            onClick={view.prev}
+          >
+            <ChevronLeft size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+          </button>
+          <ZenPrimaryButton variant="secondary" className="epub-reader__finish" onClick={finishSession}>
+            Terminar sesión
+          </ZenPrimaryButton>
+          <button
+            type="button"
+            className="epub-reader__icon epub-reader__icon--outlined"
+            aria-label="Página siguiente"
+            disabled={view.status !== "ready"}
+            onClick={view.next}
+          >
+            <ChevronRight size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+          </button>
+        </footer>
+      )}
+
+      {immersive && (
+        <>
+          {view.percentage !== null && (
+            <div
+              className="epub-reader__progress"
+              role="progressbar"
+              aria-label="Avance del libro"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.floor(view.percentage)}
+            >
+              <div className="epub-reader__progress-fill" style={{ transform: `scaleX(${view.percentage / 100})` }} />
+            </div>
+          )}
+          <button
+            type="button"
+            className="epub-reader__float"
+            aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? (
+              <X size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+            ) : (
+              <Ellipsis size={ICON_SIZE} strokeWidth={ICON_STROKE_WIDTH} aria-hidden="true" />
+            )}
+          </button>
+          {menuOpen && (
+            <ReaderMenu
+              theme={theme}
+              onClose={() => setMenuOpen(false)}
+              onTalk={fromMenu(talkToKomi)}
+              onFinish={fromMenu(finishSession)}
+              onFontSize={fromMenu(() => setFontSheet(true))}
+              onToggleTheme={fromMenu(onToggleTheme)}
+              onShowInterface={fromMenu(() => onImmersive(false))}
+            />
+          )}
+        </>
+      )}
+
+      {fontSheet && <FontSizeSheet fontPx={fontPx} onFontPx={onFontPx} onClose={() => setFontSheet(false)} />}
 
       {confirming && (
         <ZenSheet title="¿Terminar sin guardar?" onClose={() => setConfirming(false)}>
           <p className="epub-reader__confirm-text">
-            Llevas menos de la mitad del tiempo que programaste. Si terminas ahora, la sesión se
-            cancela y no se guarda ningún avance.
+            El tiempo mínimo es 5 min. Si terminas ahora, la sesión no se guarda y no se registra
+            ningún avance.
           </p>
           <div className="epub-reader__confirm-actions">
             <ZenPrimaryButton onClick={() => setConfirming(false)}>Seguir leyendo</ZenPrimaryButton>
-            <ZenPrimaryButton variant="secondary" onClick={confirmCancel}>
-              Cancelar sesión
+            <ZenPrimaryButton variant="secondary" onClick={discard}>
+              Descartar
             </ZenPrimaryButton>
           </div>
         </ZenSheet>

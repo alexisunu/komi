@@ -120,14 +120,14 @@ async function mountApp(books: LocalBook[], options: MountOptions = {}) {
   return { root: mounted.container, env, fake, gate, reload, fetchFn };
 }
 
-const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lectura") as HTMLButtonElement;
-const openButton = (root: HTMLElement) => byText(root, "button", "Abrir lector") as HTMLButtonElement;
+const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
+const openButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
 
-/** Lee `minutes` y termina antes de tiempo; deja la hoja abierta en el Paso 1. */
+/** Lee `advanceMs` y termina la sesion; deja la hoja abierta en el Paso 1. */
 async function finishPhysical(ctx: Awaited<ReturnType<typeof mountApp>>, advanceMs: number) {
   await tap(startButton(ctx.root));
   ctx.env.advance(advanceMs);
-  await tap(byText(ctx.root, "button", "Terminé antes de tiempo"));
+  await tap(byText(ctx.root, "button", "Terminar sesión"));
   await settle();
 }
 
@@ -149,7 +149,7 @@ describe("Paso 1: la pagina se valida contra total_pages", () => {
     expect(ctx.gate.isBlocked()).toBe(true);
     // Corregir la pagina y volver a enviar guarda normalmente.
     await enterPage("90");
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.sessions.count()).toBe(1);
   });
 
@@ -182,7 +182,7 @@ describe("Paso 1: la pagina se valida contra total_pages", () => {
     });
     await settle();
     expect(await db.sessions.count()).toBe(1);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
   });
 });
 
@@ -222,17 +222,17 @@ describe("Bono de Vitalidad Solar y florecimiento", () => {
     const ctx = await mountApp([book()]);
     await finishPhysical(ctx, 600_000);
     await enterPage("299");
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(hasAura()).toBe(false);
   });
 });
 
-describe("Terminé el libro (menos del 50 % del tiempo)", () => {
+describe("Terminé el libro (menos de 5 minutos)", () => {
   async function openDialog() {
     const ctx = await mountApp([book()]);
     await tap(startButton(ctx.root));
     ctx.env.advance(200_000);
-    await tap(byText(ctx.root, "button", "Terminé antes de tiempo"));
+    await tap(byText(ctx.root, "button", "Terminar sesión"));
     return ctx;
   }
 
@@ -245,13 +245,13 @@ describe("Terminé el libro (menos del 50 % del tiempo)", () => {
     expect(sheet()?.textContent).toContain("última página (300)");
   });
 
-  it("con la ultima pagina vale: se guarda como EARLY_VALID y florece", async () => {
+  it("con la ultima pagina vale: se guarda como COMPLETED y florece", async () => {
     const ctx = await openDialog();
     await tap(sheetButton("Terminé el libro"));
     await settle();
     await enterPage("300");
     expect(sheetTitle()).toBe("Tu girasol floreció");
-    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "EARLY_VALID", actual_duration_sec: 200 });
+    expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED", actual_duration_sec: 200 });
     expect(ctx.gate.isBlocked()).toBe(false);
   });
 
@@ -271,9 +271,9 @@ describe("Terminé el libro (menos del 50 % del tiempo)", () => {
     expect(ctx.gate.isBlocked()).toBe(false);
   });
 
-  it("cancelar sigue sin guardar nada", async () => {
+  it("Descartar sigue sin guardar nada", async () => {
     const ctx = await openDialog();
-    await tap(sheetButton("Cancelar sesión"));
+    await tap(sheetButton("Descartar"));
     expect(sheet()).toBeNull();
     expect(await db.sessions.count()).toBe(0);
     expect(await storedSession()).toBeNull();
@@ -337,7 +337,7 @@ describe("la sesion no se pierde", () => {
     await tap(sheetButton("Reintentar"));
     await settle();
     add.mockRestore();
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.sessions.count()).toBe(1);
     expect(await storedSession()).toBeNull();
     expect(ctx.gate.isBlocked()).toBe(false);
@@ -353,7 +353,7 @@ describe("la sesion no se pierde", () => {
     const before = ctx.fetchFn.mock.calls.length;
     await enterPage("90");
     await settle(120);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(ctx.fetchFn.mock.calls.length).toBeGreaterThan(before);
     expect(String(ctx.fetchFn.mock.calls.at(-1)?.[0])).toContain("/profile/sync/");
     expect((await db.sessions.toArray())[0]).toMatchObject({ pending_sync: 1, sync_rejection: null });
@@ -377,7 +377,7 @@ describe("la sesion no se pierde", () => {
     const ctx = await mountApp([book()], { fetchFn: () => new Promise<Response>(() => {}) });
     await finishPhysical(ctx, 600_000);
     await enterPage("90");
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
   });
 });
 
@@ -407,7 +407,7 @@ describe("EPUB en la hoja", () => {
     await settle(320);
     await settle(200);
     expect(percentageAt).toHaveBeenCalledWith(expect.anything(), "cfi-x", '["a"]', expect.any(Function));
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 57.89, last_epub_cfi: "cfi-x" });
     expect(sheet()?.textContent).not.toContain("Bono de Vitalidad Solar");
   });
@@ -423,7 +423,7 @@ describe("EPUB en la hoja", () => {
     ctx.env.advance(900_000);
     await settle(320);
     await settle(200);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(hasAura()).toBe(false);
     expect((await db.sessions.toArray())[0]?.granted_solar_bonus).toBe(false);
   });
@@ -451,7 +451,7 @@ describe("EPUB en la hoja", () => {
     await db.meta.put({ key: META_KEYS.activeSession, value: JSON.stringify({ ...stored, finalSec: 900 }) });
     const again = await mountApp([], { env: ctx.env });
     await settle(200);
-    expect(sheetTitle()).toBe("Lectura guardada");
+    expect(sheetTitle()).toBe("Sesión terminada");
     expect(await db.books.get(uuid(1))).toMatchObject({ progress_percentage: 40 });
     expect(again.gate.isBlocked()).toBe(false);
   });

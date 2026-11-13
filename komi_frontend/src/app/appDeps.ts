@@ -5,7 +5,7 @@ import type { KomiDatabase } from "../data/local_db/dexieDatabase";
 import { getDatabase } from "../data/local_db/dexieDatabase";
 import { createLocalBookRepository, systemClock } from "../data/local_db/localBookRepository";
 import { createLocalEpubRepository } from "../data/local_db/localEpubRepository";
-import { createLocalMetaRepository, META_KEYS } from "../data/local_db/localMetaRepository";
+import { createLocalMetaRepository, META_KEYS, readerPositionKey } from "../data/local_db/localMetaRepository";
 import { createLocalProfileRepository } from "../data/local_db/localProfileRepository";
 import { createLocalReflectionRepository } from "../data/local_db/localReflectionRepository";
 import { createLocalSessionRepository } from "../data/local_db/localSessionRepository";
@@ -17,8 +17,8 @@ import { createSyncService } from "../data/network/syncService";
 import { createWakeService, type WakeService } from "../data/network/wakeService";
 import { createEpubReaderService, type EpubReaderService } from "../services/epubReaderService";
 import { createEpubService, type EpubService } from "../services/epubService";
-import { parseReadingProgress, type ReadingProgress } from "../services/readingTracker";
-import { parseActiveSession } from "../services/focusSessionMachine";
+import { parseReaderPosition, parseReadingProgress, type ReadingProgress } from "../services/readingTracker";
+import { parseActiveSession, reportedPlannedSec } from "../services/focusSessionMachine";
 import {
   createFocusVisibilityService,
   type FocusDocument,
@@ -31,6 +31,7 @@ import { createPlantBookService } from "../services/plantBookService";
 import { createSeedService } from "../services/seedService";
 import { createCompanionService } from "../services/companionService";
 import { createPostReadingService } from "../services/postReadingService";
+import { createEndChimeService, type EndChimeService } from "../services/endChime";
 
 export interface AppOptions {
   db?: KomiDatabase;
@@ -43,6 +44,8 @@ export interface AppOptions {
   focusEnv?: { now: () => number; doc: FocusDocument; win: FocusWindow };
   /** Solo para pruebas: pantalla encendida y puerta de recarga propios. */
   wakeLock?: WakeLockService;
+  /** Solo para pruebas: sonido de fin de tiempo propio (en jsdom no hay Web Audio). */
+  endChime?: EndChimeService;
   gate?: ReloadGate;
   /** Solo para pruebas: despertar del servidor propio (por defecto sondea GET /health/). */
   wake?: WakeService;
@@ -94,7 +97,7 @@ export function createAppDeps(options: AppOptions = {}) {
       await sessions.completeSession({
         id: session.sessionId,
         book_id: session.bookId,
-        planned_duration_sec: session.plannedSec,
+        planned_duration_sec: reportedPlannedSec(session, actualSec),
         actual_duration_sec: actualSec,
         started_at_local: session.startedAtLocal,
         session_status: "INVALIDATED_GRACE_EXPIRED",
@@ -116,6 +119,9 @@ export function createAppDeps(options: AppOptions = {}) {
         load: async () => parseReadingProgress(await meta.get(META_KEYS.activeSessionProgress)),
         save: (progress: ReadingProgress) =>
           meta.set(META_KEYS.activeSessionProgress, JSON.stringify(progress)),
+        loadPosition: async (bookId: string) => parseReaderPosition(await meta.get(readerPositionKey(bookId))),
+        savePosition: (bookId: string, cfi: string) =>
+          meta.set(readerPositionKey(bookId), JSON.stringify({ cfi, updatedAt: focusNow() })),
       },
       now: focusNow,
     },
@@ -143,6 +149,8 @@ export function createAppDeps(options: AppOptions = {}) {
     restore: createRestoreService({ db, api, wake }),
     /** Pantalla encendida durante la sesion (SRS 19.12). */
     wakeLock: options.wakeLock ?? createWakeLockService(navigator, document),
+    /** Sonido de fin de tiempo del libro fisico con temporizador (se desbloquea al comenzar la lectura). */
+    endChime: options.endChime ?? createEndChimeService(),
     /** Puerta de recarga del Service Worker: se bloquea mientras dura la sesion. */
     gate: options.gate ?? reloadGate,
     books,

@@ -13,20 +13,23 @@ import {
   isUuid,
   MAX_PLANNED_SEC,
   MIN_PLANNED_SEC,
+  MIN_VALID_SEC,
 } from "../data/local_db/sessionRules";
 import {
   applyFinal,
   applyHeartbeat,
   applyHidden,
   applyVisible,
-  earlyFinish,
+  peekFinish,
   elapsedMs,
   evaluate,
   GRACE_MS,
   heartbeatDue,
   remainingMs,
+  FREE_CAP_SEC,
   type ActiveSession,
   type Resolution,
+  type TimerType,
 } from "./focusSessionMachine";
 
 export type FocusPhase = "running" | "grace" | "completed" | "early" | "invalidated";
@@ -37,6 +40,7 @@ export interface FocusSnapshot {
   remainingMs: number;
   elapsedMs: number;
   plannedSec: number;
+  timerType: TimerType;
   /** Solo en `grace`: lo que queda de los 15 s de esta salida. */
   graceRemainingMs: number;
   /** Segundos finales cuando la fase ya es terminal. */
@@ -71,11 +75,11 @@ export interface FocusServiceDeps {
   saveInvalidated: (session: ActiveSession, actualSec: number) => Promise<void>;
 }
 
-export interface StartInput {
-  sessionId: string;
-  bookId: string;
-  plannedSec: number;
-}
+/** Temporizador (con minutos programados) o modo libre (sin tiempo programado, con tope de 120 min). */
+export type StartInput = { sessionId: string; bookId: string } & (
+  | { timerType?: "TIMER"; plannedSec: number }
+  | { timerType: "FREE"; plannedSec?: never }
+);
 
 export function createFocusVisibilityService(deps: FocusServiceDeps) {
   const { now, doc, win, store } = deps;
@@ -114,6 +118,7 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
       elapsedMs: elapsed,
       remainingMs: terminal ? 0 : remainingMs(record, at),
       plannedSec: record.plannedSec,
+      timerType: record.timerType,
       graceRemainingMs: resolution.kind === "grace" ? resolution.graceRemainingMs : 0,
       actualSec: terminal ? resolution.actualSec : null,
       sessionId: record.sessionId,
@@ -169,7 +174,8 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
 
   async function saveInvalidated(record: ActiveSession, actualSec: number): Promise<void> {
     try {
-      await deps.saveInvalidated(record, actualSec);
+      // Una invalidada de menos de 5 minutos no se guarda (regla unica de duracion, FA-3.3).
+      if (actualSec >= MIN_VALID_SEC) await deps.saveInvalidated(record, actualSec);
       await enqueue(() => store.clear());
     } catch {
       // Se conserva el registro: `recover()` volvera a intentarlo al reabrir.
@@ -215,10 +221,12 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
       if (!isUuid(input.sessionId)) {
         throw new InvalidSessionError("id", "El id de la sesion debe ser un UUID.");
       }
+      const timerType: TimerType = input.timerType === "FREE" ? "FREE" : "TIMER";
+      const plannedSec = timerType === "FREE" ? FREE_CAP_SEC : (input.plannedSec as number);
       if (
-        !Number.isInteger(input.plannedSec) ||
-        input.plannedSec < MIN_PLANNED_SEC ||
-        input.plannedSec > MAX_PLANNED_SEC
+        !Number.isInteger(plannedSec) ||
+        plannedSec < MIN_PLANNED_SEC ||
+        plannedSec > MAX_PLANNED_SEC
       ) {
         throw new InvalidSessionError(
           "planned_duration_sec",
@@ -230,7 +238,8 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
       active = {
         sessionId: input.sessionId,
         bookId: input.bookId,
-        plannedSec: input.plannedSec,
+        plannedSec,
+        timerType,
         startedAt: at,
         startedAtLocal: formatLocalWallClock(new Date(at)),
         hiddenAt: null,
@@ -277,16 +286,16 @@ export function createFocusVisibilityService(deps: FocusServiceDeps) {
       return () => listeners.delete(listener);
     },
 
-    /** Segundos y si queda por debajo del 50 %, sin cambiar nada (FA-3.3). */
-    peekEarlyFinish(): { actualSec: number; belowHalf: boolean } | null {
-      return active ? earlyFinish(active, now()) : null;
+    /** Segundos y si ya hay 5 minutos, sin cambiar nada (FA-3.3). */
+    peekFinish(): { actualSec: number; enough: boolean } | null {
+      return active ? peekFinish(active, now()) : null;
     },
 
-    /** Cierra la sesion como valida y anticipada (o 100 % del libro). Queda guardada para el cierre. */
-    acceptEarlyFinish(): FocusSnapshot | null {
+    /** Cierra la sesion con el tiempo leido hasta ahora. Queda guardada para el cierre. */
+    acceptFinish(): FocusSnapshot | null {
       if (!active || active.finalSec !== null) return cached;
       const at = now();
-      const { actualSec } = earlyFinish(active, at);
+      const { actualSec } = peekFinish(active, at);
       active = applyFinal(active, actualSec);
       const resolution: Resolution = {
         kind: actualSec >= active.plannedSec ? "completed" : "early",

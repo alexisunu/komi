@@ -31,14 +31,14 @@ MAX_UPDATED_AT_LEAD = timedelta(minutes=5)
 # Codigos de rechazo. La accion del cliente de cada uno esta en el SRS (seccion 17, punto 18).
 VALIDATION_ERROR = "validation_error"
 FUTURE_START = "future_start"
-BELOW_50_PERCENT = "below_50_percent"
+DURATION_OUT_OF_RANGE = "duration_out_of_range"
 BOOK_NOT_FOUND = "book_not_found"
 BOOK_REJECTED = "book_rejected"
 ID_CONFLICT = "id_conflict"
 DUPLICATE_IN_BATCH = "duplicate_in_batch"
 UPDATED_AT_IN_FUTURE = "updated_at_in_future"
 
-_SPECIFIC_CODES = {FUTURE_START, BELOW_50_PERCENT}
+_SPECIFIC_CODES = {FUTURE_START, DURATION_OUT_OF_RANGE}
 _TWO_PLACES = Decimal("0.01")
 
 
@@ -208,7 +208,7 @@ def _snapshot_baselines(profile: ReaderProfile, books: list, sessions: list) -> 
 
     El cliente envia el libro con su estado final junto a sus sesiones y los libros se fusionan
     antes de evaluar las sesiones: sin esta foto, `previous` seria el progreso final del lote y
-    una sesion corta que cierra el libro se rechazaria como `below_50_percent`. Un libro que no
+    una sesion corta que cierra el libro se rechazaria por `duration_out_of_range`. Un libro que no
     existe todavia parte de 0. El valor avanza por cada sesion valida (reproduccion cronologica).
     """
     ids: set[str] = set()

@@ -8,7 +8,7 @@ export type LocalErrorCode =
   | "invalid_book"
   | "invalid_profile"
   | "invalid_session"
-  | "below_50_percent"
+  | "duration_out_of_range"
   | "book_fallow"
   | "book_bloomed"
   | "restore_other_profile";
@@ -73,7 +73,7 @@ export class InvalidProfileError extends KomiLocalError {
 }
 
 export class InvalidSessionError extends KomiLocalError {
-  constructor(field: string, message: string, code: "invalid_session" | "below_50_percent" = "invalid_session") {
+  constructor(field: string, message: string, code: "invalid_session" | "duration_out_of_range" = "invalid_session") {
     super(code, message, field);
     this.name = "InvalidSessionError";
   }

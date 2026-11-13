@@ -16,6 +16,8 @@ import type { FormatType, LocalBook, SessionStatus } from "./types";
 
 export const MIN_PLANNED_SEC = 5 * 60;
 export const MAX_PLANNED_SEC = 120 * 60;
+/** Tiempo real minimo de una sesion valida (SRS FA-3.3): igual que el servidor. */
+export const MIN_VALID_SEC = MIN_PLANNED_SEC;
 export const MAX_EXCERPT_CHARS = 20_000;
 export const MAX_CFI_CHARS = 2_000;
 
@@ -84,7 +86,11 @@ export function validateSessionInput(input: CompleteSessionInput): void {
     input.planned_duration_sec < MIN_PLANNED_SEC ||
     input.planned_duration_sec > MAX_PLANNED_SEC
   ) {
-    fail("planned_duration_sec", "La duracion programada va de 5 a 120 minutos.");
+    throw new InvalidSessionError(
+      "planned_duration_sec",
+      "La duracion va de 5 a 120 minutos.",
+      "duration_out_of_range",
+    );
   }
   if (!Number.isInteger(input.actual_duration_sec) || input.actual_duration_sec < 0) {
     fail("actual_duration_sec", "La duracion real debe ser un entero de cero o mas.");
@@ -145,20 +151,23 @@ export function grantsSolarBonus(
   return format === "PHYSICAL" && valid && deltaHundredths >= 0 && deltaHundredths < 100;
 }
 
+/**
+ * Una sola regla para el temporizador y el modo libre (FA-3.3), igual que `_validated_status` del
+ * servidor: vale el tiempo real de 5:00 a 120:00, o la sesion que lleva el libro al 100 %. El
+ * tope lo impone `validateSessionInput` (`planned` hasta 7200 y `actual` no lo supera). Toda sesion
+ * valida queda COMPLETED: EARLY_VALID ya no se emite.
+ */
 function deriveStatus(
   input: CompleteSessionInput,
   newHundredths: number,
   previousHundredths: number,
 ): SessionStatus {
-  const { actual_duration_sec: actual, planned_duration_sec: planned } = input;
-  if (actual >= planned) return "COMPLETED";
-  // Al menos el 50% (>=) o llegar al 100% del libro en esta sesion (RF-02, FA-3.3).
   const reachedFull = newHundredths >= FULL_HUNDREDTHS && previousHundredths < FULL_HUNDREDTHS;
-  if (actual * 2 >= planned || reachedFull) return "EARLY_VALID";
+  if (input.actual_duration_sec >= MIN_VALID_SEC || reachedFull) return "COMPLETED";
   throw new InvalidSessionError(
-    "session_status",
-    "La sesion no alcanza el 50% de la duracion programada.",
-    "below_50_percent",
+    "actual_duration_sec",
+    "La sesion dura menos de 5 minutos y no termina el libro.",
+    "duration_out_of_range",
   );
 }
 

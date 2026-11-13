@@ -2,6 +2,7 @@
    El texto del libro vive en un iframe: sus colores salen de services/readerTheme.ts. */
 
 .epub-reader {
+  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -27,26 +28,25 @@
 
 .epub-reader__time {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
+  flex-direction: column;
 }
 
 .epub-reader__clock {
-  color: var(--color-text-secondary);
-  font-size: var(--font-body-size);
-  line-height: var(--font-body-line);
+  color: var(--color-text-primary);
+  font-size: var(--font-h1-size);
+  line-height: var(--font-h1-line);
   font-weight: 600;
 }
 
 .epub-reader__percent {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-size: var(--font-caption-size);
   line-height: var(--font-caption-line);
 }
 
-.epub-reader__fonts {
+.epub-reader__actions {
   display: flex;
-  gap: 0;
+  gap: var(--space-1);
 }
 
 .epub-reader__icon {
@@ -63,6 +63,24 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: color var(--transition-ui);
+}
+
+/* Circulo con borde (pie, mockup 02). */
+.epub-reader__icon--outlined {
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+}
+
+/* Terminar sesion: contorno, ocupa el espacio entre las flechas. */
+.epub-reader__finish {
+  flex: 1;
+  color: var(--color-text-primary);
+}
+
+/* Circulo con fondo (encabezado, mockup 02). */
+.epub-reader__icon--filled {
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
 }
 
 .epub-reader__icon:disabled {
@@ -84,6 +102,7 @@
 }
 
 .epub-reader__host {
+  position: relative;
   width: 100%;
   height: 100%;
 }
@@ -142,4 +161,106 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+/* Aviso de gracia: superposicion flotante arriba. No entra en el flujo (no aplasta el texto) y se
+   ve tambien con la interfaz oculta. */
+.epub-reader__grace {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + var(--space-1));
+  right: var(--screen-margin);
+  left: var(--screen-margin);
+  z-index: 8;
+}
+
+/* Interfaz oculta: solo el texto, una linea de progreso y un boton flotante. */
+.epub-reader--immersive .epub-reader__page {
+  padding-top: var(--space-3);
+  padding-bottom: var(--touch-target);
+}
+
+.epub-reader__progress {
+  position: absolute;
+  right: 0;
+  bottom: env(safe-area-inset-bottom);
+  left: 0;
+  height: 2px;
+  background: var(--color-bg-surface);
+  pointer-events: none;
+}
+
+.epub-reader__progress-fill {
+  width: 100%;
+  height: 100%;
+  background: var(--color-accent-secondary);
+  transform-origin: left center;
+  transition: transform var(--transition-ui);
+}
+
+.epub-reader__float {
+  position: absolute;
+  right: var(--screen-margin);
+  bottom: calc(env(safe-area-inset-bottom) + var(--space-1));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  z-index: 9;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.epub-reader__float:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-text-primary);
+  outline-offset: var(--focus-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .epub-reader__progress-fill {
+    transition: none;
+  }
+}
+
+/* Giro de pagina (mockup 06). La capa recorta (overflow hidden) y no recibe toques. Dentro: un velo del
+   color de fondo que viaja con la pagina que sale y la deja al 60 % de opacidad, y un borde con sombra
+   suave (texto al 14 %, via opacity: sin rgba ni hex) en el canto de la pagina que entra. Solo se animan
+   transform y opacity (los anima el servicio, 320 ms ease-out); la sombra es estatica. */
+.epub-reader__turn-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.epub-reader__turn-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--color-bg-primary);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.epub-reader__turn-edge {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  box-shadow: 0 0 20px var(--color-text-primary);
+  opacity: 0.14;
+  will-change: transform;
+}
+
+.epub-reader__turn-edge--after {
+  left: 100%;
+}
+
+.epub-reader__turn-edge--before {
+  right: 100%;
 }

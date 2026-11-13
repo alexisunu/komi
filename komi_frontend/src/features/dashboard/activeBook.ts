@@ -29,6 +29,20 @@ export function resolveActiveBook(
   return pickActiveBook(books);
 }
 
+/** Linea de autor del Dashboard (mockup 07): "Autor · EPUB" o "Autor · Físico". */
+export function dashboardAuthorLine(book: LocalBook): string {
+  return `${book.author} · ${book.format_type === "PHYSICAL" ? "Físico" : "EPUB"}`;
+}
+
+/** Progreso del Dashboard (mockup 07): "33 % leído"; con paginas, "Pág. 84 de 250 · 33 % leído". */
+export function dashboardProgressLabel(book: LocalBook): string {
+  const read = `${wholePercent(book.progress_percentage)} % leído`;
+  if (book.format_type === "PHYSICAL" && book.total_pages !== null) {
+    return `Pág. ${book.current_page} de ${book.total_pages} · ${read}`;
+  }
+  return read;
+}
+
 /** "Pág. 84 de 250 — 33%" para libros fisicos; "33%" para EPUB (SRS 6, zona 2). */
 export function progressLabel(book: LocalBook): string {
   const percent = `${wholePercent(book.progress_percentage)}%`;

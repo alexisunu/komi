@@ -146,7 +146,7 @@ describe("arranque", () => {
     expect(root.querySelector(".app-notice")).toBeNull();
   });
 
-  it("con perfil va directo al Dashboard con la meta, la racha y el libro", async () => {
+  it("con perfil va directo al Dashboard con la meta y el libro; la racha esta oculta pero guardada", async () => {
     await seedProfile(30);
     await createLocalMetaRepository(db).set(META_KEYS.streakCurrent, 4);
     await createLocalBookRepository(db, fakeClock()).createBook({
@@ -157,7 +157,8 @@ describe("arranque", () => {
     } as never);
     const root = mountApp(okFetch());
     await settle();
-    expect(root.textContent).toContain("4 días seguidos");
+    expect(root.textContent).not.toContain("días seguidos"); // oculta en la v2 (bandera apagada)
+    expect((await db.meta.get(META_KEYS.streakCurrent))?.value).toBe(4);
     expect(root.querySelector("output")?.textContent).toBe("30:00");
     expect(root.querySelector("h1")?.textContent).toBe("Walden");
   });
@@ -192,7 +193,7 @@ describe("flujo completo", () => {
 
     expect(root.querySelector("h1")?.textContent).toBe("Tu primera semilla te espera");
     const labels = [...root.querySelectorAll(".bottom-nav__label")].map((l) => l.textContent);
-    expect(labels).toEqual(["Lectura", "Mi Jardín", "Estadísticas"]);
+    expect(labels).toEqual(["Lectura", "Mi Jardín"]);
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [url, init] = fetchFn.mock.calls[0] ?? [];
@@ -288,7 +289,7 @@ describe("datos secundarios y sincronizacion al abrir", () => {
     expect(root.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain("barbecho");
   });
 
-  it("si la racha no se puede leer, el Dashboard muestra 'Sin racha aún'", async () => {
+  it("si la racha no se puede leer, el Dashboard carga igual (sin badge, con la marca Komi)", async () => {
     await seedProfile();
     const real = db.meta.get.bind(db.meta);
     vi.spyOn(db.meta, "get").mockImplementation(((key: string) => {
@@ -297,7 +298,8 @@ describe("datos secundarios y sincronizacion al abrir", () => {
     }) as never);
     const root = mountApp(okFetch());
     await settle();
-    expect(root.textContent).toContain("Sin racha aún");
+    expect(root.textContent).not.toContain("Sin racha");
+    expect(root.querySelector(".dashboard__brand")?.textContent).toBe("Komi");
     expect(root.querySelector("output")).not.toBeNull();
   });
 });
@@ -346,9 +348,7 @@ describe("navegacion y bloques", () => {
     await tap(navItem(root, "Mi Jardín"));
     expect(root.querySelector("h1")?.textContent).toBe("Mi Jardín");
     expect(blocks()).toBeLessThanOrEqual(4);
-    await tap(navItem(root, "Estadísticas"));
-    expect(root.querySelector("h1")?.textContent).toBe("Estadísticas");
-    expect(blocks()).toBeLessThanOrEqual(4);
+    expect(navItem(root, "Estadísticas")).toBeUndefined(); // oculta en la v2 (bandera apagada)
     await tap(navItem(root, "Lectura"));
     expect(root.querySelector("output")).not.toBeNull();
     expect(navItem(root, "Lectura")?.getAttribute("aria-current")).toBe("page");
@@ -359,12 +359,11 @@ describe("navegacion y bloques", () => {
     const root = mountApp(okFetch());
     await settle();
     const texts: string[] = [];
-    for (const label of ["Mi Jardín", "Estadísticas", "Lectura"]) {
+    for (const label of ["Mi Jardín", "Lectura"]) {
       await tap(navItem(root, label));
       texts.push(root.textContent ?? "");
     }
     for (const t of texts) expect(t).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(texts.join(" ")).toContain("Todavía no hay semillas plantadas");
-    expect(texts.join(" ")).toContain("aparecerán aquí");
   });
 });

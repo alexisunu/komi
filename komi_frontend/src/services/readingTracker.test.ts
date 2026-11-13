@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createProgressWriter,
-  earlyFinishAllowed,
+  canFinishNow,
   createReadingTracker,
   isFinished,
   MAX_EXCERPT_CHARS,
+  parseReaderPosition,
   parseReadingProgress,
+  pickResumeCfi,
   PROGRESS_WRITE_MS,
   toPercentage,
   type ReadingProgress,
@@ -47,20 +49,20 @@ describe("toPercentage e isFinished (borde del 100 %)", () => {
   });
 });
 
-describe("earlyFinishAllowed (FA-3.3)", () => {
-  it("el 50 % del tiempo basta sin importar el libro", () => {
-    expect(earlyFinishAllowed({ belowHalf: false }, 5)).toBe(true);
-    expect(earlyFinishAllowed({ belowHalf: false }, null)).toBe(true);
+describe("canFinishNow (FA-3.3)", () => {
+  it("5 minutos bastan sin importar el libro", () => {
+    expect(canFinishNow({ enough: true }, 5)).toBe(true);
+    expect(canFinishNow({ enough: true }, null)).toBe(true);
   });
 
-  it("bajo el 50 % solo vale con el libro terminado (100 exacto)", () => {
-    expect(earlyFinishAllowed({ belowHalf: true }, 100)).toBe(true);
-    expect(earlyFinishAllowed({ belowHalf: true }, 99.99)).toBe(false);
-    expect(earlyFinishAllowed({ belowHalf: true }, null)).toBe(false);
+  it("con menos de 5 minutos solo vale con el libro terminado (100 exacto)", () => {
+    expect(canFinishNow({ enough: false }, 100)).toBe(true);
+    expect(canFinishNow({ enough: false }, 99.99)).toBe(false);
+    expect(canFinishNow({ enough: false }, null)).toBe(false);
   });
 
   it("sin sesion no hay nada que aceptar", () => {
-    expect(earlyFinishAllowed(null, 100)).toBe(false);
+    expect(canFinishNow(null, 100)).toBe(false);
   });
 });
 
@@ -168,16 +170,16 @@ describe("parseReadingProgress", () => {
   });
 });
 
-describe("createProgressWriter (una escritura cada ~10 s)", () => {
+describe("createProgressWriter (posicion al instante, extracto cada ~10 s)", () => {
   function setup() {
     let clock = 100_000;
     const save = vi.fn<(progress: ReadingProgress) => Promise<void>>(async () => {});
     const writer = createProgressWriter({ now: () => clock, save });
-    const progress = (n: number): ReadingProgress => ({
+    const progress = (n: number, excerpt = ""): ReadingProgress => ({
       sessionId: "s",
       cfi: `c${n}`,
       percentage: n,
-      excerpt: "",
+      excerpt,
       updatedAt: n,
     });
     return { writer, save, progress, advance: (ms: number) => (clock += ms) };
@@ -189,27 +191,48 @@ describe("createProgressWriter (una escritura cada ~10 s)", () => {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  it("antes de 10 s no vuelve a escribir y guarda solo lo ultimo", async () => {
+  it("cada cambio de pagina (CFI o porcentaje) se escribe al instante, sin esperar el intervalo", async () => {
+    const { writer, save, progress } = setup();
+    await writer.update(progress(1));
+    await writer.update(progress(2));
+    await writer.update(progress(3));
+    expect(save.mock.calls.map((call) => call[0].cfi)).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("un cambio que no mueve la posicion (solo el extracto) espera 10 s y guarda lo ultimo", async () => {
     const { writer, save, progress, advance } = setup();
     await writer.update(progress(1));
     advance(PROGRESS_WRITE_MS - 1);
-    await writer.update(progress(2));
-    await writer.update(progress(3));
+    await writer.update(progress(1, "uno"));
+    await writer.update(progress(1, "uno dos"));
     expect(save).toHaveBeenCalledTimes(1);
     advance(1);
     await writer.flushIfDue();
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save.mock.calls[1]?.[0].cfi).toBe("c3");
+    expect(save.mock.calls[1]?.[0].excerpt).toBe("uno dos");
   });
 
-  it("flush escribe ya, sin esperar el intervalo (pagehide)", async () => {
+  it("flush escribe ya lo pendiente, sin esperar el intervalo (pagehide, pestana oculta)", async () => {
     const { writer, save, progress } = setup();
     await writer.update(progress(1));
-    await writer.update(progress(2));
+    await writer.update(progress(1, "texto nuevo"));
     expect(save).toHaveBeenCalledTimes(1);
     await writer.flush();
     expect(save).toHaveBeenCalledTimes(2);
-    expect(save.mock.calls[1]?.[0].cfi).toBe("c2");
+    expect(save.mock.calls[1]?.[0].excerpt).toBe("texto nuevo");
+  });
+
+  it("las escrituras salen en orden aunque la primera tarde", async () => {
+    const { writer, save, progress } = setup();
+    let release: () => void = () => {};
+    save.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)));
+    const first = writer.update(progress(1));
+    const second = writer.update(progress(2));
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls.map((call) => call[0].cfi)).toEqual(["c1"]); // la segunda espera a la primera
+    release();
+    await Promise.all([first, second]);
+    expect(save.mock.calls.map((call) => call[0].cfi)).toEqual(["c1", "c2"]);
   });
 
   it("sin nada pendiente no escribe", async () => {
@@ -231,5 +254,25 @@ describe("createProgressWriter (una escritura cada ~10 s)", () => {
     await writer.flushIfDue();
     expect(save).toHaveBeenCalledTimes(2);
     expect(save.mock.calls[1]?.[0].cfi).toBe("c1");
+  });
+});
+
+describe("posicion de lectura aparte del avance", () => {
+  it("parseReaderPosition lee el CFI y descarta basura", () => {
+    expect(parseReaderPosition(JSON.stringify({ cfi: "epubcfi(/6/4)", updatedAt: 1 }))).toBe("epubcfi(/6/4)");
+    expect(parseReaderPosition(undefined)).toBeNull();
+    expect(parseReaderPosition("no es json")).toBeNull();
+    expect(parseReaderPosition(JSON.stringify(null))).toBeNull();
+    expect(parseReaderPosition(JSON.stringify({ cfi: "" }))).toBeNull();
+    expect(parseReaderPosition(JSON.stringify({ cfi: 7 }))).toBeNull();
+    expect(parseReaderPosition(JSON.stringify({ cfi: "x".repeat(5_000) }))).toBeNull();
+  });
+
+  it("pickResumeCfi: sesion en curso, luego posicion guardada, luego el ultimo avance validado", () => {
+    expect(pickResumeCfi({ session: "s", saved: "p", book: "b" })).toBe("s");
+    expect(pickResumeCfi({ session: null, saved: "p", book: "b" })).toBe("p");
+    expect(pickResumeCfi({ session: null, saved: null, book: "b" })).toBe("b");
+    expect(pickResumeCfi({ session: null, saved: null, book: null })).toBeNull();
+    expect(pickResumeCfi({ session: "", saved: "", book: "b" })).toBe("b");
   });
 });

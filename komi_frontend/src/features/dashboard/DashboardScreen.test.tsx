@@ -65,16 +65,25 @@ describe("zonas", () => {
     ]);
   });
 
-  it("el header muestra la racha y el boton de ajustes", () => {
+  it("con la racha oculta (la v2) el header muestra la marca Komi y el boton de ajustes, sin racha", () => {
     const root = mount({ streakDays: 5 });
-    expect(root.textContent).toContain("5 días seguidos");
+    expect(root.querySelector(".dashboard__brand")?.textContent).toBe("Komi");
+    expect(root.textContent).not.toContain("días seguidos");
+    expect(root.textContent).not.toContain("Sin racha");
     expect(byLabel(root, "Ajustes")).not.toBeNull();
   });
 
-  it("racha 0 y 1", () => {
-    expect(mount({ streakDays: 0 }).textContent).toContain("Sin racha aún");
+  it("con la bandera encendida el header vuelve a mostrar la racha en lugar de la marca", () => {
+    const root = mount({ streakDays: 5, showStreak: true });
+    expect(root.textContent).toContain("5 días seguidos");
+    expect(root.querySelector(".dashboard__brand")).toBeNull();
+    expect(byLabel(root, "Ajustes")).not.toBeNull();
+  });
+
+  it("racha 0 y 1 (con la bandera encendida)", () => {
+    expect(mount({ streakDays: 0, showStreak: true }).textContent).toContain("Sin racha aún");
     mounted?.unmount();
-    expect(mount({ streakDays: 1 }).textContent).toContain("1 día seguido");
+    expect(mount({ streakDays: 1, showStreak: true }).textContent).toContain("1 día seguido");
   });
 });
 
@@ -83,7 +92,8 @@ describe("lienzo", () => {
     const root = mount();
     expect(root.querySelector("h1")?.textContent).toBe("El nombre del viento");
     expect(root.textContent).toContain("Patrick Rothfuss");
-    expect(root.textContent).toContain("Pág. 84 de 250 — 33%");
+    expect(root.textContent).toContain("Patrick Rothfuss · Físico");
+    expect(root.textContent).toContain("Pág. 84 de 250 · 33 % leído");
     const bar = root.querySelector('[role="progressbar"]');
     expect(bar?.getAttribute("aria-valuenow")).toBe("33");
     expect(bar?.firstElementChild?.getAttribute("style")).toContain("width: 33%");
@@ -132,10 +142,10 @@ describe("selector de tiempo", () => {
     expect((byLabel(high, "Restar 5 minutos") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("Comenzar Lectura esta deshabilitado con y sin libro", () => {
+  it("Comenzar lectura esta deshabilitado con y sin libro", () => {
     for (const book of [BOOK, null]) {
       const root = mount({ book });
-      const cta = [...root.querySelectorAll("button")].find((b) => b.textContent === "Comenzar Lectura");
+      const cta = [...root.querySelectorAll("button")].find((b) => b.textContent === "Comenzar lectura");
       expect(cta?.disabled).toBe(true);
       mounted?.unmount();
     }
@@ -181,5 +191,103 @@ describe("ajustes", () => {
     expect(root.querySelector('[role="dialog"]')).not.toBeNull();
     await tap(root.querySelector(".settings-backdrop"));
     expect(root.querySelector('[role="dialog"]')).toBeNull();
+  });
+});
+
+describe("selector Temporizador | Libre (mockup 07)", () => {
+  const radios = (root: HTMLElement) => [...root.querySelectorAll('[role="radio"]')] as HTMLButtonElement[];
+  const cta = (root: HTMLElement) =>
+    [...root.querySelectorAll("button")].find((b) => b.textContent === "Comenzar lectura") as HTMLButtonElement;
+
+  it("es un grupo de dos opciones y empieza en Temporizador", () => {
+    const root = mount();
+    expect(root.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toBe("Modo de lectura");
+    expect(radios(root).map((r) => r.textContent)).toEqual(["Temporizador", "Libre"]);
+    expect(radios(root).map((r) => r.getAttribute("aria-checked"))).toEqual(["true", "false"]);
+    expect(time(root)).toBe("15:00");
+  });
+
+  it("sigue siendo uno de los tres bloques del Dashboard: el selector va dentro de los controles", () => {
+    const root = mount();
+    expect(root.querySelectorAll("[data-block]")).toHaveLength(3);
+    expect(root.querySelector('[data-block="controls"] [role="radiogroup"]')).not.toBeNull();
+  });
+
+  it("Libre reemplaza al selector de minutos por el texto con el icono de infinito", async () => {
+    const root = mount();
+    await tap(radios(root)[1]);
+    expect(radios(root).map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+    expect(byLabel(root, "Restar 5 minutos")).toBeNull();
+    expect(byLabel(root, "Sumar 5 minutos")).toBeNull();
+    expect(root.querySelector("output")).toBeNull();
+    const note = root.querySelector(".dashboard__free");
+    expect(note?.textContent).toBe("Sin límite de tiempo. El cronómetro empieza al abrir el lector.");
+    expect(note?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("volver a Temporizador devuelve los minutos, con el valor que se habia elegido", async () => {
+    const root = mount();
+    await tap(byLabel(root, "Sumar 5 minutos"));
+    expect(time(root)).toBe("20:00");
+    await tap(radios(root)[1]);
+    await tap(radios(root)[0]);
+    expect(time(root)).toBe("20:00");
+    expect(root.querySelector(".dashboard__free")).toBeNull();
+  });
+
+  it("onTimerTypeChange avisa de cada cambio para recordar la eleccion", async () => {
+    const onTimerTypeChange = vi.fn();
+    const root = mount({ onTimerTypeChange });
+    await tap(radios(root)[1]);
+    expect(onTimerTypeChange).toHaveBeenLastCalledWith("FREE");
+    await tap(radios(root)[0]);
+    expect(onTimerTypeChange).toHaveBeenLastCalledWith("TIMER");
+  });
+
+  it("con la prop timerType manda el modo que llega de fuera", () => {
+    const root = mount({ timerType: "FREE" });
+    expect(radios(root)[1]?.getAttribute("aria-checked")).toBe("true");
+    expect(root.querySelector(".dashboard__free")).not.toBeNull();
+  });
+
+  it("onStart recibe el modo y los minutos: Temporizador con los minutos elegidos", async () => {
+    const onStart = vi.fn();
+    const root = mount({ canStart: true, onStart });
+    await tap(byLabel(root, "Sumar 5 minutos"));
+    await tap(cta(root));
+    expect(onStart).toHaveBeenCalledWith({ timerType: "TIMER", minutes: 20 });
+  });
+
+  it("onStart en Libre envia timerType FREE", async () => {
+    const onStart = vi.fn();
+    const root = mount({ canStart: true, onStart });
+    await tap(radios(root)[1]);
+    await tap(cta(root));
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onStart.mock.calls[0]?.[0]).toMatchObject({ timerType: "FREE" });
+  });
+
+  it("el boton dice Comenzar lectura con un libro fisico y con un EPUB, y nunca Abrir lector", () => {
+    for (const book of [BOOK, { ...BOOK, format_type: "EPUB" as const, total_pages: null }]) {
+      const root = mount({ book, canStart: true, onStart: () => {} });
+      expect(cta(root).textContent).toBe("Comenzar lectura");
+      expect(cta(root).disabled).toBe(false);
+      expect(root.textContent).not.toContain("Abrir lector");
+      mounted?.unmount();
+    }
+  });
+
+  it("las flechas del teclado cambian de opcion y mueven el foco", async () => {
+    const onTimerTypeChange = vi.fn();
+    const root = mount({ onTimerTypeChange });
+    const first = radios(root)[0] as HTMLButtonElement;
+    first.focus();
+    await act(async () => {
+      first.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(onTimerTypeChange).toHaveBeenLastCalledWith("FREE");
+    expect(radios(root)[1]?.getAttribute("aria-checked")).toBe("true");
+    expect(document.activeElement).toBe(radios(root)[1]);
+    expect(radios(root).map((r) => r.tabIndex)).toEqual([-1, 0]);
   });
 });

@@ -121,8 +121,8 @@ describe("plantar un libro fisico desde la app", () => {
 
     await tap(navItem(root, "Lectura"));
     expect(root.querySelector(".dashboard__book-title")?.textContent).toBe("Kokoro");
-    // Con un libro fisico en curso, "Comenzar Lectura" ya esta activo (bloque 4).
-    expect((byText(root, "button", "Comenzar Lectura") as HTMLButtonElement).disabled).toBe(false);
+    // Con un libro fisico en curso, "Comenzar lectura" ya esta activo (bloque 4).
+    expect((byText(root, "button", "Comenzar lectura") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("sin red el libro queda guardado y pendiente de envio", async () => {

@@ -8,6 +8,7 @@ import {
   isFontSize,
   READER_LINE_HEIGHT,
   READER_MARGIN_PX,
+  resolveReaderLanguage,
   stepFontSize,
 } from "./readerTheme";
 
@@ -55,6 +56,19 @@ describe("buildReaderCss", () => {
     }
   });
 
+  it("justifica el texto corrido y separa en silabas (SRS 10.8)", () => {
+    const css = buildReaderCss({ theme: "light", fontPx: 18, ...base });
+    expect(css).toContain("text-align:justify !important");
+    expect(css).toContain("hyphens:auto !important");
+    expect(css).toContain("-webkit-hyphens:auto !important");
+    expect(css).not.toContain("text-align:left;");
+  });
+
+  it("los titulos no se justifican", () => {
+    const css = buildReaderCss({ theme: "light", fontPx: 18, ...base });
+    expect(css).toMatch(/h1,h2,h3,h4,h5,h6\{text-align:left !important/);
+  });
+
   it("las imagenes no se salen de la pagina", () => {
     expect(buildReaderCss({ theme: "light", fontPx: 18, ...base })).toContain("max-width:100%");
   });
@@ -83,10 +97,10 @@ describe("tamano de letra", () => {
 });
 
 describe("gestos", () => {
-  it("tercios del toque: atras, nada, adelante", () => {
+  it("tercios del toque: atras, menu, adelante", () => {
     expect(tapAction(10, 300)).toBe("prev");
     expect(tapAction(99, 300)).toBe("prev");
-    expect(tapAction(150, 300)).toBeNull();
+    expect(tapAction(150, 300)).toBe("menu");
     expect(tapAction(201, 300)).toBe("next");
     expect(tapAction(290, 300)).toBe("next");
   });
@@ -101,7 +115,7 @@ describe("gestos", () => {
     expect(x).toBe(300);
     expect(tapAction(x, 340)).toBe("next");
     // Con el ancho del iframe (1020) como referencia el mismo toque caia en el centro: el error que se corrige.
-    expect(tapAction(clientX, 1020)).toBeNull();
+    expect(tapAction(clientX, 1020)).toBe("menu");
     expect(tapAction(toHostX(340 + 20, frameLeft, hostLeft), 340)).toBe("prev");
   });
 
@@ -126,5 +140,22 @@ describe("gestos", () => {
     expect(keyAction(" ")).toBe("next");
     expect(keyAction("ArrowLeft")).toBe("prev");
     expect(keyAction("a")).toBeNull();
+  });
+});
+
+describe("resolveReaderLanguage", () => {
+  it("prefiere el idioma del capitulo, luego el del libro y al final es", () => {
+    expect(resolveReaderLanguage("en", "fr")).toBe("en");
+    expect(resolveReaderLanguage(null, "fr")).toBe("fr");
+    expect(resolveReaderLanguage("  ", undefined)).toBe("es");
+    expect(resolveReaderLanguage(undefined, undefined)).toBe("es");
+  });
+});
+
+describe("margen y tamanos del lector (SRS 10.8)", () => {
+  it("margen de 24 px y letra de 16 a 22 px", () => {
+    expect(READER_MARGIN_PX).toBe(24);
+    expect(FONT_SIZES[0]).toBe(16);
+    expect(FONT_SIZES[FONT_SIZES.length - 1]).toBe(22);
   });
 });

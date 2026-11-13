@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { BookStatus, LocalBook } from "../../data/local_db/types";
-import { canReadBook, pickActiveBook, progressLabel, resolveActiveBook } from "./activeBook";
+import {
+  canReadBook,
+  dashboardAuthorLine,
+  dashboardProgressLabel,
+  pickActiveBook,
+  progressLabel,
+  resolveActiveBook,
+} from "./activeBook";
 
 function book(over: Partial<LocalBook> = {}): LocalBook {
   return {
@@ -44,6 +51,16 @@ describe("pickActiveBook", () => {
 
   it.each(["ACTIVE", "GROWING"] as BookStatus[])("%s cuenta como en curso", (status) => {
     expect(pickActiveBook([book({ status })])).not.toBeNull();
+  });
+});
+
+describe("etiquetas del Dashboard (mockup 07)", () => {
+  it("autor con formato y progreso legible", () => {
+    expect(dashboardAuthorLine(book({ format_type: "EPUB", total_pages: null }))).toBe(`${book().author} · EPUB`);
+    expect(dashboardAuthorLine(book())).toBe(`${book().author} · Físico`);
+    expect(dashboardProgressLabel(book({ format_type: "EPUB", total_pages: null }))).toBe("33 % leído");
+    expect(dashboardProgressLabel(book())).toBe("Pág. 84 de 250 · 33 % leído");
+    expect(dashboardProgressLabel(book({ total_pages: null }))).toBe("33 % leído");
   });
 });
 

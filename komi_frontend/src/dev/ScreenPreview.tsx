@@ -9,9 +9,13 @@ import type { LocalBook } from "../data/local_db/types";
 import { EpubImportError } from "../services/epubService";
 import type { GardenPlantService } from "../services/plantBookService";
 import { DashboardScreen } from "../features/dashboard/DashboardScreen";
+import { InvalidatedSessionSheet } from "../features/focus_reader/InvalidatedSessionSheet";
 import { PhysicalTimerScreen } from "../features/focus_reader/PhysicalTimerScreen";
 import type { FocusSnapshot } from "../services/focusVisibilityService";
 import type { WakeLockService } from "../services/wakeLockService";
+import { OnboardingScreen } from "../features/onboarding/OnboardingScreen";
+import { calculateHabitPlan, type OnboardingAnswers } from "../services/habitPlan";
+import type { CompleteOnboardingResult } from "../services/onboardingService";
 import { MyGardenScreen } from "../features/garden_library/MyGardenScreen";
 import "../App.css";
 
@@ -28,6 +32,9 @@ export type PreviewScreen =
   | "dashboard"
   | "timer"
   | "timer-grace"
+  | "timer-free"
+  | "dashboard-invalidated"
+  | "onboarding"
   | "timer-confirm";
 
 function book(over: Partial<LocalBook> & Pick<LocalBook, "id" | "title" | "author">): LocalBook {
@@ -86,7 +93,7 @@ const buttonByText = (text: string) =>
 async function drive(screen: PreviewScreen) {
   if (screen === "timer-confirm") {
     await wait(50);
-    buttonByText("Terminé antes de tiempo")?.click();
+    buttonByText("Terminar sesión")?.click();
     return;
   }
   if (!screen.startsWith("plant")) return;
@@ -113,12 +120,14 @@ async function drive(screen: PreviewScreen) {
 
 const FAKE_WAKE_LOCK = { acquire: async () => {}, release: async () => {} } as unknown as WakeLockService;
 
-function snapshot(phase: "running" | "grace"): FocusSnapshot {
+function snapshot(phase: "running" | "grace", timerType: "TIMER" | "FREE" = "TIMER"): FocusSnapshot {
+  const free = timerType === "FREE";
   return {
     phase,
-    remainingMs: 754_200,
+    remainingMs: free ? 7_054_200 : 754_200,
     elapsedMs: 145_800,
-    plannedSec: 900,
+    plannedSec: free ? 7200 : 900,
+    timerType,
     graceRemainingMs: phase === "grace" ? 9_100 : 0,
     actualSec: null,
     sessionId: "s",
@@ -126,19 +135,53 @@ function snapshot(phase: "running" | "grace"): FocusSnapshot {
   };
 }
 
+/** Servicio falso del onboarding: calcula el plan real y no toca Dexie ni la red. */
+const FAKE_ONBOARDING = {
+  completeOnboarding: async (input: { profile_id: string; answers: OnboardingAnswers }): Promise<CompleteOnboardingResult> => {
+    const plan = calculateHabitPlan(input.answers);
+    return {
+      created: true,
+      plan,
+      profile: {
+        id: "local",
+        profile_id: input.profile_id,
+        daily_goal_minutes: plan.daily_goal_minutes,
+        preferred_moment: plan.preferred_moment,
+        ai_reflection_style: plan.ai_reflection_style,
+        theme_mode: null,
+        preconfigure_tsukimi: plan.preconfigure_tsukimi,
+        onboarding_synced: false,
+        created_at: "2026-11-01T00:00:00.000Z",
+        updated_at: "2026-11-01T00:00:00.000Z",
+      },
+    };
+  },
+};
+
 function PreviewBody({ screen }: { screen: PreviewScreen }) {
   const kokoro = BOOKS[0] as LocalBook;
+  if (screen === "onboarding") {
+    return <OnboardingScreen service={FAKE_ONBOARDING} onProfileCreated={() => {}} onFinish={() => {}} />;
+  }
   if (screen === "dashboard") {
     return <DashboardScreen streakDays={4} book={kokoro} dailyGoalMinutes={15} canStart onStart={() => {}} />;
   }
-  if (screen === "timer" || screen === "timer-grace" || screen === "timer-confirm") {
+  if (screen === "dashboard-invalidated") {
+    return (
+      <>
+        <DashboardScreen streakDays={4} book={kokoro} dailyGoalMinutes={15} canStart onStart={() => {}} />
+        <InvalidatedSessionSheet onClose={() => {}} />
+      </>
+    );
+  }
+  if (screen === "timer" || screen === "timer-grace" || screen === "timer-confirm" || screen === "timer-free") {
     return (
       <PhysicalTimerScreen
         book={kokoro}
-        snapshot={snapshot(screen === "timer-grace" ? "grace" : "running")}
+        snapshot={snapshot(screen === "timer-grace" ? "grace" : "running", screen === "timer-free" ? "FREE" : "TIMER")}
         wakeLock={FAKE_WAKE_LOCK}
-        peekEarlyFinish={() => ({ actualSec: 145, belowHalf: true })}
-        onAcceptEarly={() => {}}
+        peekFinish={() => ({ actualSec: 145, enough: false })}
+        onFinish={() => {}}
         onCancel={() => {}}
       />
     );
@@ -155,7 +198,7 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
     <ThemeProvider storedMode={theme}>
       <div className="app-shell" data-preview={SCREEN_PREVIEW_MARKER}>
         <div className="app-shell__screen">
-          {["dashboard", "timer", "timer-grace", "timer-confirm"].includes(screen) ? (
+          {["dashboard", "dashboard-invalidated", "onboarding", "timer", "timer-grace", "timer-confirm", "timer-free"].includes(screen) ? (
             <PreviewBody screen={screen} />
           ) : (
           <MyGardenScreen
@@ -170,7 +213,7 @@ export function ScreenPreview({ screen, theme }: { screen: PreviewScreen; theme:
           />
           )}
         </div>
-        {["timer", "timer-grace", "timer-confirm"].includes(screen) ? null : (
+        {["timer", "timer-grace", "timer-confirm", "timer-free", "onboarding"].includes(screen) ? null : (
           <div data-block="nav">
             <BottomNavZen active={screen === "dashboard" ? "lectura" : "jardin"} onSelect={() => {}} />
           </div>

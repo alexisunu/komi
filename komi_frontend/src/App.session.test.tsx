@@ -1,5 +1,5 @@
 // Integracion del bloque 4: iniciar la sesion de un libro fisico, la pantalla de concentracion sin
-// navegacion, "Terminé antes de tiempo", la gracia, la pantalla provisional y "Leer este libro".
+// navegacion, "Terminar sesión", la gracia, la pantalla provisional y "Leer este libro".
 // Dexie y la app son reales; el reloj, Page Visibility y wakeLock son falsos.
 
 import { act } from "react";
@@ -77,7 +77,8 @@ async function submitPage(page: string) {
   await tap(byText(sheet() as HTMLElement, "button", "Actualizar Girasol"));
   await settle();
 }
-const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar Lectura") as HTMLButtonElement;
+const byLabel = (root: ParentNode, label: string) => root.querySelector(`[aria-label="${label}"]`);
+const startButton = (root: HTMLElement) => byText(root, "button", "Comenzar lectura") as HTMLButtonElement;
 
 interface Setup {
   env: FocusEnv;
@@ -172,11 +173,11 @@ describe("sesion de un libro fisico", () => {
     expect(root.querySelectorAll("[data-block]").length).toBeLessThanOrEqual(4);
   });
 
-  it("Terminé antes de tiempo con el 50 % o mas: abre la hoja post-lectura y aun no guarda nada", async () => {
+  it("Terminar sesión con 5 minutos o mas: abre la hoja post-lectura directo y aun no guarda nada", async () => {
     const { root, env, wakeLock, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
-    env.advance(450_000); // 7:30 de 15:00 = 50 %
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    env.advance(450_000); // 7:30: mas de 5 minutos, sin confirmacion
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle();
     expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
     expect(root.querySelector(".bottom-nav")).toBeNull();
@@ -191,7 +192,7 @@ describe("sesion de un libro fisico", () => {
     const { root, env, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(600_000);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle();
     expect(sheet()?.querySelector("input")?.value).toBe("30"); // ultima pagina guardada
     await submitPage("60");
@@ -199,7 +200,7 @@ describe("sesion de un libro fisico", () => {
     const sessions = await db.sessions.toArray();
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({
-      session_status: "EARLY_VALID",
+      session_status: "COMPLETED",
       actual_duration_sec: 600,
       current_page: 60,
       progress_percentage: null,
@@ -222,7 +223,8 @@ describe("sesion de un libro fisico", () => {
     expect(sheet()).toBeNull();
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(root.querySelector(".bottom-nav")).not.toBeNull();
-    expect(root.querySelector(".streak-badge")?.textContent).toBe("1 día seguido");
+    expect(root.querySelector(".streak-badge")).toBeNull(); // oculta en la v2; la racha sigue guardada
+    expect((await db.meta.get(META_KEYS.streakCurrent))?.value).toBe(1);
     expect(root.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain("40 por ciento");
   });
 
@@ -230,7 +232,7 @@ describe("sesion de un libro fisico", () => {
     const first = await mountApp([book(1)]);
     await tap(startButton(first.root));
     first.env.advance(600_000);
-    await tap(byText(first.root, "button", "Terminé antes de tiempo"));
+    await tap(byText(first.root, "button", "Terminar sesión"));
     await settle();
     expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
     expect(await db.sessions.count()).toBe(0);
@@ -247,25 +249,25 @@ describe("sesion de un libro fisico", () => {
     expect(again.gate.isBlocked()).toBe(false);
   });
 
-  it("Terminé antes de tiempo con menos del 50 % pide confirmacion; Seguir leyendo no cambia nada", async () => {
+  it("Terminar sesión con menos de 5 minutos muestra el aviso; Seguir leyendo no cambia nada", async () => {
     const { root, env } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(200_000);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
+    await tap(byText(root, "button", "Terminar sesión"));
     const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain("no se guarda ningún avance");
+    expect(dialog?.textContent).toContain("El tiempo mínimo es 5 min");
     await tap(byText(document.body, "button", "Seguir leyendo"));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(root.querySelector("[role=timer]")).not.toBeNull();
     expect(await storedSession()).not.toBeNull();
   });
 
-  it("confirmar la cancelacion vuelve al Dashboard sin guardar nada", async () => {
+  it("Descartar vuelve al Dashboard sin guardar nada", async () => {
     const { root, env, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(200_000);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
-    await tap(byText(document.body, "button", "Cancelar sesión"));
+    await tap(byText(root, "button", "Terminar sesión"));
+    await tap(byText(document.body, "button", "Descartar"));
     expect(root.querySelector(".dashboard")).not.toBeNull();
     expect(root.querySelector(".bottom-nav")).not.toBeNull();
     expect(await db.sessions.count()).toBe(0);
@@ -273,15 +275,32 @@ describe("sesion de un libro fisico", () => {
     expect(gate.isBlocked()).toBe(false);
   });
 
-  it("si con la hoja abierta se supera el 50 %, confirmar ya no cancela: la sesion es valida", async () => {
+  it("Descartar no guarda nada aunque con el aviso abierto se pasen los 5 minutos", async () => {
+    const { root, env, gate } = await mountApp([book(1)]);
+    await tap(startButton(root));
+    env.advance(200_000);
+    await tap(byText(root, "button", "Terminar sesión"));
+    env.advance(300_000); // 500 s: ya hay 5 minutos, pero el lector eligio descartar
+    await tap(byText(document.body, "button", "Descartar"));
+    await settle();
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(await db.sessions.count()).toBe(0);
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("Seguir leyendo reanuda la sesion y despues, con 5 minutos, termina directo", async () => {
     const { root, env } = await mountApp([book(1)]);
     await tap(startButton(root));
     env.advance(200_000);
-    await tap(byText(root, "button", "Terminé antes de tiempo"));
-    env.advance(300_000); // 500 s de 900 > 50 %
-    await tap(byText(document.body, "button", "Cancelar sesión"));
+    await tap(byText(root, "button", "Terminar sesión"));
+    await tap(byText(document.body, "button", "Seguir leyendo"));
+    env.advance(100_000); // 300 s exactos
+    await tap(byText(root, "button", "Terminar sesión"));
     await settle();
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("El tiempo mínimo");
     expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    expect((await storedSession())?.finalSec).toBe(300);
   });
 
   it("al llegar el tiempo a 00:00 se abre la hoja post-lectura", async () => {
@@ -292,7 +311,7 @@ describe("sesion de un libro fisico", () => {
     await settle();
     expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
     await submitPage("90");
-    expect(sheet()?.textContent).toContain("Leíste 15 minutos");
+    expect(sheet()?.textContent).toContain("15:00de lectura");
     expect((await db.sessions.toArray())[0]).toMatchObject({ session_status: "COMPLETED" });
   });
 });
@@ -314,7 +333,7 @@ describe("periodo de gracia en pantalla", () => {
   it("pasados 15 s se invalida: se guarda la sesion invalida, no cambia el libro y avisa", async () => {
     const { root, env, gate } = await mountApp([book(1)]);
     await tap(startButton(root));
-    env.advance(60_000);
+    env.advance(300_000);
     await act(async () => env.hide());
     env.advance(15_100);
     await act(async () => env.show());
@@ -324,13 +343,88 @@ describe("periodo de gracia en pantalla", () => {
     expect(root.querySelector(".bottom-nav")).not.toBeNull();
     const sessions = await db.sessions.toArray();
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]).toMatchObject({ session_status: "INVALIDATED_GRACE_EXPIRED", actual_duration_sec: 60 });
+    expect(sessions[0]).toMatchObject({ session_status: "INVALIDATED_GRACE_EXPIRED", actual_duration_sec: 300 });
     expect((await db.books.get(uuid(1)))?.progress_percentage).toBe(10);
     expect(gate.isBlocked()).toBe(false);
 
     await tap(byText(root, "button", "Entendido"));
     expect(root.querySelector('[data-testid="session-invalidated"]')).toBeNull();
     expect(await storedSession()).toBeNull();
+  });
+
+  describe("aviso de sesion invalidada: hoja modal (A4)", () => {
+    async function invalidate(afterSec: number) {
+      const ctx = await mountApp([book(1)]);
+      await tap(startButton(ctx.root));
+      ctx.env.advance(afterSec * 1000);
+      await act(async () => ctx.env.hide());
+      ctx.env.advance(15_100);
+      await act(async () => ctx.env.show());
+      await settle();
+      return ctx;
+    }
+    const dialog = (root: HTMLElement) => root.querySelector('[role="dialog"]');
+
+    it("es un dialogo modal titulado 'Sesion no valida' que contiene el aviso y su salida", async () => {
+      const { root } = await invalidate(300);
+      const sheet = dialog(root);
+      expect(sheet?.getAttribute("aria-modal")).toBe("true");
+      expect(sheet?.querySelector("h2")?.textContent).toBe("Sesión no válida");
+      expect(sheet?.querySelector('[data-testid="session-invalidated"]')?.textContent).toContain(
+        "la sesión no se guardó como válida",
+      );
+      expect(byText(sheet as HTMLElement, "button", "Entendido")).not.toBeNull();
+    });
+
+    it("el titulo no afirma que no se guardo nada: con 5 min o mas la sesion invalida si se registra", async () => {
+      const { root } = await invalidate(300);
+      expect(dialog(root)?.textContent).not.toContain("no guardada");
+      expect(await db.sessions.count()).toBe(1);
+    });
+
+    it("con menos de 5 min el mismo aviso sale y no se guarda ninguna sesion", async () => {
+      const { root } = await invalidate(299);
+      expect(dialog(root)?.querySelector("h2")?.textContent).toBe("Sesión no válida");
+      expect(await db.sessions.count()).toBe(0);
+    });
+
+    it("no ocupa sitio en el flujo: el Dashboard no tiene ningun bloque de aviso antes de su contenido", async () => {
+      const { root } = await invalidate(300);
+      const screen = root.querySelector(".app-shell__screen") as HTMLElement;
+      expect(screen.querySelector(":scope > .session-notice")).toBeNull();
+      expect(screen.firstElementChild?.classList.contains("zen-sheet-backdrop")).toBe(true);
+      expect(root.querySelector(".dashboard")).not.toBeNull();
+    });
+
+    it("Escape y la X cierran el aviso igual que Entendido", async () => {
+      const first = await invalidate(300);
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      expect(dialog(first.root)).toBeNull();
+      expect(await storedSession()).toBeNull();
+      mounted?.unmount();
+      await db.sessions.clear();
+      const second = await invalidate(300);
+      await tap(byLabel(dialog(second.root) as HTMLElement, "Cerrar"));
+      expect(dialog(second.root)).toBeNull();
+      expect(await storedSession()).toBeNull();
+    });
+  });
+
+  it("invalidada con menos de 5 minutos: se avisa pero no se guarda sesion alguna", async () => {
+    const { root, env, gate } = await mountApp([book(1)]);
+    await tap(startButton(root));
+    env.advance(299_000);
+    await act(async () => env.hide());
+    env.advance(15_100);
+    await act(async () => env.show());
+    await settle();
+    expect(root.querySelector('[data-testid="session-invalidated"]')?.textContent).toContain("más de 15 segundos");
+    expect(await db.sessions.count()).toBe(0);
+    expect((await db.books.get(uuid(1)))?.progress_percentage).toBe(10);
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
   });
 });
 
@@ -340,6 +434,7 @@ describe("recuperacion y hoja post-lectura sin trampas", () => {
       sessionId: uuid(500),
       bookId: uuid(1),
       plannedSec: 900,
+      timerType: "TIMER",
       startedAt: T0,
       startedAtLocal: "2026-11-05T10:00:00",
       hiddenAt: null,
@@ -409,13 +504,13 @@ describe("recuperacion y hoja post-lectura sin trampas", () => {
 
   it("una sesion pasada de 15 s desde lastSeen se invalida al abrir y se avisa", async () => {
     const env = createFocusEnv();
-    await seedSession(saved({ lastSeen: T0 + 30_000 }));
-    env.set(T0 + 30_000 + 16_000);
+    await seedSession(saved({ lastSeen: T0 + 330_000 }));
+    env.set(T0 + 330_000 + 16_000);
     const { root } = await mountApp([book(1)], env);
     expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
     expect((await db.sessions.toArray())[0]).toMatchObject({
       session_status: "INVALIDATED_GRACE_EXPIRED",
-      actual_duration_sec: 30,
+      actual_duration_sec: 330,
     });
   });
 });
@@ -467,5 +562,250 @@ describe("Leer este libro", () => {
     await db.meta.put({ key: META_KEYS.activeBookId, value: uuid(99) });
     const { root } = await mountApp([book(1), book(2)]);
     expect(root.querySelector(".dashboard__book-title")?.textContent).toBe("Libro 2");
+  });
+});
+
+describe("modo libre (la sesion se siembra: el selector del Dashboard llega despues)", () => {
+  /** Registro libre con la ultima marca vista a `readSec` segundos de lectura; el reloj queda 3 s despues. */
+  async function freeSession(readSec: number, over: Partial<ActiveSession> = {}) {
+    const env = createFocusEnv();
+    await seedSession({
+      sessionId: uuid(500),
+      bookId: uuid(1),
+      plannedSec: 7200,
+      timerType: "FREE",
+      startedAt: T0,
+      startedAtLocal: "2026-11-05T10:00:00",
+      hiddenAt: null,
+      lastSeen: T0 + readSec * 1000,
+      finalSec: null,
+      ...over,
+    });
+    env.set(T0 + readSec * 1000 + 3_000);
+    return env;
+  }
+  const finishButton = (root: HTMLElement) => byText(root, "button", "Terminar sesión");
+  const dialogText = () => document.querySelector('[role="dialog"]')?.textContent ?? "";
+
+  it("se retoma con el cronometro hacia arriba y el subtitulo Modo libre", async () => {
+    const env = await freeSession(600);
+    const { root } = await mountApp([book(1)], env);
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("10:03");
+    expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo leído");
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Modo libre · 10 %");
+    env.advance(57_000);
+    await settle(320);
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("11:00");
+  });
+
+  it("pasada la hora el cronometro pasa a h:mm:ss", async () => {
+    const env = await freeSession(3_700);
+    const { root } = await mountApp([book(1)], env);
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("1:01:43");
+  });
+
+  it("con 10 minutos termina directo y se guarda con planned = actual", async () => {
+    const env = await freeSession(600);
+    const { root, gate } = await mountApp([book(1)], env);
+    await tap(finishButton(root));
+    expect(dialogText()).not.toContain("El tiempo mínimo");
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    await submitPage("60");
+    const [stored] = await db.sessions.toArray();
+    expect(stored).toMatchObject({ session_status: "COMPLETED", planned_duration_sec: 603, actual_duration_sec: 603 });
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("menos de 5 minutos: aviso; Seguir leyendo reanuda y Descartar no guarda nada", async () => {
+    const env = await freeSession(120);
+    const { root, gate } = await mountApp([book(1)], env);
+    await tap(finishButton(root));
+    expect(dialogText()).toContain("El tiempo mínimo es 5 min");
+    await tap(byText(document.body, "button", "Seguir leyendo"));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(root.querySelector("[role=timer]")).not.toBeNull();
+    await tap(finishButton(root));
+    await tap(byText(document.body, "button", "Descartar"));
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(await db.sessions.count()).toBe(0);
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("menos de 5 minutos con Terminé el libro: la ultima pagina guarda con planned = 300 y florece", async () => {
+    const env = await freeSession(117); // 2:00 de lectura al abrir
+    const { root } = await mountApp([book(1)], env);
+    await tap(finishButton(root));
+    await tap(byText(document.body, "button", "Terminé el libro"));
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    await submitPage("300");
+    const [stored] = await db.sessions.toArray();
+    expect(stored).toMatchObject({ session_status: "COMPLETED", planned_duration_sec: 300, actual_duration_sec: 120 });
+    expect(await db.books.get(uuid(1))).toMatchObject({ status: "BLOOMED", progress_percentage: 100 });
+  });
+
+  it("menos de 5 minutos con otra pagina que la ultima: no se guarda", async () => {
+    const env = await freeSession(117);
+    const { root } = await mountApp([book(1)], env);
+    await tap(finishButton(root));
+    await tap(byText(document.body, "button", "Terminé el libro"));
+    await settle();
+    await submitPage("299");
+    expect(sheetTitle()).toBe("Sesión sin guardar");
+    expect(await db.sessions.count()).toBe(0);
+    expect((await db.books.get(uuid(1)))?.progress_percentage).toBe(10);
+  });
+
+  it("a las 2 horas se completa sola, abre la hoja y se guarda con 7200 s", async () => {
+    const env = await freeSession(7_199);
+    const { root } = await mountApp([book(1)], env);
+    env.advance(2_000);
+    await settle(320);
+    await settle();
+    expect(sheetTitle()).toBe("¿Hasta qué página llegaste?");
+    expect((await storedSession())?.finalSec).toBe(7200);
+    await submitPage("200");
+    expect((await db.sessions.toArray())[0]).toMatchObject({ planned_duration_sec: 7200, actual_duration_sec: 7200 });
+    void root;
+  });
+
+  it("gracia: mas de 15 s fuera con 5 minutos o mas se guarda invalidada con planned = actual", async () => {
+    const env = await freeSession(397); // 6:40 al abrir
+    const { root, gate } = await mountApp([book(1)], env);
+    await act(async () => env.hide());
+    expect(root.querySelector(".grace-banner")?.textContent).toContain("15 s");
+    env.advance(15_100);
+    await act(async () => env.show());
+    await settle();
+    expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
+    const [stored] = await db.sessions.toArray();
+    expect(stored).toMatchObject({
+      session_status: "INVALIDATED_GRACE_EXPIRED",
+      planned_duration_sec: 400,
+      actual_duration_sec: 400,
+    });
+    expect((await db.books.get(uuid(1)))?.progress_percentage).toBe(10);
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("gracia: con menos de 5 minutos se avisa pero no se guarda ni se envia", async () => {
+    const env = await freeSession(100);
+    const { root, gate } = await mountApp([book(1)], env);
+    await act(async () => env.hide());
+    env.advance(15_100);
+    await act(async () => env.show());
+    await settle();
+    expect(root.querySelector('[data-testid="session-invalidated"]')).not.toBeNull();
+    expect(await db.sessions.count()).toBe(0);
+    expect(await storedSession()).toBeNull();
+    expect(gate.isBlocked()).toBe(false);
+  });
+
+  it("un registro guardado antes del modo libre, sin timerType, se retoma como temporizador", async () => {
+    const env = createFocusEnv();
+    await seedSession({
+      sessionId: uuid(500),
+      bookId: uuid(1),
+      plannedSec: 900,
+      startedAt: T0,
+      startedAtLocal: "2026-11-05T10:00:00",
+      hiddenAt: null,
+      lastSeen: T0,
+      finalSec: null,
+    });
+    env.advance(8_000);
+    const { root } = await mountApp([book(1)], env);
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("14:52");
+    expect(root.querySelector("[role=timer]")?.getAttribute("aria-label")).toBe("Tiempo restante");
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Temporizador · 10 %");
+  });
+});
+
+describe("selector Temporizador | Libre en la app", () => {
+  const radios = (root: HTMLElement) => [...root.querySelectorAll('[role="radio"]')] as HTMLButtonElement[];
+  const checked = (root: HTMLElement) => radios(root).map((r) => r.getAttribute("aria-checked"));
+  const timerMode = async () => (await db.meta.get(META_KEYS.timerMode))?.value;
+
+  it("la clave de meta es timer_mode", () => {
+    expect(META_KEYS.timerMode).toBe("timer_mode");
+  });
+
+  it("sin nada guardado empieza en Temporizador", async () => {
+    const { root } = await mountApp([book(1)]);
+    expect(checked(root)).toEqual(["true", "false"]);
+    expect(root.querySelector(".dashboard__free")).toBeNull();
+  });
+
+  it("recuerda la ultima eleccion: con FREE guardado abre en Libre", async () => {
+    await db.meta.put({ key: META_KEYS.timerMode, value: "FREE" });
+    const { root } = await mountApp([book(1)]);
+    await settle();
+    expect(checked(root)).toEqual(["false", "true"]);
+    expect(root.querySelector(".dashboard__free")?.textContent).toContain("Sin límite de tiempo");
+    expect(root.querySelector("output")).toBeNull();
+  });
+
+  it.each([["OTRO"], [""], [7], [null], [{ mode: "FREE" }]])(
+    "un valor guardado invalido (%j) cae a Temporizador",
+    async (stored) => {
+      await db.meta.put({ key: META_KEYS.timerMode, value: stored as never });
+      const { root } = await mountApp([book(1)]);
+      await settle();
+      expect(checked(root)).toEqual(["true", "false"]);
+      expect(root.querySelector("output")?.textContent).toBe("15:00");
+    },
+  );
+
+  it("elegir un modo lo guarda en local y sobrevive a reabrir la app", async () => {
+    const first = await mountApp([book(1)]);
+    await tap(radios(first.root)[1]);
+    expect(await timerMode()).toBe("FREE");
+    mounted?.unmount();
+    const again = await mountApp([], first.env);
+    await settle();
+    expect(checked(again.root)).toEqual(["false", "true"]);
+    await tap(radios(again.root)[0]);
+    expect(await timerMode()).toBe("TIMER");
+  });
+
+  it("el modo no se sincroniza: solo vive en meta, no toca perfil ni libros", async () => {
+    const { root } = await mountApp([book(1)]);
+    await tap(radios(root)[1]);
+    expect((await db.books.get(uuid(1)))?.pending_sync).toBe(0);
+    expect(await db.sessions.count()).toBe(0);
+  });
+
+  it("empezar en Libre inicia una sesion FREE: cronometro en 00:00, sin tiempo programado y con el tope", async () => {
+    const { root } = await mountApp([book(1)]);
+    await tap(radios(root)[1]);
+    await tap(startButton(root));
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("00:00");
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Modo libre · 10 %");
+    expect(await storedSession()).toMatchObject({ timerType: "FREE", plannedSec: 7200 });
+  });
+
+  it("empezar en Temporizador sigue enviando TIMER con los minutos del selector", async () => {
+    const { root } = await mountApp([book(1)]);
+    await tap(byLabel(root, "Sumar 5 minutos"));
+    await tap(startButton(root));
+    expect(root.querySelector("[role=timer]")?.textContent).toBe("20:00");
+    expect(root.querySelector(".focus-timer__mode")?.textContent).toBe("Temporizador · 10 %");
+    expect(await storedSession()).toMatchObject({ timerType: "TIMER", plannedSec: 1200 });
+  });
+
+  it("al terminar una sesion libre y volver, el selector sigue en Libre", async () => {
+    const { root, env } = await mountApp([book(1)]);
+    await tap(radios(root)[1]);
+    await tap(startButton(root));
+    env.advance(600_000);
+    await tap(byText(root, "button", "Terminar sesión"));
+    await settle();
+    await submitPage("60");
+    await tap(byText(sheet() as HTMLElement, "button", "Por hoy no, volver al jardín"));
+    expect(root.querySelector(".dashboard")).not.toBeNull();
+    expect(checked(root)).toEqual(["false", "true"]);
   });
 });

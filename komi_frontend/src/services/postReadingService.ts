@@ -11,10 +11,11 @@ import { META_KEYS, type LocalMetaRepository } from "../data/local_db/localMetaR
 import type { LocalSessionRepository } from "../data/local_db/localSessionRepository";
 import {
   formatLocalWallClock,
+  MIN_VALID_SEC,
   type CompleteSessionInput,
 } from "../data/local_db/sessionRules";
 import type { LocalBook, LocalSession } from "../data/local_db/types";
-import type { ActiveSession } from "./focusSessionMachine";
+import { reportedPlannedSec, type ActiveSession } from "./focusSessionMachine";
 import type { EpubService } from "./epubService";
 import { computeStreak } from "./localStreak";
 import type { ReadingProgress } from "./readingTracker";
@@ -41,8 +42,8 @@ export type PreparedSession =
       book: LocalBook;
       /** Avance de lectura de ESTA sesion; uno huerfano de otra sesion se ignora. */
       progress: ReadingProgress | null;
-      /** Menos del 50 % del tiempo: solo vale si el libro se termino. */
-      belowHalf: boolean;
+      /** Menos de 5 minutos: solo vale si el libro se termino. */
+      short: boolean;
     }
   | { kind: "missing"; reason: "record" | "book" };
 
@@ -147,7 +148,7 @@ export function createPostReadingService(deps: PostReadingDeps) {
         actualSec: finalSec,
         book,
         progress,
-        belowHalf: finalSec * 2 < record.plannedSec,
+        short: finalSec < MIN_VALID_SEC,
       };
     },
 
@@ -162,10 +163,11 @@ export function createPostReadingService(deps: PostReadingDeps) {
       const base: CompleteSessionInput = {
         id: record.sessionId,
         book_id: record.bookId,
-        planned_duration_sec: record.plannedSec,
+        // Libre: max(actual, 300), para que pase el limite si termina el libro en menos de 5 minutos.
+        planned_duration_sec: reportedPlannedSec(record, actualSec),
         actual_duration_sec: actualSec,
         started_at_local: record.startedAtLocal,
-        session_status: actualSec >= record.plannedSec ? "COMPLETED" : "EARLY_VALID",
+        session_status: "COMPLETED",
       };
 
       let complete: CompleteSessionInput;
@@ -175,8 +177,8 @@ export function createPostReadingService(deps: PostReadingDeps) {
         if (page === undefined || !Number.isInteger(page) || page < 1 || page > total) {
           throw new InvalidPageError(total);
         }
-        // Menos del 50 % del tiempo solo vale si el lector termino el libro: ultima pagina.
-        if (prepared.belowHalf && page !== total) return { kind: "discarded" };
+        // Menos de 5 minutos solo vale si el lector termino el libro: ultima pagina.
+        if (prepared.short && page !== total) return { kind: "discarded" };
         complete = { ...base, current_page: page };
       } else {
         complete = { ...base, ...(await epubFields(prepared, input)) };
@@ -186,7 +188,7 @@ export function createPostReadingService(deps: PostReadingDeps) {
       try {
         result = await deps.sessions.completeSession(complete, { acceptInactiveBook: true });
       } catch (error) {
-        if (error instanceof KomiLocalError && error.code === "below_50_percent") {
+        if (error instanceof KomiLocalError && error.code === "duration_out_of_range") {
           return { kind: "discarded" };
         }
         throw error;

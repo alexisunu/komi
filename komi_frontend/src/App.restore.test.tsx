@@ -112,7 +112,7 @@ describe("dispositivo vacio", () => {
     expect(root.querySelector('[data-screen="recover"]')).toBeNull();
     expect(root.querySelector('[data-screen="welcome"]')).toBeNull();
     expect(root.querySelector(".dashboard")).not.toBeNull();
-    expect(byText(root, "button", "Comenzar Lectura")).not.toBeNull();
+    expect(byText(root, "button", "Comenzar lectura")).not.toBeNull();
   });
 
   it("guarda el perfil, los libros, las sesiones y la charla en Dexie", async () => {
@@ -145,11 +145,12 @@ describe("dispositivo vacio", () => {
     expect(root.querySelector(".dashboard__time")?.textContent).toBe("20:00");
   });
 
-  it("la racha recuperada se ve en el Dashboard", async () => {
+  it("la racha recuperada se guarda en local (el badge esta oculto en la v2)", async () => {
     const body = restoreBody({ streak: { current: 3, longest: 5, last_valid_session_date: today() } });
     const root = await mountApp(newServer(body));
     await recoverWith(root, RESTORE_PROFILE_ID);
-    expect(root.querySelector(".streak-badge__text")?.textContent).toBe("3 días seguidos");
+    expect(root.querySelector(".streak-badge")).toBeNull();
+    expect((await db.meta.get("streak_current"))?.value).toBe(3);
   });
 
   it("Mi Jardin muestra los dos libros recuperados", async () => {
@@ -187,7 +188,7 @@ describe("dispositivo vacio", () => {
     const root = await mountApp(newServer(body));
     await recoverWith(root, RESTORE_PROFILE_ID);
     expect(root.textContent).toContain("Falta el archivo .epub de «Libro EPUB»");
-    expect((byText(root, "button", "Abrir lector") as HTMLButtonElement).disabled).toBe(true);
+    expect((byText(root, "button", "Comenzar lectura") as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
@@ -297,7 +298,7 @@ describe("Ajustes en un dispositivo con datos", () => {
     const server = newServer(restoreBody({ streak: { current: 3, longest: 5, last_valid_session_date: today() } }));
     const root = await recovered(server);
     expect(root.querySelector(".dashboard__book-title")?.textContent).toBe("Libro fisico");
-    expect(root.querySelector(".streak-badge__text")?.textContent).toBe("3 días seguidos");
+    expect((await db.meta.get("streak_current"))?.value).toBe(3);
     server.body = restoreBody({
       streak: { current: 7, longest: 7, last_valid_session_date: today() },
       books: [
@@ -314,9 +315,9 @@ describe("Ajustes en un dispositivo con datos", () => {
     await settle(120);
     expect(root.querySelector('[role="status"]')?.textContent).toBe("Recuperamos 1 libro y 1 sesión.");
     expect(await db.books.count()).toBe(3);
-    // Sin cambiar de pantalla: el libro nuevo y la racha ya estan en el Dashboard.
+    // Sin cambiar de pantalla: el libro nuevo ya esta en el Dashboard y la racha, en local.
     expect(root.querySelector(".dashboard__book-title")?.textContent).toBe("Libro nuevo");
-    expect(root.querySelector(".streak-badge__text")?.textContent).toBe("7 días seguidos");
+    expect((await db.meta.get("streak_current"))?.value).toBe(7);
     await tap(root.querySelector('[aria-label="Cerrar ajustes"]'));
     await tap(byText(root, "button", "Mi Jardín"));
     expect(root.textContent).toContain("Libro nuevo");

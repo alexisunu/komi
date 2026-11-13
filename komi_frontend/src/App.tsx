@@ -18,17 +18,18 @@ import { CompanionChatScreen } from "./features/ai_companion/CompanionChatScreen
 import { canReadBook, resolveActiveBook } from "./features/dashboard/activeBook";
 import { DashboardScreen } from "./features/dashboard/DashboardScreen";
 import { EpubReaderScreen } from "./features/focus_reader/EpubReaderScreen";
-import { GracePeriodBanner } from "./features/focus_reader/GracePeriodBanner";
 import { PhysicalTimerScreen } from "./features/focus_reader/PhysicalTimerScreen";
 import { PostReadingSheet, type SavedReading } from "./features/focus_reader/PostReadingSheet";
 import { useFocusSession } from "./features/focus_reader/useFocusSession";
 import { MyGardenScreen } from "./features/garden_library/MyGardenScreen";
 import { useLibrary } from "./features/garden_library/useLibrary";
 import { OnboardingScreen } from "./features/onboarding/OnboardingScreen";
-import { ZenPrimaryButton } from "./core/components/ZenPrimaryButton";
+import { InvalidatedSessionSheet } from "./features/focus_reader/InvalidatedSessionSheet";
 import { StatsScreen } from "./features/stats/StatsScreen";
+import type { TimerType } from "./services/focusSessionMachine";
 import type { CompleteOnboardingResult } from "./services/onboardingService";
 import { DEFAULT_FONT_SIZE, isFontSize, type ReaderFontSize } from "./services/readerTheme";
+import { isTimerType } from "./features/dashboard/timerSelection";
 import "./App.css";
 
 export interface AppProps {
@@ -203,12 +204,29 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   // Avance (0 a 1) de "Preparando tu libro" antes de abrir un EPUB sin `locations`; null = no aplica.
   const [preparing, setPreparing] = useState<number | null>(null);
   const [fontPx, setFontPx] = useState<ReaderFontSize>(DEFAULT_FONT_SIZE);
-  const { theme } = useTheme();
+  // Interfaz del lector oculta o visible: local, no se sincroniza; la primera vez, visible.
+  const [readerImmersive, setReaderImmersive] = useState(false);
+  // El lector no se monta hasta leer sus preferencias (letra e interfaz): si no, abriria con los
+  // valores por defecto y se reacomodaria al llegar los guardados.
+  const [readerPrefsReady, setReaderPrefsReady] = useState(false);
+  // Ultima eleccion del selector Temporizador | Libre: local, no se sincroniza. Un valor guardado
+  // que no sea uno de los dos modos cae a Temporizador.
+  const [timerType, setTimerType] = useState<TimerType>("TIMER");
+  const { theme, toggleTheme } = useTheme();
   // Racha del Dashboard: parte de lo guardado y sube al cerrar una sesion, sin esperar a la red.
   const [streakDays, setStreakDays] = useState(initial?.streakDays ?? 0);
   // Sesion que se esta cerrando. Se fija al terminar y sobrevive a `focus.leave()`: la hoja sigue
   // en pantalla (Paso 2) aunque el registro de la sesion ya se haya borrado.
-  const [closing, setClosing] = useState<{ sessionId: string; actualSec: number | null } | null>(null);
+  const [closing, setClosing] = useState<{
+    sessionId: string;
+    actualSec: number | null;
+    autoChat: boolean;
+    timeUp: boolean;
+  } | null>(
+    null,
+  );
+  // "Hablar con Komi" del lector: la proxima hoja de cierre abre la charla sola al guardar.
+  const [talkNext, setTalkNext] = useState(false);
   // Charla con Komi (CU-05) de la sesion recien guardada; sustituye a la hoja mientras dura.
   const [chat, setChat] = useState<{ sessionId: string; book: LocalBook } | null>(null);
 
@@ -225,14 +243,42 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
 
   useEffect(() => {
     let alive = true;
+    const read = (key: string) => deps.meta.get(key).catch(() => undefined);
+    void Promise.all([read(META_KEYS.readerFontSize), read(META_KEYS.readerImmersive)]).then(([size, hidden]) => {
+      if (!alive) return;
+      if (isFontSize(size)) setFontPx(size);
+      setReaderImmersive(hidden === true);
+      setReaderPrefsReady(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [deps]);
+
+  useEffect(() => {
+    let alive = true;
     deps.meta
-      .get(META_KEYS.readerFontSize)
-      .then((value) => alive && isFontSize(value) && setFontPx(value))
+      .get(META_KEYS.timerMode)
+      .then((value) => alive && setTimerType(isTimerType(value) ? value : "TIMER"))
       .catch(() => {});
     return () => {
       alive = false;
     };
   }, [deps]);
+
+  const changeTimerType = (next: TimerType) => {
+    setTimerType(next);
+    deps.meta.set(META_KEYS.timerMode, next).catch(() => {
+      // El modo ya cambio en pantalla; solo no quedo guardado para la proxima vez.
+    });
+  };
+
+  const changeReaderImmersive = (hidden: boolean) => {
+    setReaderImmersive(hidden);
+    deps.meta.set(META_KEYS.readerImmersive, hidden).catch(() => {
+      // Ya cambio en pantalla; solo no quedo guardado para la proxima vez.
+    });
+  };
 
   const changeFontPx = (size: ReaderFontSize) => {
     setFontPx(size);
@@ -300,8 +346,20 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   );
 
   const snapshot = focus.snapshot;
+  // Fin de tiempo del temporizador de un libro fisico (no del modo libre ni del lector EPUB; un
+  // "Terminar sesion" antes de cero es `early`, no `completed`): suena el carillon y la hoja de
+  // cierre lo avisa por escrito.
+  const timeUp =
+    snapshot?.phase === "completed" &&
+    snapshot.timerType === "TIMER" &&
+    library.books.find((candidate) => candidate.id === snapshot.bookId)?.format_type === "PHYSICAL";
+  const timeUpSession = timeUp ? snapshot.sessionId : null;
+  useEffect(() => {
+    if (timeUpSession !== null) deps.endChime.play();
+  }, [timeUpSession, deps]);
   if (closing === null && snapshot && (snapshot.phase === "completed" || snapshot.phase === "early")) {
-    setClosing({ sessionId: snapshot.sessionId, actualSec: snapshot.actualSec });
+    setClosing({ sessionId: snapshot.sessionId, actualSec: snapshot.actualSec, autoChat: talkNext, timeUp: timeUp });
+    if (talkNext) setTalkNext(false);
   }
 
   // Guardado terminado (CU-04): ya se pueden borrar los registros y soltar la recarga.
@@ -329,8 +387,10 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
       ? activeBook
       : null;
 
-  const startReading = async (minutes: number) => {
+  const startReading = async (minutes: number, timerType: TimerType = "TIMER") => {
     if (!activeBook || !canReadBook(activeBook)) return;
+    // Antes de cualquier `await`: Safari solo activa el audio dentro del gesto del usuario.
+    if (timerType === "TIMER" && activeBook.format_type === "PHYSICAL") deps.endChime.unlock();
     setStarting(true);
     setStartError(null);
     try {
@@ -342,11 +402,10 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
           return;
         }
       }
-      await focus.start({
-        sessionId: crypto.randomUUID(),
-        bookId: activeBook.id,
-        plannedSec: minutes * 60,
-      });
+      const common = { sessionId: crypto.randomUUID(), bookId: activeBook.id };
+      await focus.start(
+        timerType === "FREE" ? { ...common, timerType: "FREE" } : { ...common, plannedSec: minutes * 60 },
+      );
     } catch {
       setStartError("No se pudo iniciar la sesión. Intenta de nuevo.");
     } finally {
@@ -372,6 +431,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
       <div className="app-shell">
         <div className="app-shell__screen">
           {sessionBook?.format_type === "EPUB" ? (
+            readerPrefsReady && (
             <EpubReaderScreen
               key={snapshot.sessionId}
               book={sessionBook}
@@ -379,19 +439,24 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
               reader={deps.epubReader}
               wakeLock={deps.wakeLock}
               theme={theme}
+              onToggleTheme={toggleTheme}
               fontPx={fontPx}
               onFontPx={changeFontPx}
-              peekEarlyFinish={focus.peekEarlyFinish}
-              onAcceptEarly={focus.acceptEarlyFinish}
+              immersive={readerImmersive}
+              onImmersive={changeReaderImmersive}
+              peekFinish={focus.peekFinish}
+              onFinish={focus.acceptFinish}
+              onTalkRequested={() => setTalkNext(true)}
               onCancel={focus.leave}
             />
+            )
           ) : (
             <PhysicalTimerScreen
               book={sessionBook}
               snapshot={snapshot}
               wakeLock={deps.wakeLock}
-              peekEarlyFinish={focus.peekEarlyFinish}
-              onAcceptEarly={focus.acceptEarlyFinish}
+              peekFinish={focus.peekFinish}
+              onFinish={focus.acceptFinish}
               onCancel={focus.leave}
             />
           )}
@@ -431,6 +496,8 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             key={closing.sessionId}
             sessionId={closing.sessionId}
             actualSec={closing.actualSec}
+            autoChat={closing.autoChat}
+            timeUp={closing.timeUp}
             service={deps.postReading}
             onSaved={onReadingSaved}
             onDiscard={focus.leave}
@@ -450,14 +517,7 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
   return (
     <div className="app-shell">
       <div className="app-shell__screen">
-        {snapshot?.phase === "invalidated" && (
-          <div className="session-notice" data-testid="session-invalidated">
-            <GracePeriodBanner variant="invalidated" />
-            <ZenPrimaryButton variant="secondary" onClick={() => void focus.leave()}>
-              Entendido
-            </ZenPrimaryButton>
-          </div>
-        )}
+        {snapshot?.phase === "invalidated" && <InvalidatedSessionSheet onClose={() => void focus.leave()} />}
         {missingEpub && nav === "lectura" && !startError && (
           <p className="app-notice" role="status">
             Falta el archivo .epub de «{missingEpub.title}». Vuelve a importarlo desde Mi Jardín para leerlo.
@@ -475,7 +535,9 @@ function MainApp({ deps, nav, onNav, profile, initial }: MainAppProps) {
             book={activeBook}
             dailyGoalMinutes={profile?.daily_goal_minutes ?? 15}
             canStart={canStart}
-            onStart={(minutes) => void startReading(minutes)}
+            timerType={timerType}
+            onTimerTypeChange={changeTimerType}
+            onStart={(selection) => void startReading(selection.minutes, selection.timerType)}
             recovery={recovery}
           />
         )}
